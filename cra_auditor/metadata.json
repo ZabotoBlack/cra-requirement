@@ -1,0 +1,5 @@
+{
+  "name": "CRA Compliance Auditor",
+  "description": "A visualization dashboard and configuration tool for the Cyber Resilience Act (CRA) Home Assistant Add-on. Includes simulated network scanning, compliance reporting, and AI-powered remediation advice.",
+  "requestFramePermissions": []
+}

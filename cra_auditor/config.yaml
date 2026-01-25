@@ -1,0 +1,28 @@
+name: "CRA Compliance Auditor"
+description: "Scans local network devices for Cyber Resilience Act compliance."
+version: "1.0.3"
+slug: "cra_auditor"
+init: false
+arch:
+  - aarch64
+  - amd64
+  - armv7
+boot: auto
+
+# INGRESS CONFIGURATION
+ingress: true
+ingress_port: 8099 # <--- THIS WAS MISSING
+panel_icon: mdi:security
+# Remove "ports" to rely purely on Ingress (safer)
+# ports:
+#   8099/tcp: 8099
+# Optional: Keep webui if you want a "Open Web UI" button, but it's not strictly required for Ingress
+webui: "http://[HOST]:[PORT:8099]"
+
+map:
+  - share:rw
+
+options:
+  target_subnet: "192.168.1.0/24"
+schema:
+  target_subnet: str
