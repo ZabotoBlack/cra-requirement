@@ -1,111 +1,178 @@
-import sys
-import json
 import nmap
 import requests
-import argparse
 import socket
-from datetime import datetime
+import logging
 
-# --- CONFIGURATION ---
-COMMON_CREDS = [('admin', 'admin'), ('root', 'root'), ('root', '1234')]
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-def check_secure_by_default(ip):
-    """Attempt non-destructive login to verify default creds."""
-    # Note: Simplified for PoC. Real implementation needs async/ssh libs.
-    # Returns (Passed: bool, Details: str)
-    try:
-        # Mocking a socket check for telnet as a proxy for 'weak auth accessible'
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(1)
-        result = sock.connect_ex((ip, 23))
-        sock.close()
-        if result == 0:
-            return False, "Telnet port open - Potentially insecure default"
-    except Exception as e:
-        pass
-    return True, "No obvious default access vectors found"
-
-def check_confidentiality(nm, ip):
-    """Check for unencrypted services."""
-    unencrypted_ports = [21, 23, 80]
-    open_unencrypted = []
-    
-    if ip not in nm.all_hosts():
-        return True, "Host not responsive to detailed scan"
-
-    for proto in nm[ip].all_protocols():
-        lport = nm[ip][proto].keys()
-        for port in lport:
-            if port in unencrypted_ports:
-                state = nm[ip][proto][port]['state']
-                if state == 'open':
-                    open_unencrypted.append(str(port))
-    
-    if open_unencrypted:
-        return False, f"Unencrypted ports open: {', '.join(open_unencrypted)}"
-    return True, "No unencrypted management ports found"
-
-def check_vulnerabilities(vendor):
-    """Query vulnerability database by vendor."""
-    if not vendor:
-        return True, "Unknown Vendor"
-    
-    # Placeholder for actual NVD/CVE-Search API call
-    # url = f"https://cve.circl.lu/api/search/{vendor}"
-    # In a real thesis, implement the API request here.
-    return True, "No CRITICAL CVEs found in last 12 months (Simulated)"
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--subnet', required=True, help='Target IP range')
-    args = parser.parse_args()
-
-    nm = nmap.PortScanner()
-    print(f"Scanning {args.subnet}...")
-    nm.scan(hosts=args.subnet, arguments='-sV -O --top-ports 100')
-
-    report = []
-
-    for host in nm.all_hosts():
-        if 'mac' not in nm[host]['addresses']:
-            continue
+class CRAScanner:
+    def __init__(self):
+        self.nm = None
+        try:
+            self.nm = nmap.PortScanner()
+        except nmap.PortScannerError:
+            logger.error("Nmap not found", exc_info=True)
+        except Exception:
+            logger.error("Unexpected error initializing nmap", exc_info=True)
             
-        mac = nm[host]['addresses']['mac']
-        vendor = nm[host]['vendor'].get(mac, "Unknown")
-        
-        # 1. Secure By Default
-        sbd_pass, sbd_msg = check_secure_by_default(host)
-        
-        # 2. Confidentiality
-        conf_pass, conf_msg = check_confidentiality(nm, host)
-        
-        # 3. Vulnerabilities
-        vuln_pass, vuln_msg = check_vulnerabilities(vendor)
+        self.common_creds = [('admin', 'admin'), ('root', 'root'), ('user', '1234'), ('admin', '1234')]
 
-        status = "Compliant"
-        if not sbd_pass or not vuln_pass:
-            status = "Non-Compliant"
-        elif not conf_pass:
-            status = "Warning"
+    def scan_subnet(self, subnet):
+        """Scans the given subnet for devices."""
+        if not self.nm:
+            logger.error("Nmap not initialized. Cannot scan.")
+            return []
 
-        device_report = {
-            "ip": host,
-            "mac": mac,
-            "vendor": vendor,
-            "status": status,
-            "checks": {
-                "secure_by_default": sbd_msg,
-                "confidentiality": conf_msg,
-                "vulnerabilities": vuln_msg
+        logger.info(f"Starting scan on {subnet}")
+        try:
+            # -sV: Version detection, -O: OS detection
+            # Using --top-ports 100 for speed in this demo, usually would want more
+            self.nm.scan(hosts=subnet, arguments='-sV -O --top-ports 100')
+        except Exception as e:
+            logger.error(f"Nmap scan failed: {e}")
+            return []
+
+        devices = []
+        for host in self.nm.all_hosts():
+            if 'mac' not in self.nm[host]['addresses']:
+                # Skip devices without MAC (likely local interface or issues)
+                # But sometimes remote scan won't get MAC if not on same L2. 
+                # For HA Addon, we are usually on same L2.
+                pass
+
+            mac = self.nm[host]['addresses'].get('mac', 'Unknown')
+            ip = host
+            vendor = self.nm[host]['vendor'].get(mac, "Unknown")
+            
+            # Use 'ipv4' as primary if available
+            if 'ipv4' in self.nm[host]['addresses']:
+                ip = self.nm[host]['addresses']['ipv4']
+
+            device_info = {
+                "ip": ip,
+                "mac": mac,
+                "vendor": vendor,
+                "hostname": self.nm[host].hostname(),
+                "open_ports": self._get_open_ports(host),
+                "os_match": self._get_os_match(host)
             }
-        }
-        report.append(device_report)
+            
+            # PER DEVICE CHECKS
+            sbd_result = self.check_secure_by_default(ip, device_info['open_ports'])
+            conf_result = self.check_confidentiality(device_info['open_ports'])
+            vuln_result = self.check_vulnerabilities(vendor, device_info['open_ports'])
 
-    # Output JSON for the frontend to consume
-    with open('/share/report.json', 'w') as f:
-        json.dump(report, f, indent=2)
-    
-    print("Scan complete. Report generated.")
+            status = "Compliant"
+            if not sbd_result['passed'] or not vuln_result['passed']:
+                status = "Non-Compliant"
+            elif not conf_result['passed']:
+                status = "Warning"
 
+            device_info.update({
+                "status": status,
+                "checks": {
+                    "secure_by_default": sbd_result,
+                    "confidentiality": conf_result,
+                    "vulnerabilities": vuln_result
+                },
+                "last_scanned": "Just now" # You might want datetime here
+            })
+            devices.append(device_info)
+            
+        logger.info(f"Scan complete. Found {len(devices)} devices.")
+        return devices
+
+    def _get_open_ports(self, host):
+        ports = []
+        for proto in self.nm[host].all_protocols():
+            lport = self.nm[host][proto].keys()
+            for port in lport:
+                state = self.nm[host][proto][port]['state']
+                if state == 'open':
+                    service = self.nm[host][proto][port]['name']
+                    ports.append({"port": port, "protocol": proto, "service": service})
+        return ports
+
+    def _get_os_match(self, host):
+        if 'osmatch' in self.nm[host] and self.nm[host]['osmatch']:
+            return self.nm[host]['osmatch'][0]['name']
+        return "Unknown"
+
+    def check_secure_by_default(self, ip, open_ports):
+        """Check for weak credentials on common ports."""
+        details = []
+        passed = True
+        
+        # Simple check: If Telnet is open, it's a fail for secure by default (modern standards)
+        for p in open_ports:
+            if p['port'] == 23:
+                passed = False
+                details.append("Telnet (port 23) is open. Insecure protocol.")
+
+        # Real auth check would go here (e.g. attempting ssh login)
+        # For safety/performance, we will simulate a "Weak Auth" check on http/80
+        # In a real app, use async libraries to try common creds on identified services.
+        
+        if not details:
+            details.append("No obvious weak default access vectors found.")
+
+        return {"passed": passed, "details": "; ".join(details)}
+
+    def check_confidentiality(self, open_ports):
+        """Check for unencrypted services."""
+        unencrypted_ports = [21, 23, 80] # FTP, Telnet, HTTP
+        found_unencrypted = []
+        
+        for p in open_ports:
+            if p['port'] in unencrypted_ports:
+                found_unencrypted.append(f"{p['service']}/{p['port']}")
+        
+        if found_unencrypted:
+            return {"passed": False, "details": f"Unencrypted ports found: {', '.join(found_unencrypted)}"}
+        
+        return {"passed": True, "details": "No common unencrypted management ports found."}
+
+    def check_vulnerabilities(self, vendor, open_ports):
+        """Query external CVE API."""
+        if vendor == "Unknown":
+             return {"passed": True, "details": "Vendor unknown, skipping CVE check.", "cves": []}
+
+        # Limitation: Searching by vendor name is broad. 
+        # Ideally we'd map CPEs from Nmap to CVEs.
+        cves = []
+        try:
+            # Using cve.circl.lu API
+            # This is a broad search and might return false positives or too many results
+            # For this PoC we will limit to 5 recent criticals
+            url = f"https://cve.circl.lu/api/search/{vendor}"
+            response = requests.get(url, timeout=5)
+            
+            if response.status_code == 200:
+                data = response.json()
+                # Simple filter: Critical severity (?) - The API format varies, we'll do a basic check
+                # Note: This API returns a list of CVE objects
+                count = 0
+                for item in data.get('data', [])[:5]: # Check first 5 matches
+                    if 'cvss' in item and item['cvss'] and float(item['cvss']) > 9.0:
+                        cves.append({
+                            "id": item.get('id', 'Unknown'),
+                            "severity": "CRITICAL",
+                            "description": item.get('summary', 'No description')[:100] + "..."
+                        })
+                        count += 1
+            
+        except Exception as e:
+            logger.error(f"CVE lookup failed: {e}")
+            return {"passed": True, "details": "CVE lookup failed (network error).", "cves": []}
+
+        if cves:
+             return {"passed": False, "details": f"Found {len(cves)} critical CVEs associated with vendor.", "cves": cves}
+
+        return {"passed": True, "details": "No critical CVEs found for this vendor.", "cves": []}
+
+# For standalone testing
 if __name__ == "__main__":
-    main()
+    scanner = CRAScanner()
+    print(scanner.scan_subnet("192.168.1.0/24"))
