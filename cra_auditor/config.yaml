@@ -14,6 +14,11 @@ boot: auto
 ingress: true
 ingress_port: 8099
 panel_icon: mdi:security
+# Remove "ports" to rely purely on Ingress (safer)
+# ports:
+#   8099/tcp: 8099
+# Optional: Keep webui if you want a "Open Web UI" button, but it's not strictly required for Ingress
+webui: "http://[HOST]:[PORT:8099]"
 
 map:
   - share:rw
