@@ -18,7 +18,7 @@ panel_icon: mdi:security
 # ports:
 #   8099/tcp: 8099
 # Optional: Keep webui if you want a "Open Web UI" button, but it's not strictly required for Ingress
-webui: "http://[HOST]:[PORT:8099]"
+# webui: "http://[HOST]:[PORT:8099]"
 
 map:
   - share:rw
@@ -28,4 +28,4 @@ options:
   gemini_api_key: ""
 schema:
   target_subnet: str
-  gemini_api_key: password?
+  gemini_api_key: password
