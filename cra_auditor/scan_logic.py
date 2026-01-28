@@ -20,35 +20,61 @@ class CRAScanner:
         self.common_creds = [('admin', 'admin'), ('root', 'root'), ('user', '1234'), ('admin', '1234')]
 
     def scan_subnet(self, subnet):
-        """Scans the given subnet for devices."""
+        """Scans the given subnet for devices using a two-stage approach."""
         if not self.nm:
             logger.error("Nmap not initialized. Cannot scan.")
             return []
 
-        logger.info(f"Starting scan on {subnet}")
+        # Stage 1: Discovery Scan (Ping/ARP)
+        logger.info(f"Starting discovery scan on {subnet}")
         try:
-            # -sV: Version detection, -O: OS detection
-            # Using --top-ports 100 for speed in this demo, usually would want more
-            self.nm.scan(hosts=subnet, arguments='-sV -O --top-ports 100')
+            # -sn: Ping Scan - disable port scan
+            self.nm.scan(hosts=subnet, arguments='-sn')
         except Exception as e:
-            logger.error(f"Nmap scan failed: {e}")
+            logger.error(f"Nmap discovery scan failed: {e}")
             return []
 
-        devices = []
-        for host in self.nm.all_hosts():
-            if 'mac' not in self.nm[host]['addresses']:
-                # Skip devices without MAC (likely local interface or issues)
-                # But sometimes remote scan won't get MAC if not on same L2. 
-                # For HA Addon, we are usually on same L2.
-                pass
+        hosts_to_scan = self.nm.all_hosts()
+        logger.info(f"Discovery complete. Found {len(hosts_to_scan)} live hosts.")
 
+        if not hosts_to_scan:
+            return []
+
+        # Stage 2: Detailed Scan
+        logger.info(f"Starting detailed scan on {len(hosts_to_scan)} hosts.")
+        devices = []
+        
+        # We can scan all discovered hosts in one go, or individually. 
+        # Scanning together is faster.
+        # Joining hosts by space
+        target_spec = " ".join(hosts_to_scan)
+        
+        try:
+            # -sV: Version detection
+            # -O: OS detection
+            # -Pn: Treat all hosts as online -- skip host discovery (since we just did it)
+            # --top-ports 100: Check top 100 ports
+            self.nm.scan(hosts=target_spec, arguments='-sV -O -Pn --top-ports 100')
+        except Exception as e:
+            logger.error(f"Nmap detail scan failed: {e}")
+            return []
+
+        for host in self.nm.all_hosts():
+            # Basic info might be missing if scan failed for this specific host, but we try our best
+            if 'addresses' not in self.nm[host]:
+                continue
+                
             mac = self.nm[host]['addresses'].get('mac', 'Unknown')
             ip = host
-            vendor = self.nm[host]['vendor'].get(mac, "Unknown")
             
             # Use 'ipv4' as primary if available
             if 'ipv4' in self.nm[host]['addresses']:
                 ip = self.nm[host]['addresses']['ipv4']
+            
+            # Vendor might be in 'vendor' dict keyed by MAC
+            vendor = "Unknown"
+            if 'vendor' in self.nm[host] and mac in self.nm[host]['vendor']:
+                 vendor = self.nm[host]['vendor'][mac]
 
             device_info = {
                 "ip": ip,
@@ -81,7 +107,7 @@ class CRAScanner:
             })
             devices.append(device_info)
             
-        logger.info(f"Scan complete. Found {len(devices)} devices.")
+        logger.info(f"Detailed scan complete. Processed {len(devices)} devices.")
         return devices
 
     def _get_open_ports(self, host):

@@ -10,8 +10,12 @@ const App: React.FC = () => {
   const [view, setView] = useState<ViewState>('dashboard');
   const [scanning, setScanning] = useState(false);
   const [report, setReport] = useState<ScanReport | null>(null);
-  const [subnet, setSubnet] = useState('192.168.1.0/24');
+  const [subnet, setSubnet] = useState('');
   const pollInterval = useRef<NodeJS.Timeout | null>(null);
+
+  // CIDR Regex Validation
+  const cidrRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(?:3[0-2]|[12]?[0-9])$/;
+  const isValidSubnet = cidrRegex.test(subnet);
 
   const fetchData = async () => {
     const scanStatus = await getScanStatus();
@@ -76,23 +80,25 @@ const App: React.FC = () => {
         <div className="p-4 border-t border-slate-800">
           <div className="bg-slate-800 rounded-lg p-4">
             <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 block">
-              Scan Target
+              Scan Target (CIDR)
             </label>
-            <div className="flex items-center bg-slate-900 rounded border border-slate-700 px-3 py-2 mb-3">
-              <span className="text-slate-500 mr-1 text-sm">IP:</span>
+            <div className={`flex items-center bg-slate-900 rounded border px-3 py-2 mb-3 transition-colors ${isValidSubnet ? 'border-slate-700' : 'border-red-500/50'
+              }`}>
               <input
                 type="text"
                 value={subnet}
                 onChange={(e) => setSubnet(e.target.value)}
                 className="bg-transparent border-none text-white text-sm w-full focus:outline-none placeholder-slate-600"
-                placeholder="192.168.1"
+                placeholder="e.g. 192.168.1.0/24"
               />
-              <span className="text-slate-500 text-sm">.0/24</span>
             </div>
+            {!isValidSubnet && subnet.length > 0 && (
+              <p className="text-[10px] text-red-400 mb-2 -mt-1">Invalid CIDR format (e.g. 192.168.1.0/24)</p>
+            )}
             <button
               onClick={handleScan}
-              disabled={scanning}
-              className={`w-full flex items-center justify-center gap-2 py-2 rounded font-medium text-sm transition-all ${scanning
+              disabled={scanning || !isValidSubnet}
+              className={`w-full flex items-center justify-center gap-2 py-2 rounded font-medium text-sm transition-all ${scanning || !isValidSubnet
                 ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
                 : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/20'
                 }`}
@@ -135,7 +141,7 @@ const App: React.FC = () => {
                 <div className="w-16 h-16 border-4 border-slate-700 border-t-emerald-500 rounded-full animate-spin"></div>
                 <div className="absolute top-0 left-0 w-16 h-16 border-4 border-transparent border-b-emerald-500/30 rounded-full animate-spin reverse"></div>
               </div>
-              <p className="text-slate-400 animate-pulse">Auditing Network Segment {subnet}.0/24...</p>
+              <p className="text-slate-400 animate-pulse">Auditing Network Segment {subnet}...</p>
               <div className="text-xs text-slate-500 font-mono">
                 Checking Ports... Verifying CVEs... Testing Auth...
               </div>
