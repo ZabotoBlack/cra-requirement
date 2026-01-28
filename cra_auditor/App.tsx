@@ -1,10 +1,10 @@
-import { Activity, LayoutDashboard, List, Play, RotateCw, ShieldCheck, History } from 'lucide-react';
+import { Activity, LayoutDashboard, List, Play, RotateCw, ShieldCheck, History, Settings, X, CheckSquare, Square } from 'lucide-react';
 import React, { useEffect, useState, useRef } from 'react';
 import Dashboard from './components/Dashboard';
 import DeviceList from './components/DeviceList';
 import HistoryView from './components/HistoryView';
 import { startScan, getScanStatus, getReport, getConfig, getHistoryDetail } from './services/api';
-import { ScanReport, ViewState } from './types';
+import { ScanReport, ViewState, ScanOptions } from './types';
 
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>('dashboard');
@@ -12,6 +12,14 @@ const App: React.FC = () => {
   const [report, setReport] = useState<ScanReport | null>(null);
   const [config, setConfig] = useState<{ gemini_enabled: boolean; version: string } | null>(null);
   const [subnet, setSubnet] = useState('');
+
+  const [scanOptions, setScanOptions] = useState<ScanOptions>({
+    scan_type: 'deep',
+    auth_checks: true,
+    vendors: 'all'
+  });
+  const [showSettings, setShowSettings] = useState(false);
+
   const pollInterval = useRef<NodeJS.Timeout | null>(null);
 
   // CIDR Regex Validation
@@ -42,7 +50,7 @@ const App: React.FC = () => {
     try {
       setScanning(true);
       setView('dashboard');
-      await startScan(subnet);
+      await startScan(subnet, scanOptions);
       // Polling will pick up the status change
     } catch (e) {
       console.error(e);
@@ -121,9 +129,137 @@ const App: React.FC = () => {
               {scanning ? <RotateCw className="animate-spin" size={16} /> : <Play size={16} />}
               {scanning ? 'Scanning...' : 'Start Audit'}
             </button>
+            <button
+              onClick={() => setShowSettings(true)}
+              disabled={scanning}
+              className="w-full mt-2 flex items-center justify-center gap-2 py-2 rounded font-medium text-sm bg-slate-700 hover:bg-slate-600 text-slate-300 transition-all disabled:opacity-50"
+            >
+              <Settings size={16} />
+              Scan Settings
+            </button>
           </div>
         </div>
       </aside>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-lg shadow-2xl w-full max-w-lg overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-slate-700 bg-slate-800/50">
+              <h3 className="font-bold text-white flex items-center gap-2">
+                <Settings size={18} className="text-emerald-500" />
+                Scan Configuration
+              </h3>
+              <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-white">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+
+              {/* Scan Type */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-3">Scan Depth</label>
+                <div className="grid grid-cols-3 gap-3">
+                  {(['discovery', 'standard', 'deep'] as const).map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => setScanOptions({ ...scanOptions, scan_type: type })}
+                      className={`px-3 py-2 rounded border text-sm font-medium capitalize transition-all ${scanOptions.scan_type === type
+                          ? 'bg-indigo-600 border-indigo-500 text-white'
+                          : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'
+                        }`}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  {scanOptions.scan_type === 'discovery' && "Fastest. Only checks for device existence (Ping/ARP)."}
+                  {scanOptions.scan_type === 'standard' && "Balanced. Checks top 100 ports and services."}
+                  {scanOptions.scan_type === 'deep' && "Thorough. OS detection, version probing, top 1000 ports."}
+                </p>
+              </div>
+
+              {/* Vendors - Only if not discovery */}
+              <div className={scanOptions.scan_type === 'discovery' ? 'opacity-50 pointer-events-none' : ''}>
+                <label className="block text-sm font-semibold text-slate-300 mb-3">Vendor Detection</label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setScanOptions({ ...scanOptions, vendors: 'all' })}
+                    className={`px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-2 transition-all ${scanOptions.vendors === 'all'
+                        ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400'
+                        : 'bg-slate-800 border-slate-700 text-slate-400'
+                      }`}
+                  >
+                    {scanOptions.vendors === 'all' ? <CheckSquare size={12} /> : <Square size={12} />}
+                    All Vendors
+                  </button>
+                  {['tuya', 'shelly', 'hue', 'kasa', 'sonoff', 'ikea'].map(vendor => {
+                    const isSelected = scanOptions.vendors === 'all' || (Array.isArray(scanOptions.vendors) && scanOptions.vendors.includes(vendor));
+                    return (
+                      <button
+                        key={vendor}
+                        onClick={() => {
+                          let current = scanOptions.vendors;
+                          if (current === 'all') {
+                            // Switch to select mode, unselect this one? No, if clicking specific, maybe desire is to toggle.
+                            // Logic: If 'all', and user clicks 'tuya', change to everything BUT tuya? Or just tuya? 
+                            // Let's assume clicking a specific vendor when 'all' is selected means "I only want this one".
+                            current = [vendor];
+                          } else {
+                            if (current.includes(vendor)) {
+                              current = current.filter(v => v !== vendor);
+                              if (current.length === 0) current = 'all'; // Fallback to all if none? or empty?
+                            } else {
+                              current = [...current, vendor];
+                            }
+                          }
+                          setScanOptions({ ...scanOptions, vendors: current });
+                        }}
+                        className={`px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-2 transition-all capitalize ${isSelected
+                            ? 'bg-indigo-500/10 border-indigo-500 text-indigo-400'
+                            : 'bg-slate-800 border-slate-700 text-slate-400'
+                          }`}
+                      >
+                        {isSelected ? <CheckSquare size={12} /> : <Square size={12} />}
+                        {vendor}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Auth Checks */}
+              <div className={scanOptions.scan_type === 'discovery' ? 'opacity-50 pointer-events-none' : ''}>
+                <label className="flex items-center gap-3 p-3 rounded bg-slate-800 border border-slate-700 cursor-pointer hover:bg-slate-700/50 transition-colors">
+                  <div
+                    className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${scanOptions.auth_checks ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-500'
+                      }`}
+                    onClick={() => setScanOptions({ ...scanOptions, auth_checks: !scanOptions.auth_checks })}
+                  >
+                    {scanOptions.auth_checks && <CheckSquare size={14} />}
+                  </div>
+                  <div onClick={() => setScanOptions({ ...scanOptions, auth_checks: !scanOptions.auth_checks })}>
+                    <div className="text-sm font-medium text-slate-200">Active Vulnerability Probing</div>
+                    <div className="text-xs text-slate-500">Attempt safe default credential logins (Telnet) and unauth API access.</div>
+                  </div>
+                </label>
+              </div>
+
+            </div>
+
+            <div className="p-4 border-t border-slate-700 bg-slate-800/50 flex justify-end">
+              <button
+                onClick={() => setShowSettings(false)}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-sm font-medium transition-colors"
+              >
+                Save & Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="flex-1 ml-64">

@@ -4,6 +4,13 @@ export enum ComplianceStatus {
   NON_COMPLIANT = 'Non-Compliant'
 }
 
+export interface ScanOptions {
+  scan_type: 'discovery' | 'standard' | 'deep';
+  auth_checks: boolean;
+  vendors: string[] | 'all';
+}
+
+
 export interface PortScan {
   port: number;
   service: string;

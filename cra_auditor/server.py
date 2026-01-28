@@ -66,12 +66,15 @@ def start_scan():
     if is_scanning:
         return jsonify({"status": "error", "message": "Scan already in progress"}), 409
     
+    
     data = request.json
     subnet = data.get('subnet')
+    options = data.get('options', {}) # Extract options
+    
     if not subnet:
         return jsonify({"status": "error", "message": "Subnet required"}), 400
 
-    thread = threading.Thread(target=run_scan_background, args=(subnet,))
+    thread = threading.Thread(target=run_scan_background, args=(subnet, options))
     thread.start()
     return jsonify({"status": "success", "message": "Scan started"})
 
@@ -185,11 +188,11 @@ def delete_history_item(scan_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-def run_scan_background(subnet):
+def run_scan_background(subnet, options=None):
     global is_scanning
     is_scanning = True
     try:
-        devices = scanner.scan_subnet(subnet)
+        devices = scanner.scan_subnet(subnet, options)
         
         # Calculate summary
         total = len(devices)

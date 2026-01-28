@@ -20,8 +20,21 @@ class CRAScanner:
             
         self.common_creds = [('admin', 'admin'), ('root', 'root'), ('user', '1234'), ('admin', '1234')]
 
-    def scan_subnet(self, subnet):
-        """Scans the given subnet for devices using a hybrid approach (Nmap + HA API)."""
+    def scan_subnet(self, subnet, options=None):
+        """
+        Scans the given subnet for devices using a hybrid approach (Nmap + HA API).
+        
+        options: {
+            "scan_type": "discovery" | "standard" | "deep",
+            "auth_checks": bool,
+            "vendors": ["tuya", "shelly", "hue", "kasa", "sonoff", "ikea"] | "all"
+        }
+        """
+        if options is None: options = {}
+        scan_type = options.get('scan_type', 'deep')
+        auth_checks = options.get('auth_checks', True)
+        selected_vendors = options.get('vendors', 'all') # 'all' or list of strings
+
         ha_devices = self._get_ha_devices() 
         
         if not self.nm:
@@ -29,8 +42,6 @@ class CRAScanner:
             return self._merge_devices([], ha_devices)
 
         # Stage 1: Discovery Scan (Ping + ARP)
-        # -sn: Ping Scan - disable port scan
-        # -PR: ARP Ping (faster and more reliable for local LAN)
         logger.info(f"Starting discovery scan on {subnet}")
         try:
             self.nm.scan(hosts=subnet, arguments='-sn -PR')
@@ -42,25 +53,46 @@ class CRAScanner:
         logger.info(f"Discovery complete. Found {len(hosts_to_scan)} live hosts.")
 
         nmap_devices = []
-        if hosts_to_scan:
+        
+        # If discovery only, skip detailed scan
+        if hosts_to_scan and scan_type != 'discovery':
             # Stage 2: Detailed Scan
-            logger.info(f"Starting detailed scan on {len(hosts_to_scan)} hosts.")
+            logger.info(f"Starting detailed scan mode: {scan_type}")
             
             target_spec = " ".join(hosts_to_scan)
             
+            # Build Nmap Arguments based on Options
+            # Base arguments
+            nmap_args = "-Pn" # Treat as online
+            
+            # Scan Type Depth
+            if scan_type == 'deep':
+                nmap_args += " -sV -O --top-ports 1000"
+            elif scan_type == 'standard':
+                nmap_args += " -sV --top-ports 100"
+            else:
+                nmap_args += " -F" # Fast scan (top 100 ports) if unnamed type
+            
+            # Vendor Specific Ports
+            vendor_ports = []
+            if selected_vendors == 'all' or 'tuya' in selected_vendors:
+                vendor_ports.append('6668')
+            if selected_vendors == 'all' or 'sonoff' in selected_vendors:
+                vendor_ports.append('8081')
+            if selected_vendors == 'all' or 'kasa' in selected_vendors:
+                vendor_ports.append('9999')
+            # Shelly, Hue, Ikea use port 80 which is usually covered by top ports, but we can ensure it
+            if selected_vendors == 'all' or any(v in selected_vendors for v in ['shelly', 'hue', 'ikea']):
+                # Port 80 is standard, usually doesn't need explicit add if top-ports includes it, 
+                # but adding it doesn't hurt.
+                pass 
+
+            if vendor_ports:
+                nmap_args += f" -p {','.join(vendor_ports)},1-1024" # Priority to specific ports + standard range
+            
             try:
-                # -sV: Version detection, -O: OS detection, -Pn: Treat as online
-                # --top-ports 100: Check top 100 ports
-                # Added vendor specific ports: 6668 (Tuya), 8081 (Sonoff), 9999 (Kasa)
-                extra_ports = "6668,8081,9999"
-                self.nm.scan(hosts=target_spec, arguments=f'-sV -O -Pn --top-ports 100 -p {extra_ports},1-1024') 
-                # Note: Scanning top 100 + specifics. 
-                # Simplified: default top ports might miss 6668/9999 so we rely on -p if we want to be sure, 
-                # but -p overrides --top-ports. Let's send a specific command that covers both or just add them.
-                # Actually, -p 1-1024 covers standard, we add the others.
-                # self.nm.scan(hosts=target_spec, arguments='-sV -O -Pn -p 1-1024,6668,8081,9999')
-                # For speed in this PoC, we will stick to top-ports 100 plus upgrades.
-                self.nm.scan(hosts=target_spec, arguments='-sV -O -Pn --top-ports 1000') # Increased to 1000 to catch more
+                logger.info(f"Running Nmap with args: {nmap_args}")
+                self.nm.scan(hosts=target_spec, arguments=nmap_args)
             except Exception as e:
                 logger.error(f"Nmap detail scan failed: {e}")
             
@@ -109,17 +141,23 @@ class CRAScanner:
             if check_vendor == "Unknown " or check_vendor.strip() == "Unknown":
                  check_vendor = dev.get('vendor', 'Unknown')
 
-            # ENHANCED CHECKS
-            sbd_result = self.check_secure_by_default(dev)
+            # ENHANCED CHECKS - Conditional
+            sbd_result = {"passed": True, "details": "Skipped auth checks."}
+            if auth_checks:
+                sbd_result = self.check_secure_by_default(dev)
+            
             conf_result = self.check_confidentiality(dev.get('openPorts', []))
             vuln_result = self.check_vulnerabilities(check_vendor, dev.get('openPorts', []))
             
-            # Vendor Specific Checks
-            vendor_warnings = self._check_vendor_specifics(dev)
+            # Vendor Specific Checks - Conditional
+            vendor_warnings = self._check_vendor_specifics(dev, selected_vendors)
             if vendor_warnings:
+                if sbd_result['details'] == "Skipped auth checks.":
+                     sbd_result['details'] = ""
+                     
                 sbd_result['details'] += " " + "; ".join(vendor_warnings)
                 sbd_result['passed'] = False
-
+                
             status = "Compliant"
             if not sbd_result['passed'] or not vuln_result['passed']:
                 status = "Non-Compliant"
@@ -326,28 +364,28 @@ class CRAScanner:
                 pass
         return None
 
-    def _check_vendor_specifics(self, device):
+    def _check_vendor_specifics(self, device, selected_vendors='all'):
         """Identify and check specific vendor vulnerabilities."""
         warnings = []
         ip = device.get('ip')
         ports = [int(p['port']) for p in device.get('openPorts', [])]
         
         if not ip or ip == "N/A": return []
-
+        
         # Tuya
-        if 6668 in ports:
+        if (selected_vendors == 'all' or 'tuya' in selected_vendors) and 6668 in ports:
             warnings.append("Possible Tuya Device (Port 6668 open). Ensure default keys are replaced.")
 
         # TP-Link Kasa
-        if 9999 in ports:
+        if (selected_vendors == 'all' or 'kasa' in selected_vendors) and 9999 in ports:
              warnings.append("TP-Link Kasa Device (Port 9999). Old protocols may be vulnerable to local control injection.")
 
         # Sonoff LAN Mode
-        if 8081 in ports:
+        if (selected_vendors == 'all' or 'sonoff' in selected_vendors) and 8081 in ports:
              warnings.append("Sonoff Device in LAN Mode (Port 8081). Ensure local network is trusted.")
 
         # Shelly
-        if 80 in ports:
+        if (selected_vendors == 'all' or 'shelly' in selected_vendors) and 80 in ports:
             try:
                 r = requests.get(f"http://{ip}/status", timeout=1)
                 if r.status_code == 200 and "mac" in r.text: # Shelly JSON signature
@@ -356,13 +394,22 @@ class CRAScanner:
             except: pass
 
         # Philips Hue
-        if 80 in ports:
+        if (selected_vendors == 'all' or 'hue' in selected_vendors) and 80 in ports:
              try:
                 r = requests.get(f"http://{ip}/description.xml", timeout=1)
                 if r.status_code == 200 and "Philips hue" in r.text:
                     warnings.append("Philips Hue Bridge detected. Ensure 'Link Button' authentication is strictly required.")
              except: pass
         
+        # Ikea
+        if (selected_vendors == 'all' or 'ikea' in selected_vendors) and 80 in ports:
+             # Basic header check for Ikea gateway signature (heuristic)
+             try:
+                 r = requests.get(f"http://{ip}", timeout=1)
+                 if "IKEA" in r.text or "Tradfri" in r.text:
+                      warnings.append("IKEA Gateway detected. Ensure latest firmware to avoid known zigbee crash exploits.")
+             except: pass
+
         return warnings
 
     def check_confidentiality(self, open_ports):

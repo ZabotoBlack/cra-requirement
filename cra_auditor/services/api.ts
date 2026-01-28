@@ -1,12 +1,12 @@
-import { ScanReport } from '../types';
+import { ScanReport, ScanOptions } from '../types';
 
-export const startScan = async (subnet: string): Promise<void> => {
+export const startScan = async (subnet: string, options: ScanOptions): Promise<void> => {
   const response = await fetch('api/scan', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ subnet }),
+    body: JSON.stringify({ subnet, options }),
   });
 
   if (!response.ok) {
