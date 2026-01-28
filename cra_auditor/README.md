@@ -1,6 +1,6 @@
 # CRA Compliance Auditor Add-on for Home Assistant
 
-<img src="https://raw.githubusercontent.com/ZabotoBlack/cra-requirement/main/cra_auditor/media/cra-front.png" width="1200" height="475" alt="Logo">
+<img src="media/cra-front.png" width="1200" height="475" alt="Logo">
 
 A comprehensive Cyber Resilience Act (CRA) compliance scanner for your local network. This Home Assistant Add-on audits devices on your network, checks for common vulnerabilities, and provides security insights.
 
