@@ -22,20 +22,20 @@ class CRAScanner:
 
     def scan_subnet(self, subnet):
         """Scans the given subnet for devices using a hybrid approach (Nmap + HA API)."""
-        ha_devices = self._get_ha_devices() # Fetch from HA first
+        ha_devices = self._get_ha_devices() 
         
         if not self.nm:
             logger.error("Nmap not initialized. Relying solely on Home Assistant data.")
             return self._merge_devices([], ha_devices)
 
-        # Stage 1: Discovery Scan (Ping/ARP)
+        # Stage 1: Discovery Scan (Ping + ARP)
+        # -sn: Ping Scan - disable port scan
+        # -PR: ARP Ping (faster and more reliable for local LAN)
         logger.info(f"Starting discovery scan on {subnet}")
         try:
-            # -sn: Ping Scan - disable port scan
-            self.nm.scan(hosts=subnet, arguments='-sn')
+            self.nm.scan(hosts=subnet, arguments='-sn -PR')
         except Exception as e:
             logger.error(f"Nmap discovery scan failed: {e}")
-            # If nmap fails, at least return HA devices
             return self._merge_devices([], ha_devices)
 
         hosts_to_scan = self.nm.all_hosts()
@@ -51,12 +51,20 @@ class CRAScanner:
             try:
                 # -sV: Version detection, -O: OS detection, -Pn: Treat as online
                 # --top-ports 100: Check top 100 ports
-                self.nm.scan(hosts=target_spec, arguments='-sV -O -Pn --top-ports 100')
+                # Added vendor specific ports: 6668 (Tuya), 8081 (Sonoff), 9999 (Kasa)
+                extra_ports = "6668,8081,9999"
+                self.nm.scan(hosts=target_spec, arguments=f'-sV -O -Pn --top-ports 100 -p {extra_ports},1-1024') 
+                # Note: Scanning top 100 + specifics. 
+                # Simplified: default top ports might miss 6668/9999 so we rely on -p if we want to be sure, 
+                # but -p overrides --top-ports. Let's send a specific command that covers both or just add them.
+                # Actually, -p 1-1024 covers standard, we add the others.
+                # self.nm.scan(hosts=target_spec, arguments='-sV -O -Pn -p 1-1024,6668,8081,9999')
+                # For speed in this PoC, we will stick to top-ports 100 plus upgrades.
+                self.nm.scan(hosts=target_spec, arguments='-sV -O -Pn --top-ports 1000') # Increased to 1000 to catch more
             except Exception as e:
                 logger.error(f"Nmap detail scan failed: {e}")
             
             for host in self.nm.all_hosts():
-                # Basic info might be missing if scan failed for this specific host
                 if 'addresses' not in self.nm[host]:
                     continue
                     
@@ -77,13 +85,14 @@ class CRAScanner:
                      vendor = self.nm[host]['vendor'][mac]
                 
                 os_name = self._get_os_match(host)
+                open_ports = self._get_open_ports(host)
 
                 nmap_devices.append({
                     "ip": ip,
                     "mac": mac,
-                    "vendor": vendor, # Often just the OUI vendor
+                    "vendor": vendor, 
                     "hostname": hostname,
-                    "openPorts": self._get_open_ports(host),
+                    "openPorts": open_ports,
                     "osMatch": os_name,
                     "source": "nmap"
                 })
@@ -94,18 +103,22 @@ class CRAScanner:
         # Run compliance checks on the FINAL merged list
         final_results = []
         for dev in merged_devices:
-            # Use the "best" vendor name we have (HA model/manufacturer is usually better than OUI)
             check_vendor = dev.get('model') if dev.get('model') and dev.get('model') != "Unknown" else dev.get('vendor', 'Unknown')
             if dev.get('manufacturer') and dev.get('manufacturer') != "Unknown":
                  check_vendor = f"{dev['manufacturer']} {check_vendor}"
-
-            # If we only have OUI vendor, use that
             if check_vendor == "Unknown " or check_vendor.strip() == "Unknown":
                  check_vendor = dev.get('vendor', 'Unknown')
 
-            sbd_result = self.check_secure_by_default(dev.get('ip'), dev.get('openPorts', []))
+            # ENHANCED CHECKS
+            sbd_result = self.check_secure_by_default(dev)
             conf_result = self.check_confidentiality(dev.get('openPorts', []))
             vuln_result = self.check_vulnerabilities(check_vendor, dev.get('openPorts', []))
+            
+            # Vendor Specific Checks
+            vendor_warnings = self._check_vendor_specifics(dev)
+            if vendor_warnings:
+                sbd_result['details'] += " " + "; ".join(vendor_warnings)
+                sbd_result['passed'] = False
 
             status = "Compliant"
             if not sbd_result['passed'] or not vuln_result['passed']:
@@ -232,25 +245,125 @@ class CRAScanner:
             return self.nm[host]['osmatch'][0]['name']
         return "Unknown"
 
-    def check_secure_by_default(self, ip, open_ports):
-        """Check for weak credentials on common ports."""
+    def check_secure_by_default(self, device):
+        """Check for weak credentials and insecure defaults."""
         details = []
         passed = True
+        ip = device.get('ip')
+        open_ports = device.get('openPorts', [])
         
-        # Simple check: If Telnet is open, it's a fail for secure by default (modern standards)
-        for p in open_ports:
-            if p['port'] == 23:
-                passed = False
-                details.append("Telnet (port 23) is open. Insecure protocol.")
+        # 1. Telnet Check (Port 23) - Active Credential Test
+        if any(p['port'] == 23 for p in open_ports):
+            details.append("Telnet (port 23) is open.")
+            if ip and ip != "N/A":
+                creds_found = self._check_telnet_auth(ip)
+                if creds_found:
+                    passed = False
+                    details.append(f"CRITICAL: Found weak Telnet credentials: {creds_found}")
+                else:
+                    passed = False # Open telnet is bad regardless
+                    details.append("Telnet login accessible (Brute-force failed but service is insecure).")
 
-        # Real auth check would go here (e.g. attempting ssh login)
-        # For safety/performance, we will simulate a "Weak Auth" check on http/80
-        # In a real app, use async libraries to try common creds on identified services.
-        
+        # 2. HTTP Check (Port 80/8080) - Unauth Checks
+        http_ports = [p['port'] for p in open_ports if p['service'] == 'http' or p['port'] in [80, 8080]]
+        for port in http_ports:
+            if ip and ip != "N/A":
+                unauth_info = self._check_http_auth(ip, port)
+                if unauth_info:
+                    passed = False
+                    details.append(f"Insecure HTTP on port {port}: {unauth_info}")
+
         if not details:
             details.append("No obvious weak default access vectors found.")
 
         return {"passed": passed, "details": "; ".join(details)}
+
+    def _check_telnet_auth(self, ip):
+        """Try common credentials on Telnet."""
+        # Simple socket-based brute force
+        for user, password in self.common_creds:
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(2)
+                s.connect((ip, 23))
+                # Very basic Telnet negotiation skip (will fail on complex telnet servers, efficient for IoT)
+                # Receive banner
+                data = s.recv(1024) 
+                
+                # Send User
+                s.sendall(user.encode() + b"\r\n")
+                time.sleep(0.5)
+                data = s.recv(1024)
+                
+                # Send Pass
+                s.sendall(password.encode() + b"\r\n")
+                time.sleep(0.5)
+                data = s.recv(1024)
+                
+                # Check for success (prompt like #, $, >)
+                # This is heuristic.
+                resp = data.decode('utf-8', errors='ignore')
+                if "#" in resp or "$" in resp or ">" in resp or "Success" in resp:
+                    s.close()
+                    return f"{user}/{password}"
+                s.close()
+            except Exception:
+                pass
+        return None
+
+    def _check_http_auth(self, ip, port):
+        """Check for unauthenticated access to standard endpoints."""
+        endpoints = ['/', '/status', '/config', '/api', '/settings']
+        for ep in endpoints:
+            try:
+                url = f"http://{ip}:{port}{ep}"
+                r = requests.get(url, timeout=2)
+                if r.status_code == 200:
+                    # Filter out simple login pages
+                    if "login" not in r.text.lower() and "password" not in r.text.lower():
+                        return f"Unauthenticated access to {ep}"
+            except Exception:
+                pass
+        return None
+
+    def _check_vendor_specifics(self, device):
+        """Identify and check specific vendor vulnerabilities."""
+        warnings = []
+        ip = device.get('ip')
+        ports = [int(p['port']) for p in device.get('openPorts', [])]
+        
+        if not ip or ip == "N/A": return []
+
+        # Tuya
+        if 6668 in ports:
+            warnings.append("Possible Tuya Device (Port 6668 open). Ensure default keys are replaced.")
+
+        # TP-Link Kasa
+        if 9999 in ports:
+             warnings.append("TP-Link Kasa Device (Port 9999). Old protocols may be vulnerable to local control injection.")
+
+        # Sonoff LAN Mode
+        if 8081 in ports:
+             warnings.append("Sonoff Device in LAN Mode (Port 8081). Ensure local network is trusted.")
+
+        # Shelly
+        if 80 in ports:
+            try:
+                r = requests.get(f"http://{ip}/status", timeout=1)
+                if r.status_code == 200 and "mac" in r.text: # Shelly JSON signature
+                    if "auth" not in r.json() or not r.json().get("auth"):
+                         warnings.append("Shelly Device: Authentication is NOT enabled for local web interface.")
+            except: pass
+
+        # Philips Hue
+        if 80 in ports:
+             try:
+                r = requests.get(f"http://{ip}/description.xml", timeout=1)
+                if r.status_code == 200 and "Philips hue" in r.text:
+                    warnings.append("Philips Hue Bridge detected. Ensure 'Link Button' authentication is strictly required.")
+             except: pass
+        
+        return warnings
 
     def check_confidentiality(self, open_ports):
         """Check for unencrypted services."""

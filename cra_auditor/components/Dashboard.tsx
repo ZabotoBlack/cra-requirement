@@ -20,15 +20,44 @@ const Dashboard: React.FC<DashboardProps> = ({ report }) => {
     { name: 'Non-Compliant', value: report.summary.nonCompliant },
   ].filter(d => d.value > 0);
 
-  // Vendor Vulnerability Distribution
+  // 1. Vendor Vulnerability Distribution (Improved)
   const vendorDataMap = new Map<string, number>();
   report.devices.forEach(d => {
     if (d.status !== ComplianceStatus.COMPLIANT) {
-      vendorDataMap.set(d.vendor, (vendorDataMap.get(d.vendor) || 0) + 1);
+      // Clean vendor name
+      let v = d.vendor.split('(')[0].trim();
+      if (v === 'Unknown' && d.osMatch !== 'Unknown') v = `Unknown (${d.osMatch})`;
+      vendorDataMap.set(v, (vendorDataMap.get(v) || 0) + 1);
     }
   });
-  
-  const barData = Array.from(vendorDataMap.entries()).map(([name, count]) => ({ name, count }));
+
+  // Sort by count desc, take top 7
+  const barData = Array.from(vendorDataMap.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 7);
+
+  // 2. Common Services (New)
+  const serviceMap = new Map<string, number>();
+  report.devices.forEach(d => {
+    d.checks.dataConfidentiality.openPorts.forEach(p => {
+      serviceMap.set(p.service, (serviceMap.get(p.service) || 0) + 1);
+    });
+  });
+  const serviceData = Array.from(serviceMap.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  // 3. OS Distribution (New)
+  const osMap = new Map<string, number>();
+  report.devices.forEach(d => {
+    const os = d.osMatch === 'Unknown' ? 'Unknown OS' : d.osMatch;
+    osMap.set(os, (osMap.get(os) || 0) + 1);
+  });
+  const osData = Array.from(osMap.entries())
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
 
   const Card = ({ title, value, sub, icon: Icon, color }: any) => (
     <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 flex items-start justify-between shadow-lg">
@@ -47,41 +76,41 @@ const Dashboard: React.FC<DashboardProps> = ({ report }) => {
     <div className="space-y-6">
       {/* Stats Row */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card 
-          title="Total Devices" 
-          value={report.summary.total} 
+        <Card
+          title="Total Devices"
+          value={report.summary.total}
           sub={`Scanned: ${report.targetRange}`}
           icon={ShieldQuestion}
           color="text-blue-400"
         />
-        <Card 
-          title="Compliant" 
-          value={report.summary.compliant} 
+        <Card
+          title="Compliant"
+          value={report.summary.compliant}
           sub="Passed Annex I Checks"
           icon={ShieldCheck}
           color="text-emerald-400"
         />
-        <Card 
-          title="Warnings" 
-          value={report.summary.warning} 
+        <Card
+          title="Warnings"
+          value={report.summary.warning}
           sub="Encryption Issues"
           icon={ShieldAlert}
           color="text-amber-400"
         />
-        <Card 
-          title="Non-Compliant" 
-          value={report.summary.nonCompliant} 
+        <Card
+          title="Non-Compliant"
+          value={report.summary.nonCompliant}
           sub="Critical Failures"
           icon={ShieldAlert}
           color="text-rose-400"
         />
       </div>
 
-      {/* Charts Row */}
+      {/* Row 1: Compliance & Vendor Risks */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Compliance Distribution */}
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">Compliance Distribution</h3>
+          <h3 className="text-lg font-semibold text-white mb-4">Compliance Status</h3>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -98,7 +127,7 @@ const Dashboard: React.FC<DashboardProps> = ({ report }) => {
                     <Cell key={`cell-${index}`} fill={COLORS[entry.name as ComplianceStatus]} />
                   ))}
                 </Pie>
-                <Tooltip 
+                <Tooltip
                   contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#fff' }}
                   itemStyle={{ color: '#fff' }}
                 />
@@ -115,21 +144,21 @@ const Dashboard: React.FC<DashboardProps> = ({ report }) => {
           </div>
         </div>
 
-        {/* Vendor Risk Analysis */}
+        {/* Vendor Risk Analysis (Improved) */}
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">Risks by Vendor</h3>
+          <h3 className="text-lg font-semibold text-white mb-4">Top Risks by Vendor</h3>
           {barData.length > 0 ? (
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barData} layout="vertical">
+                <BarChart data={barData} layout="vertical" margin={{ left: 40, right: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
                   <XAxis type="number" stroke="#94a3b8" />
-                  <YAxis dataKey="name" type="category" width={100} stroke="#94a3b8" style={{ fontSize: '12px' }} />
-                  <Tooltip 
-                    cursor={{fill: '#334155', opacity: 0.4}}
+                  <YAxis dataKey="name" type="category" width={110} stroke="#94a3b8" style={{ fontSize: '11px', fontWeight: 500 }} />
+                  <Tooltip
+                    cursor={{ fill: '#334155', opacity: 0.4 }}
                     contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#fff' }}
                   />
-                  <Bar dataKey="count" fill="#f43f5e" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="count" fill="#f43f5e" radius={[0, 4, 4, 0]} barSize={20} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -140,6 +169,71 @@ const Dashboard: React.FC<DashboardProps> = ({ report }) => {
           )}
         </div>
       </div>
+
+      {/* Row 2: Services & OS */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Common Services */}
+        <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-white mb-4">Top 5 Detected Services</h3>
+          {serviceData.length > 0 ? (
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={serviceData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                  <XAxis dataKey="name" stroke="#94a3b8" />
+                  <YAxis stroke="#94a3b8" allowDecimals={false} />
+                  <Tooltip
+                    cursor={{ fill: '#334155', opacity: 0.4 }}
+                    contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#fff' }}
+                  />
+                  <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={40} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="h-64 flex items-center justify-center text-slate-500">
+              No Services Detected
+            </div>
+          )}
+        </div>
+
+        {/* OS Distribution */}
+        <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-white mb-4">OS Distribution</h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={osData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={0}
+                  outerRadius={80}
+                  paddingAngle={2}
+                  dataKey="value"
+                >
+                  {osData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={['#3b82f6', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6'][index % 5]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#fff' }}
+                  itemStyle={{ color: '#fff' }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 mt-2">
+            {osData.slice(0, 5).map((entry, index) => (
+              <div key={entry.name} className="flex items-center gap-2 text-xs text-slate-300">
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: ['#3b82f6', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6'][index % 5] }} />
+                {entry.name}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
     </div>
   );
 };

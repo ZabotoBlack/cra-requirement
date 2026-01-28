@@ -40,6 +40,7 @@ export interface Device {
     };
   };
   lastScanned: string;
+  osMatch: string;
 }
 
 export interface ScanReport {
