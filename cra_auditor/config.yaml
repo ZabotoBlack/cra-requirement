@@ -1,6 +1,6 @@
 name: "CRA Compliance Auditor"
 description: "Scans local network devices for Cyber Resilience Act compliance."
-version: "1.0.5
+version: "1.0.5"
 slug: "cra_auditor"
 init: false
 arch:
