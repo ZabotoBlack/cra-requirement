@@ -3,7 +3,6 @@ description: "A comprehensive Cyber Resilience Act (CRA) compliance scanner for 
 version: "1.0.15"
 slug: "cra_auditor"
 init: false
-privileged: true
 arch:
   - aarch64
   - amd64
