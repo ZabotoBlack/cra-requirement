@@ -3,13 +3,14 @@ import React, { useEffect, useState, useRef } from 'react';
 import Dashboard from './components/Dashboard';
 import DeviceList from './components/DeviceList';
 import InstallationGuide from './components/InstallationGuide';
-import { startScan, getScanStatus, getReport } from './services/api';
+import { startScan, getScanStatus, getReport, getConfig } from './services/api';
 import { ScanReport, ViewState } from './types';
 
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>('dashboard');
   const [scanning, setScanning] = useState(false);
   const [report, setReport] = useState<ScanReport | null>(null);
+  const [config, setConfig] = useState<{ gemini_enabled: boolean; version: string } | null>(null);
   const [subnet, setSubnet] = useState('');
   const pollInterval = useRef<NodeJS.Timeout | null>(null);
 
@@ -26,6 +27,7 @@ const App: React.FC = () => {
 
   // Initial load and polling setup
   useEffect(() => {
+    getConfig().then(setConfig);
     fetchData();
     pollInterval.current = setInterval(fetchData, 3000); // Poll every 3 seconds
     return () => {
@@ -148,7 +150,7 @@ const App: React.FC = () => {
             </div>
           ) : (
             <>
-              {view === 'dashboard' && report && <Dashboard report={report} />}
+              {view === 'dashboard' && report && <Dashboard report={report} geminiEnabled={config?.gemini_enabled} />}
               {view === 'devices' && report && <DeviceList devices={report.devices} />}
               {view === 'installation' && <InstallationGuide />}
               {!report && view !== 'installation' && !scanning && (

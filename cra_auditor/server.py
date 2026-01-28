@@ -58,6 +58,18 @@ def start_scan():
 def get_status():
     return jsonify({"scanning": is_scanning})
 
+@app.route('/api/config', methods=['GET'])
+def get_config():
+    """
+    Returns frontend configuration flags.
+    NEVER return the actual API key here.
+    """
+    has_gemini = bool(os.environ.get('GEMINI_API_KEY'))
+    return jsonify({
+        "gemini_enabled": has_gemini,
+        "version": "1.0.9"
+    })
+
 @app.route('/api/report', methods=['GET'])
 def get_report():
     if latest_report:

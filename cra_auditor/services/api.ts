@@ -37,3 +37,13 @@ export const getReport = async (): Promise<ScanReport | null> => {
     return null;
   }
 };
+
+export const getConfig = async (): Promise<{ gemini_enabled: boolean; version: string }> => {
+  try {
+    const response = await fetch('api/config');
+    if (!response.ok) return { gemini_enabled: false, version: 'unknown' };
+    return await response.json();
+  } catch (e) {
+    return { gemini_enabled: false, version: 'unknown' };
+  }
+};

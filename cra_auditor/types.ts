@@ -31,7 +31,6 @@ export interface Device {
     };
     dataConfidentiality: {
       passed: boolean;
-      openPorts: PortScan[];
       details: string;
     };
     vulnerabilities: {
@@ -41,6 +40,7 @@ export interface Device {
   };
   lastScanned: string;
   osMatch: string;
+  openPorts: PortScan[];
 }
 
 export interface ScanReport {

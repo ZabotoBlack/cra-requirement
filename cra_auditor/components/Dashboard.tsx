@@ -1,10 +1,11 @@
 import React from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { ScanReport, ComplianceStatus } from '../types';
-import { ShieldAlert, ShieldCheck, ShieldQuestion } from 'lucide-react';
+import { ShieldAlert, ShieldCheck, ShieldQuestion, Sparkles } from 'lucide-react';
 
 interface DashboardProps {
   report: ScanReport;
+  geminiEnabled?: boolean;
 }
 
 const COLORS = {
@@ -13,7 +14,7 @@ const COLORS = {
   [ComplianceStatus.NON_COMPLIANT]: '#f43f5e' // rose-500
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ report }) => {
+const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled }) => {
   const pieData = [
     { name: 'Compliant', value: report.summary.compliant },
     { name: 'Warning', value: report.summary.warning },
@@ -40,9 +41,11 @@ const Dashboard: React.FC<DashboardProps> = ({ report }) => {
   // 2. Common Services (New)
   const serviceMap = new Map<string, number>();
   report.devices.forEach(d => {
-    d.checks.dataConfidentiality.openPorts.forEach(p => {
-      serviceMap.set(p.service, (serviceMap.get(p.service) || 0) + 1);
-    });
+    if (d.openPorts) {
+      d.openPorts.forEach(p => {
+        serviceMap.set(p.service, (serviceMap.get(p.service) || 0) + 1);
+      });
+    }
   });
   const serviceData = Array.from(serviceMap.entries())
     .map(([name, count]) => ({ name, count }))
@@ -97,13 +100,20 @@ const Dashboard: React.FC<DashboardProps> = ({ report }) => {
           icon={ShieldAlert}
           color="text-amber-400"
         />
-        <Card
-          title="Non-Compliant"
-          value={report.summary.nonCompliant}
-          sub="Critical Failures"
-          icon={ShieldAlert}
-          color="text-rose-400"
-        />
+        <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 flex items-start justify-between shadow-lg">
+          <div>
+            <p className="text-slate-400 text-sm font-medium mb-1">AI Insights</p>
+            <h3 className="text-xl font-bold text-white mt-1">
+              {geminiEnabled ? 'Active' : 'Disabled'}
+            </h3>
+            <p className="text-xs text-slate-500 mt-2">
+              {geminiEnabled ? 'Gemini Pro Connected' : 'Add Key in Config'}
+            </p>
+          </div>
+          <div className={`p-3 rounded-full bg-slate-700/50 ${geminiEnabled ? 'text-purple-400' : 'text-slate-500'}`}>
+            <Sparkles size={24} />
+          </div>
+        </div>
       </div>
 
       {/* Row 1: Compliance & Vendor Risks */}

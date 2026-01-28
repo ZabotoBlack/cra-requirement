@@ -1,20 +1,25 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# CRA Compliance Auditor Add-on for Home Assistant
 
-# Run and deploy your AI Studio app
+![Logo](logo.png)
 
-This contains everything you need to run your app locally.
+A comprehensive Cyber Resilience Act (CRA) compliance scanner for your local network. This Home Assistant Add-on audits devices on your network, checks for common vulnerabilities, and provides security insights.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1GBtH5KFlFriXP2g35gM5AEG7fcrvhuI2
+## Features
+- **Network Discovery**: Automatically finds devices on your specified subnet.
+- **Vulnerability Scanning**: Checks for open ports and known CVEs.
+- **Compliance Reporting**: Categorizes devices based on EU Cyber Resilience Act standards.
+- **AI Integration**: Optional integration with Gemini AI for enhanced security advice.
 
-## Run Locally
+## Installation
+1. Add this repository to your Home Assistant Add-on Store.
+2. Install the **CRA Compliance Auditor**.
+3. Configure the `target_subnet` in the Configuration tab.
+4. (Optional) Add your `gemini_api_key` for AI features.
+5. Start the Add-on and open the Web UI.
 
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Development
+To run locally for development:
+```bash
+npm install
+npm run dev
+```
