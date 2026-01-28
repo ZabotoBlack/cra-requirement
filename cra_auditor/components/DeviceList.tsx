@@ -162,11 +162,28 @@ const DeviceList: React.FC<DeviceListProps> = ({ devices }) => {
     device.vendor.toLowerCase().includes(filterText.toLowerCase())
   );
 
+  // Helper helper to sort IPs numerically
+  const compareIPs = (ipA: string, ipB: string) => {
+    const numA = ipA.split('.').map(Number);
+    const numB = ipB.split('.').map(Number);
+    for (let i = 0; i < 4; i++) {
+      if (numA[i] !== numB[i]) return numA[i] - numB[i];
+    }
+    return 0;
+  };
+
   const sortedDevices = React.useMemo(() => {
     if (!sortConfig) return filteredDevices;
     return [...filteredDevices].sort((a, b) => {
-      // Handle nested checks sorting differently if needed, but for now simple properties
-      // @ts-ignore - simplistic sort for this demo
+      // Special handling for IP sorting
+      if (sortConfig.key === 'ip') {
+        return sortConfig.direction === 'asc'
+          ? compareIPs(a.ip, b.ip)
+          : compareIPs(b.ip, a.ip);
+      }
+
+      // Default String sorting
+      // @ts-ignore
       if (a[sortConfig.key] < b[sortConfig.key]) {
         return sortConfig.direction === 'asc' ? -1 : 1;
       }
@@ -206,8 +223,8 @@ const DeviceList: React.FC<DeviceListProps> = ({ devices }) => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-900/50 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700">
-                <th className="p-4 font-semibold cursor-pointer hover:text-white transition-colors select-none" onClick={() => handleSort('hostname')}>
-                  Device <SortIcon column="hostname" />
+                <th className="p-4 font-semibold cursor-pointer hover:text-white transition-colors select-none" onClick={() => handleSort('ip')}>
+                  Device <SortIcon column="ip" />
                 </th>
                 <th className="p-4 font-semibold cursor-pointer hover:text-white transition-colors select-none" onClick={() => handleSort('vendor')}>
                   Vendor <SortIcon column="vendor" />

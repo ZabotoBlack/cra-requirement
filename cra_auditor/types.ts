@@ -20,7 +20,9 @@ export interface Device {
   mac: string;
   ip: string;
   vendor: string;
+  model?: string;
   hostname: string;
+  source?: string;
   status: ComplianceStatus;
   checks: {
     secureByDefault: {
