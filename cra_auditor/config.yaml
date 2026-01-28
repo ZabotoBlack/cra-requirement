@@ -1,6 +1,6 @@
 name: "CRA Compliance Auditor"
 description: "A comprehensive Cyber Resilience Act (CRA) compliance scanner for your local network. Audits devices, checks for common vulnerabilities, and provides AI-powered insights."
-version: "1.0.14"
+version: "1.0.15"
 slug: "cra_auditor"
 init: false
 privileged: true
@@ -14,7 +14,6 @@ boot: auto
 ingress: true
 ingress_port: 8099
 panel_icon: mdi:security
-webui: "http://[HOST]:[PORT:8099]"
 
 map:
   - share:rw
