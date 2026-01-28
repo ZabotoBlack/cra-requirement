@@ -55,4 +55,16 @@ export interface ScanReport {
   };
 }
 
-export type ViewState = 'dashboard' | 'devices' | 'report' | 'installation';
+export interface ScanHistoryItem {
+  id: number;
+  timestamp: string;
+  target_range: string;
+  summary: {
+    total: number;
+    compliant: number;
+    warning: number;
+    nonCompliant: number;
+  };
+}
+
+export type ViewState = 'dashboard' | 'devices' | 'history';

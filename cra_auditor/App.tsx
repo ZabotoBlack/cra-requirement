@@ -1,9 +1,9 @@
-import { Activity, FileCode, LayoutDashboard, List, Play, RotateCw, ShieldCheck } from 'lucide-react';
+import { Activity, LayoutDashboard, List, Play, RotateCw, ShieldCheck, History } from 'lucide-react';
 import React, { useEffect, useState, useRef } from 'react';
 import Dashboard from './components/Dashboard';
 import DeviceList from './components/DeviceList';
-import InstallationGuide from './components/InstallationGuide';
-import { startScan, getScanStatus, getReport, getConfig } from './services/api';
+import HistoryView from './components/HistoryView';
+import { startScan, getScanStatus, getReport, getConfig, getHistoryDetail } from './services/api';
 import { ScanReport, ViewState } from './types';
 
 const App: React.FC = () => {
@@ -21,8 +21,11 @@ const App: React.FC = () => {
   const fetchData = async () => {
     const scanStatus = await getScanStatus();
     setScanning(scanStatus);
-    const data = await getReport();
-    if (data) setReport(data);
+    // Only auto-refresh report if we are looking at the current dashboard and not a historical one
+    if (view === 'dashboard' && !scanning) {
+      const data = await getReport();
+      if (data) setReport(data);
+    }
   };
 
   // Initial load and polling setup
@@ -45,6 +48,16 @@ const App: React.FC = () => {
       console.error(e);
       setScanning(false);
       alert("Failed to start scan. Check console.");
+    }
+  };
+
+  const handleViewReport = async (id: number) => {
+    const historicalReport = await getHistoryDetail(id);
+    if (historicalReport) {
+      setReport(historicalReport);
+      setView('dashboard');
+    } else {
+      alert("Failed to load historical report.");
     }
   };
 
@@ -76,7 +89,7 @@ const App: React.FC = () => {
         <nav className="flex-1 p-4 space-y-2">
           <NavItem id="dashboard" label="Overview" icon={LayoutDashboard} />
           <NavItem id="devices" label="Device Audit" icon={List} />
-          <NavItem id="installation" label="Backend Setup" icon={FileCode} />
+          <NavItem id="history" label="Scan History" icon={History} />
         </nav>
 
         <div className="p-4 border-t border-slate-800">
@@ -118,9 +131,9 @@ const App: React.FC = () => {
         <header className="h-16 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between px-8 sticky top-0 backdrop-blur-sm z-10">
           <div className="flex items-center gap-4">
             <h2 className="text-xl font-semibold text-white capitalize">
-              {view === 'installation' ? 'Backend Installation Guide' : view}
+              {view === 'history' ? 'Previous Scans' : view}
             </h2>
-            {report && view !== 'installation' && (
+            {report && view !== 'history' && (
               <span className="px-3 py-1 rounded-full bg-slate-800 text-xs text-slate-400 border border-slate-700 flex items-center gap-2">
                 <Activity size={12} className="text-emerald-500" />
                 Last Scan: {new Date(report.timestamp).toLocaleTimeString()}
@@ -137,7 +150,7 @@ const App: React.FC = () => {
 
         {/* View Container */}
         <div className="p-8">
-          {scanning && view !== 'installation' ? (
+          {scanning ? (
             <div className="h-[60vh] flex flex-col items-center justify-center space-y-4">
               <div className="relative">
                 <div className="w-16 h-16 border-4 border-slate-700 border-t-emerald-500 rounded-full animate-spin"></div>
@@ -152,8 +165,8 @@ const App: React.FC = () => {
             <>
               {view === 'dashboard' && report && <Dashboard report={report} geminiEnabled={config?.gemini_enabled} />}
               {view === 'devices' && report && <DeviceList devices={report.devices} />}
-              {view === 'installation' && <InstallationGuide />}
-              {!report && view !== 'installation' && !scanning && (
+              {view === 'history' && <HistoryView onViewReport={handleViewReport} />}
+              {!report && view !== 'history' && !scanning && (
                 <div className="text-center py-20">
                   <div className="inline-block p-4 rounded-full bg-slate-800 mb-4 text-slate-500">
                     <ShieldCheck size={48} />

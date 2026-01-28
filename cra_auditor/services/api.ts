@@ -47,3 +47,33 @@ export const getConfig = async (): Promise<{ gemini_enabled: boolean; version: s
     return { gemini_enabled: false, version: 'unknown' };
   }
 };
+
+export const getHistory = async (search: string = '', sort_by: string = 'timestamp', order: string = 'desc'): Promise<any[]> => {
+  try {
+    const params = new URLSearchParams({ search, sort_by, order });
+    const response = await fetch(`api/history?${params}`);
+    if (!response.ok) return [];
+    return await response.json();
+  } catch (e) {
+    return [];
+  }
+};
+
+export const getHistoryDetail = async (id: number): Promise<ScanReport | null> => {
+  try {
+    const response = await fetch(`api/history/${id}`);
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (e) {
+    return null;
+  }
+};
+
+export const deleteHistory = async (id: number): Promise<boolean> => {
+  try {
+    const response = await fetch(`api/history/${id}`, { method: 'DELETE' });
+    return response.ok;
+  } catch (e) {
+    return false;
+  }
+};

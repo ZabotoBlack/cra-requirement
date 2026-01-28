@@ -2,6 +2,8 @@ from flask import Flask, jsonify, request, send_from_directory
 import os
 import threading
 import time
+import sqlite3
+import json
 from datetime import datetime
 from scan_logic import CRAScanner
 
@@ -20,9 +22,28 @@ if not os.path.exists(FRONTEND_DIR):
         FRONTEND_DIR = None
 
 # Global State
-latest_report = None
 is_scanning = False
 scanner = CRAScanner()
+DB_FILE = "scans.db"
+
+def init_db():
+    """Initialize the SQLite database."""
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS scan_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            target_range TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            full_report TEXT NOT NULL
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+# Initialize DB on startup
+init_db()
 
 @app.route('/')
 def index():
@@ -71,13 +92,101 @@ def get_config():
     })
 
 @app.route('/api/report', methods=['GET'])
-def get_report():
-    if latest_report:
-        return jsonify(latest_report)
-    return jsonify(None)
+def get_latest_report():
+    """Get the most recent report from the database."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute('SELECT full_report FROM scan_history ORDER BY id DESC LIMIT 1')
+        row = c.fetchone()
+        conn.close()
+        if row:
+            return jsonify(json.loads(row[0]))
+        return jsonify(None)
+    except Exception as e:
+        print(f"Error fetching latest report: {e}")
+        return jsonify(None), 500
+
+@app.route('/api/history', methods=['GET'])
+def get_history():
+    """Get list of past scans with search and sort."""
+    search_query = request.args.get('search', '').strip()
+    sort_by = request.args.get('sort_by', 'timestamp') # timestamp, target
+    order = request.args.get('order', 'desc') # asc, desc
+
+    query = 'SELECT id, timestamp, target_range, summary FROM scan_history'
+    params = []
+    
+    if search_query:
+        query += ' WHERE target_range LIKE ?'
+        params.append(f'%{search_query}%')
+    
+    if sort_by == 'target':
+        query += ' ORDER BY target_range'
+    else:
+        query += ' ORDER BY timestamp'
+        
+    if order == 'asc':
+        query += ' ASC'
+    else:
+        query += ' DESC'
+
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute(query, params)
+        rows = c.fetchall()
+        conn.close()
+        
+        history = []
+        for row in rows:
+            history.append({
+                "id": row['id'],
+                "timestamp": row['timestamp'],
+                "target_range": row['target_range'],
+                "summary": json.loads(row['summary'])
+            })
+        return jsonify(history)
+    except Exception as e:
+        print(f"Error fetching history: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/history/<int:scan_id>', methods=['GET'])
+def get_history_detail(scan_id):
+    """Get full report for a specific scan."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute('SELECT full_report FROM scan_history WHERE id = ?', (scan_id,))
+        row = c.fetchone()
+        conn.close()
+        
+        if row:
+            return jsonify(json.loads(row[0]))
+        return jsonify({"error": "Scan not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/history/<int:scan_id>', methods=['DELETE'])
+def delete_history_item(scan_id):
+    """Delete a scan from history."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute('DELETE FROM scan_history WHERE id = ?', (scan_id,))
+        conn.commit()
+        deleted = c.rowcount > 0
+        conn.close()
+        
+        if deleted:
+            return jsonify({"status": "success"})
+        return jsonify({"error": "Scan not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 def run_scan_background(subnet):
-    global is_scanning, latest_report
+    global is_scanning
     is_scanning = True
     try:
         devices = scanner.scan_subnet(subnet)
@@ -88,18 +197,34 @@ def run_scan_background(subnet):
         warning = sum(1 for d in devices if d['status'] == 'Warning')
         non_compliant = sum(1 for d in devices if d['status'] == 'Non-Compliant')
 
-        latest_report = {
+        summary = {
+            "total": total,
+            "compliant": compliant,
+            "warning": warning,
+            "nonCompliant": non_compliant
+        }
+
+        report = {
             "timestamp": datetime.now().isoformat(),
             "targetRange": subnet,
             "devices": devices,
-            "summary": {
-                "total": total,
-                "compliant": compliant,
-                "warning": warning,
-                "nonCompliant": non_compliant
-            }
+            "summary": summary
         }
-        print(f"Scan finished. Report generated with {total} devices.")
+        
+        # Save to DB
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            c = conn.cursor()
+            c.execute('''
+                INSERT INTO scan_history (timestamp, target_range, summary, full_report)
+                VALUES (?, ?, ?, ?)
+            ''', (report['timestamp'], subnet, json.dumps(summary), json.dumps(report)))
+            conn.commit()
+            conn.close()
+            print(f"Scan finished and saved to DB. ID: {c.lastrowid}")
+        except Exception as db_err:
+            print(f"Failed to save scan to DB: {db_err}")
+
     except Exception as e:
         print(f"Scan failed: {e}")
     finally:
