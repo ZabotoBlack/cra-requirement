@@ -1,4 +1,4 @@
-import { activity, FileCode, LayoutDashboard, List, Play, RotateCw, ShieldCheck } from 'lucide-react';
+import { Activity, FileCode, LayoutDashboard, List, Play, RotateCw, ShieldCheck } from 'lucide-react';
 import React, { useEffect, useState, useRef } from 'react';
 import Dashboard from './components/Dashboard';
 import DeviceList from './components/DeviceList';
@@ -46,8 +46,8 @@ const App: React.FC = () => {
     <button
       onClick={() => setView(id)}
       className={`flex items-center gap-3 px-4 py-3 w-full rounded-lg transition-all ${view === id
-          ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20'
-          : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20'
+        : 'text-slate-400 hover:bg-slate-800 hover:text-white'
         }`}
     >
       <Icon size={20} />
@@ -93,8 +93,8 @@ const App: React.FC = () => {
               onClick={handleScan}
               disabled={scanning}
               className={`w-full flex items-center justify-center gap-2 py-2 rounded font-medium text-sm transition-all ${scanning
-                  ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
-                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/20'
+                ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/20'
                 }`}
             >
               {scanning ? <RotateCw className="animate-spin" size={16} /> : <Play size={16} />}
