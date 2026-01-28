@@ -1,6 +1,6 @@
 name: "CRA Compliance Auditor"
 description: "A comprehensive Cyber Resilience Act (CRA) compliance scanner for your local network. Audits devices, checks for common vulnerabilities, and provides AI-powered insights."
-version: "1.0.15"
+version: "1.0.16"
 slug: "cra_auditor"
 init: false
 arch:
@@ -18,6 +18,8 @@ panel_icon: mdi:security
 #   8099/tcp: 8099
 # Optional: Keep webui if you want a "Open Web UI" button, but it's not strictly required for Ingress
 # webui: "http://[HOST]:[PORT:8099]"
+
+privileged: true
 
 map:
   - share:rw
