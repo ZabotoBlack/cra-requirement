@@ -1,7 +1,7 @@
 import { ScanReport } from '../types';
 
 export const startScan = async (subnet: string): Promise<void> => {
-  const response = await fetch('/api/scan', {
+  const response = await fetch('api/scan', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -19,7 +19,7 @@ export const startScan = async (subnet: string): Promise<void> => {
 
 export const getScanStatus = async (): Promise<boolean> => {
   try {
-    const response = await fetch('/api/status');
+    const response = await fetch('api/status');
     if (!response.ok) return false;
     const data = await response.json();
     return data.scanning;
@@ -30,7 +30,7 @@ export const getScanStatus = async (): Promise<boolean> => {
 
 export const getReport = async (): Promise<ScanReport | null> => {
   try {
-    const response = await fetch('/api/report');
+    const response = await fetch('api/report');
     if (!response.ok) return null;
     return await response.json();
   } catch (e) {
