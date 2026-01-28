@@ -18,7 +18,8 @@ panel_icon: mdi:security
 #   8099/tcp: 8099
 # Optional: Keep webui if you want a "Open Web UI" button, but it's not strictly required for Ingress
 # webui: "http://[HOST]:[PORT:8099]"
-
+homeassistant_api: true
+hassio_api: true
 # privileged: true
 
 map:
