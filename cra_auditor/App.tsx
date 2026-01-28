@@ -166,8 +166,8 @@ const App: React.FC = () => {
                       key={type}
                       onClick={() => setScanOptions({ ...scanOptions, scan_type: type })}
                       className={`px-3 py-2 rounded border text-sm font-medium capitalize transition-all ${scanOptions.scan_type === type
-                          ? 'bg-indigo-600 border-indigo-500 text-white'
-                          : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'
+                        ? 'bg-indigo-600 border-indigo-500 text-white'
+                        : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'
                         }`}
                     >
                       {type}
@@ -195,6 +195,16 @@ const App: React.FC = () => {
                     {scanOptions.vendors === 'all' ? <CheckSquare size={12} /> : <Square size={12} />}
                     All Vendors
                   </button>
+                  <button
+                    onClick={() => setScanOptions({ ...scanOptions, vendors: [] })}
+                    className={`px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-2 transition-all ${Array.isArray(scanOptions.vendors) && scanOptions.vendors.length === 0
+                        ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400'
+                        : 'bg-slate-800 border-slate-700 text-slate-400'
+                      }`}
+                  >
+                    {Array.isArray(scanOptions.vendors) && scanOptions.vendors.length === 0 ? <CheckSquare size={12} /> : <Square size={12} />}
+                    No Vendors
+                  </button>
                   {['tuya', 'shelly', 'hue', 'kasa', 'sonoff', 'ikea'].map(vendor => {
                     const isSelected = scanOptions.vendors === 'all' || (Array.isArray(scanOptions.vendors) && scanOptions.vendors.includes(vendor));
                     return (
@@ -218,8 +228,8 @@ const App: React.FC = () => {
                           setScanOptions({ ...scanOptions, vendors: current });
                         }}
                         className={`px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-2 transition-all capitalize ${isSelected
-                            ? 'bg-indigo-500/10 border-indigo-500 text-indigo-400'
-                            : 'bg-slate-800 border-slate-700 text-slate-400'
+                          ? 'bg-indigo-500/10 border-indigo-500 text-indigo-400'
+                          : 'bg-slate-800 border-slate-700 text-slate-400'
                           }`}
                       >
                         {isSelected ? <CheckSquare size={12} /> : <Square size={12} />}

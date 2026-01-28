@@ -73,3 +73,28 @@ try:
         print("FAIL: Did not find detailed scan call.")
 except Exception as e:
     print(f"Error: {e}")
+
+print("\n--- Test 4: No Vendors (Empty List) ---")
+options = {"scan_type": "standard", "vendors": []}
+scanner.nm.scan.reset_mock()
+scanner.nm.all_hosts.return_value = ['192.168.1.100']
+try:
+    scanner.scan_subnet("192.168.1.0/24", options)
+    # detailed scan should run
+    # -p should NOT contain 6668, 8081, 9999
+    calls = scanner.nm.scan.call_args_list
+    found = False
+    for call in calls:
+        kwargs = call.kwargs
+        if 'hosts' in kwargs and kwargs['hosts'] == '192.168.1.100':
+            args = kwargs['arguments']
+            print(f"Detailed Scan Args: {args}")
+            if "6668" not in args and "8081" not in args and "9999" not in args:
+                print("PASS: Correctly skipped all vendor ports.")
+                found = True
+            else:
+                print(f"FAIL: Vendor ports found in args: {args}")
+    if not found:
+        print("FAIL: Did not find detailed scan call.")
+except Exception as e:
+    print(f"Error: {e}")
