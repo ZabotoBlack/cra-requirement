@@ -71,24 +71,42 @@ class CRAScanner:
             if 'ipv4' in self.nm[host]['addresses']:
                 ip = self.nm[host]['addresses']['ipv4']
             
+            # Hostname Fallback logic
+            hostname = self.nm[host].hostname()
+            if not hostname:
+                try:
+                    hostname = socket.gethostbyaddr(ip)[0]
+                except Exception:
+                    # socket lookup failed
+                    pass
+
             # Vendor might be in 'vendor' dict keyed by MAC
             vendor = "Unknown"
             if 'vendor' in self.nm[host] and mac in self.nm[host]['vendor']:
                  vendor = self.nm[host]['vendor'][mac]
+            elif mac != "Unknown":
+                # If we have a MAC but no vendor lookup, it might be a virtual MAC or just missing OUI
+                # We can't do much without an OUI database, but we can try to guess from OS match
+                pass
+            
+            # Enhancing unknown vendor with OS info if possible
+            os_name = self._get_os_match(host)
+            if vendor == "Unknown" and os_name != "Unknown":
+                vendor = f"Unknown (Running {os_name})"
 
             device_info = {
                 "ip": ip,
                 "mac": mac,
                 "vendor": vendor,
-                "hostname": self.nm[host].hostname(),
-                "open_ports": self._get_open_ports(host),
-                "os_match": self._get_os_match(host)
+                "hostname": hostname,
+                "openPorts": self._get_open_ports(host),
+                "osMatch": os_name
             }
             
             # PER DEVICE CHECKS
-            sbd_result = self.check_secure_by_default(ip, device_info['open_ports'])
-            conf_result = self.check_confidentiality(device_info['open_ports'])
-            vuln_result = self.check_vulnerabilities(vendor, device_info['open_ports'])
+            sbd_result = self.check_secure_by_default(ip, device_info['openPorts'])
+            conf_result = self.check_confidentiality(device_info['openPorts'])
+            vuln_result = self.check_vulnerabilities(vendor, device_info['openPorts'])
 
             status = "Compliant"
             if not sbd_result['passed'] or not vuln_result['passed']:
@@ -99,11 +117,11 @@ class CRAScanner:
             device_info.update({
                 "status": status,
                 "checks": {
-                    "secure_by_default": sbd_result,
-                    "confidentiality": conf_result,
+                    "secureByDefault": sbd_result,
+                    "dataConfidentiality": conf_result,
                     "vulnerabilities": vuln_result
                 },
-                "last_scanned": "Just now" # You might want datetime here
+                "lastScanned": "Just now" # You might want datetime here
             })
             devices.append(device_info)
             
