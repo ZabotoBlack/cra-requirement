@@ -22,6 +22,7 @@ if not os.path.exists(FRONTEND_DIR):
         FRONTEND_DIR = None
 
 # Global State
+scan_lock = threading.Lock()
 is_scanning = False
 scanner = CRAScanner()
 DB_FILE = "scans.db"
@@ -63,17 +64,25 @@ def serve_static(path):
 @app.route('/api/scan', methods=['POST'])
 def start_scan():
     global is_scanning
-    if is_scanning:
-        return jsonify({"status": "error", "message": "Scan already in progress"}), 409
+    with scan_lock:
+        if is_scanning:
+            return jsonify({"status": "error", "message": "Scan already in progress"}), 409
+        is_scanning = True
     
     
     data = request.json
+    if not data:
+        return jsonify({"status": "error", "message": "Invalid JSON body"}), 400
     subnet = data.get('subnet')
     options = data.get('options', {}) # Extract options
     
     if not subnet:
         return jsonify({"status": "error", "message": "Subnet required"}), 400
-
+    
+    # Basic CIDR/IP validation
+    import re
+    if not re.match(r'^[\d./\-]+$', subnet):
+        return jsonify({"status": "error", "message": "Invalid subnet format"}), 400
     thread = threading.Thread(target=run_scan_background, args=(subnet, options))
     thread.start()
     return jsonify({"status": "success", "message": "Scan started"})
@@ -98,18 +107,16 @@ def get_config():
 def get_latest_report():
     """Get the most recent report from the database."""
     try:
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute('SELECT full_report FROM scan_history ORDER BY id DESC LIMIT 1')
-        row = c.fetchone()
-        conn.close()
+        with sqlite3.connect(DB_FILE) as conn:
+            c = conn.cursor()
+            c.execute('SELECT full_report FROM scan_history ORDER BY id DESC LIMIT 1')
+            row = c.fetchone()
         if row:
             return jsonify(json.loads(row[0]))
         return jsonify(None)
-    except Exception as e:
+    except sqlite3.Error as e:
         print(f"Error fetching latest report: {e}")
-        return jsonify(None), 500
-
+        return jsonify({"error": "Database error"}), 500
 @app.route('/api/history', methods=['GET'])
 def get_history():
     """Get list of past scans with search and sort."""
@@ -190,7 +197,7 @@ def delete_history_item(scan_id):
 
 def run_scan_background(subnet, options=None):
     global is_scanning
-    is_scanning = True
+    # is_scanning = True - set in start_scan now under lock
     try:
         devices = scanner.scan_subnet(subnet, options)
         
@@ -223,15 +230,17 @@ def run_scan_background(subnet, options=None):
                 VALUES (?, ?, ?, ?)
             ''', (report['timestamp'], subnet, json.dumps(summary), json.dumps(report)))
             conn.commit()
+            last_id = c.lastrowid
             conn.close()
-            print(f"Scan finished and saved to DB. ID: {c.lastrowid}")
+            print(f"Scan finished and saved to DB. ID: {last_id}")
         except Exception as db_err:
             print(f"Failed to save scan to DB: {db_err}")
 
     except Exception as e:
         print(f"Scan failed: {e}")
     finally:
-        is_scanning = False
+        with scan_lock:
+            is_scanning = False
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8099)

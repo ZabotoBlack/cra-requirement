@@ -66,9 +66,8 @@ try:
         if 'hosts' in kwargs and kwargs['hosts'] == '192.168.1.100':
             args = kwargs['arguments']
             print(f"Detailed Scan Args: {args}")
-            if "6668" in args and "8081" not in args:
-                print("PASS: Correctly filtered output for Tuya only.")
-                found = True
+            if "6668" in args and "8081" not in args and "9999" not in args:
+                print("PASS: Correctly filtered output for Tuya only.")                found = True
     if not found:
         print("FAIL: Did not find detailed scan call.")
 except Exception as e:
