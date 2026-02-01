@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from scan_logic import CRAScanner
 import logging
 from unittest.mock import MagicMock
@@ -67,7 +71,8 @@ try:
             args = kwargs['arguments']
             print(f"Detailed Scan Args: {args}")
             if "6668" in args and "8081" not in args and "9999" not in args:
-                print("PASS: Correctly filtered output for Tuya only.")                found = True
+                print("PASS: Correctly filtered output for Tuya only.")
+                found = True
     if not found:
         print("FAIL: Did not find detailed scan call.")
 except Exception as e:
@@ -86,13 +91,14 @@ try:
     for call in calls:
         kwargs = call.kwargs
         if 'hosts' in kwargs and kwargs['hosts'] == '192.168.1.100':
+            found = True
             args = kwargs['arguments']
             print(f"Detailed Scan Args: {args}")
             if "6668" not in args and "8081" not in args and "9999" not in args:
                 print("PASS: Correctly skipped all vendor ports.")
-                found = True
             else:
                 print(f"FAIL: Vendor ports found in args: {args}")
+            break
     if not found:
         print("FAIL: Did not find detailed scan call.")
 except Exception as e:
