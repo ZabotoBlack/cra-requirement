@@ -20,6 +20,8 @@ class CRAScanner:
             
         if hasattr(os, 'geteuid') and os.geteuid() != 0:
             logger.warning("Agent is NOT running as root. ARP scanning and MAC address detection will likely fail. Ensure 'privileged: true' is set in config.yaml.")
+        else:
+            logger.info("Agent is running as root/privileged. ARP scanning and MAC address detection enabled.")
             
         self.common_creds = [('admin', 'admin'), ('root', 'root'), ('user', '1234'), ('admin', '1234')]
 
