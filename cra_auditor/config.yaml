@@ -20,9 +20,7 @@ panel_icon: mdi:security
 # webui: "http://[HOST]:[PORT:8099]"
 homeassistant_api: true
 hassio_api: true
-privileged:
-  - NET_ADMIN
-  - NET_RAW
+full_access: true # Disables protection mode, required for raw sockets/ARP
 host_network: true # Required for ARP/raw sockets; grants elevated host access
 
 map:
