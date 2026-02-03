@@ -9,7 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from scan_logic import CRAScanner
 
 class TestDiscoveryScan(unittest.TestCase):
-    @patch('nmap.PortScanner')
+    @patch('scan_logic.nmap.PortScanner')
     def test_discovery_scan_returns_devices(self, MockPortScanner):
         # Setup mock
         mock_nm = MockPortScanner.return_value
