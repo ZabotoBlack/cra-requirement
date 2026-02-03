@@ -1,6 +1,6 @@
 name: "CRA Compliance Auditor"
 description: "A comprehensive Cyber Resilience Act (CRA) compliance scanner for your local network. Audits devices, checks for common vulnerabilities, and provides AI-powered insights."
-version: "1.0.19"
+version: "1.0.20"
 slug: "cra_auditor"
 init: false
 arch:
@@ -20,8 +20,10 @@ panel_icon: mdi:security
 # webui: "http://[HOST]:[PORT:8099]"
 homeassistant_api: true
 hassio_api: true
-privileged: true
-host_network: true
+privileged:
+  - NET_ADMIN
+  - NET_RAW
+host_network: true # Required for ARP/raw sockets; grants elevated host access
 
 map:
   - share:rw
