@@ -99,38 +99,42 @@ class CRAScanner:
             except Exception as e:
                 logger.error(f"Nmap detail scan failed: {e}")
             
-            for host in self.nm.all_hosts():
-                if 'addresses' not in self.nm[host]:
-                    continue
-                    
-                mac = self.nm[host]['addresses'].get('mac', 'Unknown')
-                ip = host
-                if 'ipv4' in self.nm[host]['addresses']:
-                    ip = self.nm[host]['addresses']['ipv4']
+        # Process results (Run for both Discovery and Detailed scans)
+        # Note: If detailed scan ran, self.nm contains detailed results.
+        # If only discovery ran, self.nm contains discovery results (Ping/ARP).
+        for host in self.nm.all_hosts():
+            # Filter out if no addresses found (rare but possible)
+            if 'addresses' not in self.nm[host]:
+                continue
                 
-                hostname = self.nm[host].hostname()
-                if not hostname:
-                    try:
-                        hostname = socket.gethostbyaddr(ip)[0]
-                    except Exception:
-                        pass
+            mac = self.nm[host]['addresses'].get('mac', 'Unknown')
+            ip = host
+            if 'ipv4' in self.nm[host]['addresses']:
+                ip = self.nm[host]['addresses']['ipv4']
+            
+            hostname = self.nm[host].hostname()
+            if not hostname:
+                try:
+                    hostname = socket.gethostbyaddr(ip)[0]
+                except Exception:
+                    pass
 
-                vendor = "Unknown"
-                if 'vendor' in self.nm[host] and mac in self.nm[host]['vendor']:
-                     vendor = self.nm[host]['vendor'][mac]
-                
-                os_name = self._get_os_match(host)
-                open_ports = self._get_open_ports(host)
+            vendor = "Unknown"
+            if 'vendor' in self.nm[host] and mac in self.nm[host]['vendor']:
+                    vendor = self.nm[host]['vendor'][mac]
+            
+            os_name = self._get_os_match(host)
+            open_ports = self._get_open_ports(host)
 
-                nmap_devices.append({
-                    "ip": ip,
-                    "mac": mac,
-                    "vendor": vendor, 
-                    "hostname": hostname,
-                    "openPorts": open_ports,
-                    "osMatch": os_name,
-                    "source": "nmap"
-                })
+            nmap_devices.append({
+                "ip": ip,
+                "mac": mac,
+                "vendor": vendor, 
+                "hostname": hostname,
+                "openPorts": open_ports,
+                "osMatch": os_name,
+                "source": "nmap"
+            })
 
         # Merge Nmap and HA devices
         merged_devices = self._merge_devices(nmap_devices, ha_devices)
