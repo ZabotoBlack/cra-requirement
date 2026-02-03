@@ -38,7 +38,9 @@ const DeviceRow: React.FC<{ device: Device }> = ({ device }) => {
             <Server size={18} />
           </div>
           <div>
-            <div className="font-medium text-white">{device.hostname}</div>
+            <div className={`font-medium ${device.hostname ? 'text-white' : 'text-slate-500 italic'}`}>
+              {device.hostname || "Unknown Hostname"}
+            </div>
             <div className="text-xs text-slate-400">{device.ip}</div>
           </div>
         </td>

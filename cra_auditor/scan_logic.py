@@ -72,9 +72,9 @@ class CRAScanner:
             
             # Scan Type Depth
             if scan_type == 'deep':
-                nmap_args += " -sV -O --top-ports 1000"
+                nmap_args += " -sV -O --top-ports 1000 --script=nbstat,broadcast-llmnr-discovery,mdns-discovery"
             elif scan_type == 'standard':
-                nmap_args += " -sV --top-ports 100"
+                nmap_args += " -sV --top-ports 100 --script=nbstat,broadcast-llmnr-discovery"
             else:
                 nmap_args += " -F" # Fast scan (top 100 ports) if unnamed type
             
@@ -115,6 +115,18 @@ class CRAScanner:
                 ip = self.nm[host]['addresses']['ipv4']
             
             hostname = self.nm[host].hostname()
+            
+            # IMPROVED HOSTNAME RESOLUTION
+            if not hostname and 'script' in self.nm[host]:
+                # Try to extract from nbstat
+                if 'nbstat' in self.nm[host]['script']:
+                    # Nbstat output is often raw, depend on python-nmap parsing or raw string
+                    # Parsing raw string for "NetBIOS name: <NAME>"
+                    import re
+                    match = re.search(r"NetBIOS name:\s+(\w+)", self.nm[host]['script']['nbstat'])
+                    if match:
+                        hostname = match.group(1)
+            
             if not hostname:
                 try:
                     hostname = socket.gethostbyaddr(ip)[0]
