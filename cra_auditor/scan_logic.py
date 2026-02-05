@@ -123,7 +123,7 @@ class CRAScanner:
                     # Nbstat output is often raw, depend on python-nmap parsing or raw string
                     # Parsing raw string for "NetBIOS name: <NAME>"
                     import re
-                    match = re.search(r"NetBIOS name:\s+(\w+)", self.nm[host]['script']['nbstat'])
+                    match = re.search(r"NetBIOS name:\s+([\w-]+)", self.nm[host]['script']['nbstat'])
                     if match:
                         hostname = match.group(1)
             
