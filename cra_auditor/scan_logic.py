@@ -46,15 +46,19 @@ class CRAScanner:
             logger.error("Nmap not initialized. Relying solely on Home Assistant data.")
             return self._merge_devices([], ha_devices)
 
+        # Scanned devices accumulator (IP -> Device Dict)
+        scanned_devices = {}
+
         # Stage 1: Discovery Scan (Ping + ARP)
         logger.info(f"Starting discovery scan on {subnet}")
         try:
             self.nm.scan(hosts=subnet, arguments='-sn -PR')
+            self._update_scanned_devices(scanned_devices, discovery_phase=True)
         except Exception as e:
             logger.error(f"Nmap discovery scan failed: {e}")
             return self._merge_devices([], ha_devices)
 
-        hosts_to_scan = self.nm.all_hosts()
+        hosts_to_scan = list(scanned_devices.keys())
         logger.info(f"Discovery complete. Found {len(hosts_to_scan)} live hosts.")
 
         nmap_devices = []
@@ -98,57 +102,11 @@ class CRAScanner:
             try:
                 logger.info(f"Running Nmap with args: {nmap_args}")
                 self.nm.scan(hosts=target_spec, arguments=nmap_args)
+                self._update_scanned_devices(scanned_devices, discovery_phase=False)
             except Exception as e:
                 logger.error(f"Nmap detail scan failed: {e}")
-            
-        # Process results (Run for both Discovery and Detailed scans)
-        # Note: If detailed scan ran, self.nm contains detailed results.
-        # If only discovery ran, self.nm contains discovery results (Ping/ARP).
-        for host in self.nm.all_hosts():
-            # Filter out if no addresses found (rare but possible)
-            if 'addresses' not in self.nm[host]:
-                continue
-                
-            mac = self.nm[host]['addresses'].get('mac', 'Unknown')
-            ip = host
-            if 'ipv4' in self.nm[host]['addresses']:
-                ip = self.nm[host]['addresses']['ipv4']
-            
-            hostname = self.nm[host].hostname()
-            
-            # IMPROVED HOSTNAME RESOLUTION
-            if not hostname and 'script' in self.nm[host]:
-                # Try to extract from nbstat
-                if 'nbstat' in self.nm[host]['script']:
-                    # Nbstat output is often raw, depend on python-nmap parsing or raw string
-                    # Parsing raw string for "NetBIOS name: <NAME>"
-                    import re
-                    match = re.search(r"NetBIOS name:\s+([\w-]+)", self.nm[host]['script']['nbstat'])
-                    if match:
-                        hostname = match.group(1)
-            
-            if not hostname:
-                try:
-                    hostname = socket.gethostbyaddr(ip)[0]
-                except Exception:
-                    pass
-
-            vendor = "Unknown"
-            if 'vendor' in self.nm[host] and mac in self.nm[host]['vendor']:
-                    vendor = self.nm[host]['vendor'][mac]
-            
-            os_name = self._get_os_match(host)
-            open_ports = self._get_open_ports(host)
-
-            nmap_devices.append({
-                "ip": ip,
-                "mac": mac,
-                "vendor": vendor, 
-                "hostname": hostname,
-                "openPorts": open_ports,
-                "osMatch": os_name,
-                "source": "nmap"
-            })
+        
+        nmap_devices = list(scanned_devices.values())
 
         # Merge Nmap and HA devices
         merged_devices = self._merge_devices(nmap_devices, ha_devices)
@@ -198,6 +156,75 @@ class CRAScanner:
             
         logger.info(f"Detailed scan complete. Processed {len(final_results)} devices.")
         return final_results
+
+    def _update_scanned_devices(self, scanned_devices, discovery_phase=False):
+        """Helper to parse nmap results and update the devices dict."""
+        for host in self.nm.all_hosts():
+            # Filter out if no addresses found (rare but possible)
+            if 'addresses' not in self.nm[host]:
+                continue
+                
+            nmap_host = self.nm[host]
+            # Use bracket access as existing tests mock __getitem__ but not .get()
+            addresses = nmap_host['addresses']
+            
+            mac = addresses.get('mac', 'Unknown')
+            ip = host
+            if 'ipv4' in addresses:
+                ip = addresses.get('ipv4')
+            
+            # If this is the second pass (detailed), we might already have this device.
+            existing = scanned_devices.get(ip)
+            
+            # Hostname Resolution
+            hostname = nmap_host.hostname()
+            if not hostname and 'script' in nmap_host:
+                # Try to extract from nbstat
+                if 'nbstat' in nmap_host['script']:
+                    import re
+                    match = re.search(r"NetBIOS name:\s+([\w-]+)", nmap_host['script']['nbstat'])
+                    if match:
+                        hostname = match.group(1)
+            
+            if not hostname and discovery_phase:
+                 # Try reverse DNS only in discovery or if missing
+                 try:
+                    hostname = socket.gethostbyaddr(ip)[0]
+                 except Exception:
+                    pass
+            elif not hostname and existing and existing.get('hostname'):
+                 # Keep existing hostname if new one is empty
+                 hostname = existing.get('hostname')
+
+            # Vendor
+            vendor = "Unknown"
+            if 'vendor' in nmap_host and mac in nmap_host['vendor']:
+                    vendor = nmap_host['vendor'][mac]
+            elif existing and existing.get('vendor') != "Unknown":
+                    vendor = existing.get('vendor')
+
+            os_name = self._get_os_match(host)
+            if os_name == "Unknown" and existing:
+                os_name = existing.get('osMatch', "Unknown")
+
+            open_ports = self._get_open_ports(host)
+            if not open_ports and existing:
+                 # If detailed scan failed effectively, don't overwrite with empty if we had something (though discovery usually has 0 ports)
+                 # But actually detailed scan SHOULD overwrite ports if it ran. 
+                 # If open_ports is empty, it means no ports open.
+                 pass
+
+            device_data = {
+                "ip": ip,
+                "mac": mac,
+                "vendor": vendor, 
+                "hostname": hostname,
+                "openPorts": open_ports,
+                "osMatch": os_name,
+                "source": "nmap"
+            }
+            
+            scanned_devices[ip] = device_data
 
     def _get_ha_devices(self):
         """Fetch devices from Home Assistant Supervisor API."""
