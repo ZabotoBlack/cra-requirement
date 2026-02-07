@@ -195,24 +195,31 @@ class CRAScanner:
             elif not hostname and existing and existing.get('hostname'):
                  # Keep existing hostname if new one is empty
                  hostname = existing.get('hostname')
-
             # Vendor
             vendor = "Unknown"
-            if 'vendor' in nmap_host and mac in nmap_host['vendor']:
+            if 'vendor' in nmap_host and mac != 'Unknown' and mac in nmap_host['vendor']:
                     vendor = nmap_host['vendor'][mac]
-            elif existing and existing.get('vendor') != "Unknown":
-                    vendor = existing.get('vendor')
-
+            
             os_name = self._get_os_match(host)
-            if os_name == "Unknown" and existing:
-                os_name = existing.get('osMatch', "Unknown")
-
             open_ports = self._get_open_ports(host)
-            if not open_ports and existing:
-                 # If detailed scan failed effectively, don't overwrite with empty if we had something (though discovery usually has 0 ports)
-                 # But actually detailed scan SHOULD overwrite ports if it ran. 
-                 # If open_ports is empty, it means no ports open.
-                 pass
+            
+            # MERGE LOGIC: preserve existing data if new scan is incomplete
+            if existing:
+                if mac == 'Unknown' and existing.get('mac') != 'Unknown':
+                    mac = existing.get('mac')
+                
+                if vendor == "Unknown" and existing.get('vendor') != "Unknown":
+                    vendor = existing.get('vendor')
+                
+                if not hostname and existing.get('hostname'):
+                    hostname = existing.get('hostname')
+                
+                if os_name == "Unknown" and existing.get('osMatch', "Unknown") != "Unknown":
+                    os_name = existing.get('osMatch')
+                
+                # Ports: Detailed scan is usually authoritative.
+                # But if detailed scan returned nothing (e.g. failed/filtered) AND we had ports (unlikely for discovery but consistent logic), we could keep.
+                # For now, we assume detailed scan overwrite for ports is acceptable as discovery has none.
 
             device_data = {
                 "ip": ip,
