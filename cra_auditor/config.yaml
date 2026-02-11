@@ -1,6 +1,6 @@
 name: "CRA Compliance Auditor"
 description: "A comprehensive Cyber Resilience Act (CRA) compliance scanner for your local network. Audits devices, checks for common vulnerabilities, and provides AI-powered insights."
-version: "1.0.24"
+version: "1.0.25"
 slug: "cra_auditor"
 init: false
 arch:
