@@ -62,6 +62,7 @@ class CRAScanner:
             logger.info("Agent is running as root/privileged. ARP scanning and MAC address detection enabled.")
             
         self.common_creds = [('admin', 'admin'), ('root', 'root'), ('user', '1234'), ('admin', '1234')]
+        self.verify_ssl = False  # Configurable: set True to enforce SSL certificate verification during probes
 
     def scan_subnet(self, subnet, options=None):
         """
@@ -642,9 +643,11 @@ class CRAScanner:
         for port in http_ports:
             scheme = 'https' if port in (443, 8443) else 'http'
             for path in sbom_paths:
+                url = f"{scheme}://{ip}:{port}{path}"
                 try:
-                    url = f"{scheme}://{ip}:{port}{path}"
-                    r = requests.get(url, timeout=2, verify=False)
+                    if not self.verify_ssl:
+                        logger.warning(f"SBOM probe: SSL verification disabled for {url} (verify_ssl=False)")
+                    r = requests.get(url, timeout=2, verify=self.verify_ssl)
                     if r.status_code == 200 and len(r.text) > 50:
                         # Check content for known SBOM format signatures
                         content = r.text[:2000]  # Only check first 2KB
@@ -662,8 +665,8 @@ class CRAScanner:
                         # Generic: looks like a valid document but unknown format
                         if r.headers.get('Content-Type', '').startswith(('application/json', 'application/xml', 'text/xml')):
                             return True, 'Unknown Format'
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"SBOM probe failed for {url}: {e}")
         
         return False, None
 
