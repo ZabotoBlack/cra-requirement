@@ -44,6 +44,12 @@ export interface Device {
       passed: boolean;
       cves: Vulnerability[];
     };
+    sbomCompliance: {
+      passed: boolean;
+      details: string;
+      sbom_found: boolean;
+      sbom_format: string | null;
+    };
   };
   lastScanned: string;
   osMatch: string;

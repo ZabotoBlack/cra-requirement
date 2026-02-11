@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Device, ComplianceStatus } from '../types';
-import { AlertTriangle, CheckCircle, XCircle, ChevronDown, ChevronUp, Cpu, Server, Lock, Bot } from 'lucide-react';
+import { AlertTriangle, CheckCircle, XCircle, ChevronDown, ChevronUp, Cpu, Server, Lock, Bot, FileText } from 'lucide-react';
 import { getRemediationAdvice } from '../services/geminiService';
 
 interface DeviceListProps {
@@ -59,7 +59,7 @@ const DeviceRow: React.FC<{ device: Device }> = ({ device }) => {
       {expanded && (
         <tr className="bg-slate-800/50">
           <td colSpan={5} className="p-6 border-b border-slate-700">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
               {/* Check 1: Secure by Default */}
               <div className="bg-slate-900 rounded p-4 border border-slate-700">
                 <div className="flex items-center gap-2 mb-2">
@@ -117,6 +117,26 @@ const DeviceRow: React.FC<{ device: Device }> = ({ device }) => {
                     </ul>
                   ) : "No known vulnerabilities found."}
                 </div>
+              </div>
+
+              {/* Check 4: SBOM Compliance */}
+              <div className="bg-slate-900 rounded p-4 border border-slate-700">
+                <div className="flex items-center gap-2 mb-2">
+                  <FileText size={16} className="text-slate-400" />
+                  <h4 className="font-medium text-slate-200">SBOM</h4>
+                </div>
+                <div className="flex items-center gap-2 mb-1">
+                  {device.checks.sbomCompliance?.passed
+                    ? <CheckCircle size={16} className="text-emerald-500" />
+                    : <AlertTriangle size={16} className="text-amber-500" />}
+                  <span className={`text-sm ${device.checks.sbomCompliance?.passed ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {device.checks.sbomCompliance?.passed ? 'Available' : 'Not Found'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500">{device.checks.sbomCompliance?.details}</p>
+                {device.checks.sbomCompliance?.sbom_format && (
+                  <p className="text-xs text-indigo-400 mt-1">Format: {device.checks.sbomCompliance.sbom_format}</p>
+                )}
               </div>
             </div>
 

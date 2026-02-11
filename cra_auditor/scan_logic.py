@@ -9,6 +9,43 @@ import time
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Known vendor SBOM availability status (best-effort lookup)
+# Values: "available" = vendor publishes SBOMs, "unavailable" = known to NOT publish, "unknown" = no data
+VENDOR_SBOM_STATUS = {
+    "Philips": "available",
+    "Signify": "available",        # Philips Hue parent company
+    "Siemens": "available",
+    "Bosch": "available",
+    "Schneider Electric": "available",
+    "ABB": "available",
+    "Honeywell": "available",
+    "Cisco": "available",
+    "Intel": "available",
+    "Microsoft": "available",
+    "Google": "available",
+    "Apple": "available",
+    "Samsung": "available",
+    "Tuya": "unavailable",
+    "Sonoff": "unavailable",
+    "ITEAD": "unavailable",        # Sonoff parent
+    "Shelly": "unavailable",
+    "Allterco": "unavailable",     # Shelly parent
+    "TP-Link": "unavailable",
+    "Kasa": "unavailable",
+    "Tapo": "unavailable",
+    "IKEA": "unknown",
+    "AVM": "unknown",
+    "Espressif": "unknown",
+    "Xiaomi": "unavailable",
+    "Aqara": "unavailable",
+    "Meross": "unavailable",
+    "Govee": "unavailable",
+    "Wyze": "unavailable",
+    "Ring": "unknown",
+    "Amazon": "unknown",
+    "Yamaha": "unknown",
+}
+
 class CRAScanner:
     def __init__(self):
         self.nm = None
@@ -133,6 +170,7 @@ class CRAScanner:
             
             conf_result = self.check_confidentiality(dev.get('openPorts', []))
             vuln_result = self.check_vulnerabilities(check_vendor, dev.get('openPorts', []))
+            sbom_result = self.check_sbom_compliance(dev)
             
             # Vendor Specific Checks - Conditional
             vendor_warnings = self._check_vendor_specifics(dev, selected_vendors)
@@ -146,7 +184,7 @@ class CRAScanner:
             status = "Compliant"
             if not sbd_result['passed'] or not vuln_result['passed']:
                 status = "Non-Compliant"
-            elif not conf_result['passed']:
+            elif not conf_result['passed'] or not sbom_result['passed']:
                 status = "Warning"
 
             dev.update({
@@ -154,7 +192,8 @@ class CRAScanner:
                 "checks": {
                     "secureByDefault": sbd_result,
                     "dataConfidentiality": conf_result,
-                    "vulnerabilities": vuln_result
+                    "vulnerabilities": vuln_result,
+                    "sbomCompliance": sbom_result
                 },
                 "lastScanned": "Just now"
             })
@@ -515,6 +554,138 @@ class CRAScanner:
              return {"passed": False, "details": f"Found {len(cves)} critical CVEs associated with '{search_term}'.", "cves": cves}
 
         return {"passed": True, "details": f"No critical CVEs found for '{search_term}'.", "cves": []}
+
+    def check_sbom_compliance(self, device):
+        """Check for SBOM availability per CRA Annex I §2(1).
+        
+        Two-layer approach:
+        1. Device-level: probe well-known HTTP endpoints for SBOM files
+        2. Vendor-level: lookup known vendor SBOM publication status
+        """
+        details = []
+        sbom_found = False
+        sbom_format = None
+        ip = device.get('ip')
+        open_ports = device.get('openPorts', [])
+        vendor = device.get('vendor', 'Unknown')
+        
+        # Layer 1: Device-level SBOM endpoint probing
+        http_ports = [p['port'] for p in open_ports 
+                      if p.get('service') in ('http', 'https') or p['port'] in (80, 443, 8080, 8443)]
+        
+        if ip and ip != "N/A" and http_ports:
+            sbom_found, sbom_format = self._probe_sbom_endpoints(ip, http_ports)
+            if sbom_found:
+                details.append(f"SBOM endpoint found on device (format: {sbom_format}).")
+        
+        # Layer 2: Vendor-level SBOM status lookup
+        vendor_status = self._lookup_vendor_sbom_status(vendor)
+        
+        if sbom_found:
+            # Best case: device directly exposes SBOM
+            return {
+                "passed": True,
+                "details": "; ".join(details),
+                "sbom_found": True,
+                "sbom_format": sbom_format
+            }
+        elif vendor_status == "available":
+            details.append(f"Vendor '{vendor}' is known to publish SBOMs for their products.")
+            return {
+                "passed": True,
+                "details": "; ".join(details),
+                "sbom_found": False,
+                "sbom_format": None
+            }
+        elif vendor_status == "unavailable":
+            details.append(f"No SBOM endpoint found on device. Vendor '{vendor}' does not publish SBOMs.")
+            return {
+                "passed": False,
+                "details": "; ".join(details) if details else f"No SBOM found. Vendor '{vendor}' has no known SBOM publication.",
+                "sbom_found": False,
+                "sbom_format": None
+            }
+        else:
+            # Unknown vendor or vendor status
+            if vendor == "Unknown":
+                details.append("Vendor unknown — cannot determine SBOM availability.")
+            else:
+                details.append(f"No SBOM endpoint found on device. Vendor '{vendor}' SBOM status is unknown.")
+            return {
+                "passed": False,
+                "details": "; ".join(details),
+                "sbom_found": False,
+                "sbom_format": None
+            }
+
+    def _probe_sbom_endpoints(self, ip, http_ports):
+        """Probe well-known SBOM endpoints on a device.
+        
+        Returns (sbom_found: bool, sbom_format: str|None)
+        """
+        sbom_paths = [
+            '/.well-known/sbom',
+            '/sbom.json',
+            '/sbom.xml',
+            '/sbom',
+        ]
+        
+        # CycloneDX and SPDX content-type indicators
+        sbom_signatures = {
+            'cyclonedx': 'CycloneDX',
+            'spdx': 'SPDX',
+            'bomFormat': 'CycloneDX',     # CycloneDX JSON key
+            'SPDXVersion': 'SPDX',        # SPDX JSON key
+            'DocumentNamespace': 'SPDX',  # SPDX JSON key
+        }
+        
+        for port in http_ports:
+            scheme = 'https' if port in (443, 8443) else 'http'
+            for path in sbom_paths:
+                try:
+                    url = f"{scheme}://{ip}:{port}{path}"
+                    r = requests.get(url, timeout=2, verify=False)
+                    if r.status_code == 200 and len(r.text) > 50:
+                        # Check content for known SBOM format signatures
+                        content = r.text[:2000]  # Only check first 2KB
+                        for signature, fmt in sbom_signatures.items():
+                            if signature in content:
+                                return True, fmt
+                        
+                        # Check Content-Type header
+                        ct = r.headers.get('Content-Type', '').lower()
+                        if 'cyclonedx' in ct:
+                            return True, 'CycloneDX'
+                        elif 'spdx' in ct:
+                            return True, 'SPDX'
+                        
+                        # Generic: looks like a valid document but unknown format
+                        if r.headers.get('Content-Type', '').startswith(('application/json', 'application/xml', 'text/xml')):
+                            return True, 'Unknown Format'
+                except Exception:
+                    pass
+        
+        return False, None
+
+    def _lookup_vendor_sbom_status(self, vendor):
+        """Check if vendor is known to publish SBOMs.
+        
+        Returns 'available', 'unavailable', or 'unknown'.
+        """
+        if not vendor or vendor == "Unknown":
+            return "unknown"
+        
+        # Check exact match first
+        if vendor in VENDOR_SBOM_STATUS:
+            return VENDOR_SBOM_STATUS[vendor]
+        
+        # Check partial match (e.g. "Philips Lighting" matches "Philips")
+        vendor_lower = vendor.lower()
+        for known_vendor, status in VENDOR_SBOM_STATUS.items():
+            if known_vendor.lower() in vendor_lower or vendor_lower in known_vendor.lower():
+                return status
+        
+        return "unknown"
 
 # For standalone testing
 if __name__ == "__main__":

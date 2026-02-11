@@ -384,5 +384,136 @@ class TestScanPreservesDiscovery(unittest.TestCase):
         self._run_preservation_test('standard', detailed_returns_hosts=True)
 
 
+class TestSBOMCheck(unittest.TestCase):
+    """Tests for SBOM compliance checking (CRA Annex I §2(1))."""
+
+    @patch('scan_logic.nmap.PortScanner')
+    def setUp(self, mock_nmap):
+        self.scanner = CRAScanner()
+        self.scanner.nm = MagicMock()
+
+    @patch('scan_logic.requests.get')
+    def test_sbom_endpoint_found_cyclonedx(self, mock_get):
+        """SBOM endpoint returns CycloneDX document."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = '{"bomFormat": "CycloneDX", "specVersion": "1.5", "components": []}' + ' ' * 50
+        mock_response.headers = {'Content-Type': 'application/json'}
+        mock_get.return_value = mock_response
+
+        device = {
+            "ip": "192.168.1.10",
+            "openPorts": [{"port": 80, "service": "http", "protocol": "tcp"}],
+            "vendor": "TestVendor"
+        }
+
+        result = self.scanner.check_sbom_compliance(device)
+        self.assertTrue(result['passed'])
+        self.assertTrue(result['sbom_found'])
+        self.assertEqual(result['sbom_format'], 'CycloneDX')
+
+    @patch('scan_logic.requests.get')
+    def test_sbom_endpoint_found_spdx(self, mock_get):
+        """SBOM endpoint returns SPDX document."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = '{"SPDXVersion": "SPDX-2.3", "dataLicense": "CC0-1.0"}' + ' ' * 50
+        mock_response.headers = {'Content-Type': 'application/json'}
+        mock_get.return_value = mock_response
+
+        device = {
+            "ip": "192.168.1.10",
+            "openPorts": [{"port": 80, "service": "http", "protocol": "tcp"}],
+            "vendor": "TestVendor"
+        }
+
+        result = self.scanner.check_sbom_compliance(device)
+        self.assertTrue(result['passed'])
+        self.assertTrue(result['sbom_found'])
+        self.assertEqual(result['sbom_format'], 'SPDX')
+
+    def test_sbom_no_endpoint_known_vendor_available(self):
+        """Vendor known to publish SBOMs passes even without device endpoint."""
+        device = {
+            "ip": "192.168.1.10",
+            "openPorts": [],  # No HTTP ports to probe
+            "vendor": "Philips"
+        }
+
+        result = self.scanner.check_sbom_compliance(device)
+        self.assertTrue(result['passed'])
+        self.assertFalse(result['sbom_found'])
+        self.assertIn("Philips", result['details'])
+        self.assertIn("publish SBOMs", result['details'])
+
+    def test_sbom_no_endpoint_vendor_unavailable(self):
+        """Vendor known to NOT publish SBOMs fails."""
+        device = {
+            "ip": "192.168.1.10",
+            "openPorts": [],
+            "vendor": "Tuya"
+        }
+
+        result = self.scanner.check_sbom_compliance(device)
+        self.assertFalse(result['passed'])
+        self.assertFalse(result['sbom_found'])
+        self.assertIn("Tuya", result['details'])
+
+    def test_sbom_no_http_ports_unknown_vendor(self):
+        """Device with no HTTP ports and unknown vendor."""
+        device = {
+            "ip": "192.168.1.10",
+            "openPorts": [{"port": 22, "service": "ssh", "protocol": "tcp"}],
+            "vendor": "Unknown"
+        }
+
+        result = self.scanner.check_sbom_compliance(device)
+        self.assertFalse(result['passed'])
+        self.assertIn("unknown", result['details'].lower())
+
+    @patch('scan_logic.requests.get', side_effect=Exception("Connection refused"))
+    def test_sbom_network_error(self, mock_get):
+        """Network errors during SBOM probing handled gracefully."""
+        device = {
+            "ip": "192.168.1.10",
+            "openPorts": [{"port": 80, "service": "http", "protocol": "tcp"}],
+            "vendor": "SomeNewVendor"
+        }
+
+        # Should not raise, should fall back to vendor lookup
+        result = self.scanner.check_sbom_compliance(device)
+        self.assertFalse(result['passed'])
+        self.assertFalse(result['sbom_found'])
+
+    @patch('scan_logic.CRAScanner._get_ha_devices')
+    def test_sbom_integrated_in_scan(self, mock_get_ha):
+        """SBOM check is included in scan_subnet output."""
+        mock_get_ha.return_value = []
+        host_ip = "192.168.1.50"
+        self.scanner.nm.all_hosts.return_value = [host_ip]
+
+        mock_host_data = MagicMock()
+        mock_host_data.hostname.return_value = "test-host"
+        mock_host_data.__getitem__.side_effect = lambda key: {
+            'addresses': {'ipv4': host_ip, 'mac': 'AA:BB:CC:DD:EE:FF'},
+            'vendor': {'AA:BB:CC:DD:EE:FF': 'TestVendor'},
+            'osmatch': [],
+        }.get(key, {})
+        mock_host_data.__contains__.side_effect = lambda key: key in ['addresses', 'vendor', 'osmatch']
+        mock_host_data.all_protocols.return_value = []
+        self.scanner.nm.__getitem__.return_value = mock_host_data
+
+        results = self.scanner.scan_subnet("192.168.1.0/24", {
+            "scan_type": "discovery",
+            "auth_checks": False
+        })
+
+        self.assertTrue(len(results) > 0)
+        device = results[0]
+        self.assertIn('sbomCompliance', device['checks'])
+        self.assertIn('passed', device['checks']['sbomCompliance'])
+        self.assertIn('sbom_found', device['checks']['sbomCompliance'])
+
+
 if __name__ == '__main__':
     unittest.main()
