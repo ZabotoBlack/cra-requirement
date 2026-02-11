@@ -91,9 +91,10 @@ def start_scan():
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
-    result = {"scanning": is_scanning}
-    if scan_error:
-        result["error"] = scan_error
+    with scan_lock:
+        result = {"scanning": is_scanning}
+        if scan_error:
+            result["error"] = scan_error
     return jsonify(result)
 
 @app.route('/api/config', methods=['GET'])
@@ -243,7 +244,10 @@ def run_scan_background(subnet, options=None):
 
     except Exception as e:
         print(f"Scan failed: {e}")
-        scan_error = str(e)
+        with scan_lock:
+            scan_error = str(e)
+            is_scanning = False
+        return
     finally:
         with scan_lock:
             is_scanning = False
