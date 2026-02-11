@@ -1,5 +1,5 @@
-import { Activity, LayoutDashboard, List, Play, RotateCw, ShieldCheck, History, Settings, X, CheckSquare, Square } from 'lucide-react';
-import React, { useEffect, useState, useRef } from 'react';
+import { Activity, AlertTriangle, LayoutDashboard, List, Play, RotateCw, ShieldCheck, History, Settings, X, CheckSquare, Square } from 'lucide-react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import Dashboard from './components/Dashboard';
 import DeviceList from './components/DeviceList';
 import HistoryView from './components/HistoryView';
@@ -10,6 +10,7 @@ const App: React.FC = () => {
   const [view, setView] = useState<ViewState>('dashboard');
   const [scanning, setScanning] = useState(false);
   const [report, setReport] = useState<ScanReport | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
   const [config, setConfig] = useState<{ gemini_enabled: boolean; version: string } | null>(null);
   const [subnet, setSubnet] = useState('');
 
@@ -21,20 +22,32 @@ const App: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
 
   const pollInterval = useRef<NodeJS.Timeout | null>(null);
+  const viewRef = useRef(view);
+  const scanningRef = useRef(scanning);
+
+  // Keep refs in sync with state
+  useEffect(() => { viewRef.current = view; }, [view]);
+  useEffect(() => { scanningRef.current = scanning; }, [scanning]);
 
   // CIDR Regex Validation
   const cidrRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(?:3[0-2]|[12]?[0-9])$/;
   const isValidSubnet = cidrRegex.test(subnet);
 
-  const fetchData = async () => {
-    const scanStatus = await getScanStatus();
-    setScanning(scanStatus);
-    // Only auto-refresh report if we are looking at the current dashboard and not a historical one
-    if (view === 'dashboard' && !scanning) {
+  const fetchData = useCallback(async () => {
+    const statusData = await getScanStatus();
+    const isScanning = statusData.scanning;
+    setScanning(isScanning);
+
+    if (statusData.error) {
+      setScanError(statusData.error);
+    }
+
+    // Auto-refresh report when not scanning and on dashboard view
+    if (viewRef.current === 'dashboard' && !isScanning) {
       const data = await getReport();
       if (data) setReport(data);
     }
-  };
+  }, []);
 
   // Initial load and polling setup
   useEffect(() => {
@@ -44,11 +57,12 @@ const App: React.FC = () => {
     return () => {
       if (pollInterval.current) clearInterval(pollInterval.current);
     };
-  }, []);
+  }, [fetchData]);
 
   const handleScan = async () => {
     try {
       setScanning(true);
+      setScanError(null);
       setView('dashboard');
       await startScan(subnet, scanOptions);
       // Polling will pick up the status change
@@ -312,6 +326,18 @@ const App: React.FC = () => {
               {view === 'dashboard' && report && <Dashboard report={report} geminiEnabled={config?.gemini_enabled} />}
               {view === 'devices' && report && <DeviceList devices={report.devices} />}
               {view === 'history' && <HistoryView onViewReport={handleViewReport} />}
+              {scanError && !scanning && (
+                <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/30 rounded-lg flex items-start gap-3">
+                  <AlertTriangle size={20} className="text-rose-400 mt-0.5 shrink-0" />
+                  <div>
+                    <h4 className="font-medium text-rose-400 mb-1">Scan Failed</h4>
+                    <p className="text-sm text-slate-400">{scanError}</p>
+                  </div>
+                  <button onClick={() => setScanError(null)} className="ml-auto text-slate-500 hover:text-white">
+                    <X size={16} />
+                  </button>
+                </div>
+              )}
               {!report && view !== 'history' && !scanning && (
                 <div className="text-center py-20">
                   <div className="inline-block p-4 rounded-full bg-slate-800 mb-4 text-slate-500">

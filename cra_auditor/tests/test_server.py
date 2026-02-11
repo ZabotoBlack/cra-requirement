@@ -13,16 +13,20 @@ import server
 
 class TestServer(unittest.TestCase):
     def setUp(self):
+        # Reset global state
+        server.is_scanning = False
+        server.scan_error = None
+
         # Create a temporary file for the database
         self.db_fd, self.db_path = tempfile.mkstemp()
-        
+
         # Patch the DB_FILE in the server module
         self.patcher = patch('server.DB_FILE', self.db_path)
         self.mock_db_file = self.patcher.start()
-        
+
         # Initialize the database
         server.init_db()
-        
+
         # Create a test client
         self.app = server.app.test_client()
         self.app.testing = True

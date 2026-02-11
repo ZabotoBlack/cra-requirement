@@ -24,6 +24,7 @@ if not os.path.exists(FRONTEND_DIR):
 # Global State
 scan_lock = threading.Lock()
 is_scanning = False
+scan_error = None
 scanner = CRAScanner()
 DB_FILE = "scans.db"
 
@@ -63,11 +64,12 @@ def serve_static(path):
 
 @app.route('/api/scan', methods=['POST'])
 def start_scan():
-    global is_scanning
+    global is_scanning, scan_error
     with scan_lock:
         if is_scanning:
             return jsonify({"status": "error", "message": "Scan already in progress"}), 409
         is_scanning = True
+        scan_error = None
     
     
     data = request.json
@@ -89,7 +91,10 @@ def start_scan():
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
-    return jsonify({"scanning": is_scanning})
+    result = {"scanning": is_scanning}
+    if scan_error:
+        result["error"] = scan_error
+    return jsonify(result)
 
 @app.route('/api/config', methods=['GET'])
 def get_config():
@@ -196,7 +201,7 @@ def delete_history_item(scan_id):
         return jsonify({"error": str(e)}), 500
 
 def run_scan_background(subnet, options=None):
-    global is_scanning
+    global is_scanning, scan_error
     # is_scanning = True - set in start_scan now under lock
     try:
         devices = scanner.scan_subnet(subnet, options)
@@ -238,6 +243,7 @@ def run_scan_background(subnet, options=None):
 
     except Exception as e:
         print(f"Scan failed: {e}")
+        scan_error = str(e)
     finally:
         with scan_lock:
             is_scanning = False

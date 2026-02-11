@@ -3,6 +3,7 @@ import requests
 import socket
 import logging
 import os
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -73,16 +74,8 @@ class CRAScanner:
             # Build Nmap Arguments based on Options
             # Base arguments
             nmap_args = "-Pn" # Treat as online
-            
-            # Scan Type Depth
-            if scan_type == 'deep':
-                nmap_args += " -sV -O --top-ports 1000 --script=nbstat,broadcast-llmnr-discovery,mdns-discovery"
-            elif scan_type == 'standard':
-                nmap_args += " -sV --top-ports 100 --script=nbstat,broadcast-llmnr-discovery"
-            else:
-                nmap_args += " -F" # Fast scan (top 100 ports) if unnamed type
-            
-            # Vendor Specific Ports
+
+            # Vendor Specific Ports (collected first to build unified port list)
             vendor_ports = []
             if selected_vendors == 'all' or 'tuya' in selected_vendors:
                 vendor_ports.append('6668')
@@ -90,21 +83,34 @@ class CRAScanner:
                 vendor_ports.append('8081')
             if selected_vendors == 'all' or 'kasa' in selected_vendors:
                 vendor_ports.append('9999')
-            # Shelly, Hue, Ikea use port 80 which is usually covered by top ports, but we can ensure it
-            if selected_vendors == 'all' or any(v in selected_vendors for v in ['shelly', 'hue', 'ikea']):
-                # Port 80 is standard, usually doesn't need explicit add if top-ports includes it, 
-                # but adding it doesn't hurt.
-                pass 
 
-            if vendor_ports:
-                nmap_args += f" -p {','.join(vendor_ports)},1-1024" # Priority to specific ports + standard range
+            # Scan Type Depth
+            # Note: --top-ports and -p conflict (nmap ignores --top-ports when -p is set).
+            # So we build a single -p specification that covers both.
+            if scan_type == 'deep':
+                nmap_args += " -sV -O --script=nbstat"
+                # Top 1000 ports + vendor ports
+                port_spec = "1-1024"
+                if vendor_ports:
+                    port_spec += "," + ",".join(vendor_ports)
+                nmap_args += f" -p {port_spec}"
+            elif scan_type == 'standard':
+                nmap_args += " -sV --script=nbstat"
+                # Top 100 ports approximation + vendor ports
+                port_spec = "1-100"
+                if vendor_ports:
+                    port_spec += "," + ",".join(vendor_ports)
+                nmap_args += f" -p {port_spec}"
+            else:
+                nmap_args += " -F" # Fast scan (top 100 ports) if unnamed type
             
             try:
                 logger.info(f"Running Nmap with args: {nmap_args}")
                 self.nm.scan(hosts=target_spec, arguments=nmap_args)
                 self._update_scanned_devices(scanned_devices, discovery_phase=False)
+                logger.info(f"Detailed scan complete. Updated {len(scanned_devices)} devices.")
             except Exception as e:
-                logger.error(f"Nmap detail scan failed: {e}")
+                logger.error(f"Nmap detail scan failed: {e}. Falling back to discovery results ({len(scanned_devices)} devices).")
         
         nmap_devices = list(scanned_devices.values())
 

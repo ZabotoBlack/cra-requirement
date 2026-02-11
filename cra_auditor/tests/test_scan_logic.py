@@ -41,33 +41,58 @@ class TestCRAScanner(unittest.TestCase):
         
     def test_scan_arguments_deep(self):
         """Verify arguments for Deep scan."""
-        # First scan finds a host
-        self.scanner.nm.all_hosts.return_value = ["192.168.1.50"]
-        
+        # Setup mock host data so discovery phase populates scanned_devices
+        host_ip = "192.168.1.50"
+        self.scanner.nm.all_hosts.return_value = [host_ip]
+
+        mock_host_data = MagicMock()
+        mock_host_data.hostname.return_value = "test-host"
+        mock_host_data.__getitem__.side_effect = lambda key: {
+            'addresses': {'ipv4': host_ip, 'mac': 'AA:BB:CC:DD:EE:FF'},
+            'vendor': {'AA:BB:CC:DD:EE:FF': 'TestVendor'},
+            'osmatch': [],
+        }.get(key, {})
+        mock_host_data.__contains__.side_effect = lambda key: key in ['addresses', 'vendor', 'osmatch']
+        mock_host_data.all_protocols.return_value = []
+        self.scanner.nm.__getitem__.return_value = mock_host_data
+
         options = {"scan_type": "deep"}
         self.scanner.scan_subnet("192.168.1.0/24", options)
-        
+
         # Check that the SECOND scan was called with deep arguments
         # We expect at least two calls: 1. Discovery, 2. Detailed
         calls = self.scanner.nm.scan.call_args_list
         self.assertTrue(len(calls) >= 2)
-        
+
         # Inspect the detailed scan call
         args, kwargs = calls[1]
-        self.assertEqual(kwargs['hosts'], "192.168.1.50")
-        self.assertIn("-sV -O --top-ports 1000", kwargs['arguments'])
-        self.assertIn("--script=nbstat,broadcast-llmnr-discovery,mdns-discovery", kwargs['arguments'])
+        self.assertEqual(kwargs['hosts'], host_ip)
+        self.assertIn("-sV -O", kwargs['arguments'])
+        self.assertIn("--script=nbstat", kwargs['arguments'])
 
     def test_scan_arguments_vendor_specific(self):
         """Verify vendor specific port addition."""
-        self.scanner.nm.all_hosts.return_value = ["192.168.1.50"]
+        # Setup mock host data so discovery phase populates scanned_devices
+        host_ip = "192.168.1.50"
+        self.scanner.nm.all_hosts.return_value = [host_ip]
+
+        mock_host_data = MagicMock()
+        mock_host_data.hostname.return_value = "test-host"
+        mock_host_data.__getitem__.side_effect = lambda key: {
+            'addresses': {'ipv4': host_ip, 'mac': 'AA:BB:CC:DD:EE:FF'},
+            'vendor': {'AA:BB:CC:DD:EE:FF': 'TestVendor'},
+            'osmatch': [],
+        }.get(key, {})
+        mock_host_data.__contains__.side_effect = lambda key: key in ['addresses', 'vendor', 'osmatch']
+        mock_host_data.all_protocols.return_value = []
+        self.scanner.nm.__getitem__.return_value = mock_host_data
+
         options = {"scan_type": "standard", "vendors": ["tuya"]}
-        
         self.scanner.scan_subnet("192.168.1.0/24", options)
-        
+
         calls = self.scanner.nm.scan.call_args_list
         detailed_call = calls[1] # 0 is discovery, 1 is detailed
-        
+
         args_str = detailed_call.kwargs['arguments']
         self.assertIn("6668", args_str, "Tuya port 6668 should be scanned")
         self.assertNotIn("8081", args_str, "Sonoff port shouldn't be scanned")
