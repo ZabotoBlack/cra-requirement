@@ -640,13 +640,15 @@ class CRAScanner:
             'DocumentNamespace': 'SPDX',  # SPDX JSON key
         }
         
+        # Log SSL warning once per device check if disabled
+        if not self.verify_ssl and http_ports:
+             logger.warning(f"SBOM probe: SSL verification disabled for device {ip} (verify_ssl=False)")
+
         for port in http_ports:
             scheme = 'https' if port in (443, 8443) else 'http'
             for path in sbom_paths:
                 url = f"{scheme}://{ip}:{port}{path}"
                 try:
-                    if not self.verify_ssl:
-                        logger.warning(f"SBOM probe: SSL verification disabled for {url} (verify_ssl=False)")
                     r = requests.get(url, timeout=2, verify=self.verify_ssl)
                     if r.status_code == 200 and len(r.text) > 50:
                         # Check content for known SBOM format signatures
