@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request, send_from_directory
 import os
+import re
 import threading
 import time
 import sqlite3
@@ -82,7 +83,6 @@ def start_scan():
         return jsonify({"status": "error", "message": "Subnet required"}), 400
     
     # Basic CIDR/IP validation
-    import re
     if not re.match(r'^[\d./\-]+$', subnet):
         return jsonify({"status": "error", "message": "Invalid subnet format"}), 400
     thread = threading.Thread(target=run_scan_background, args=(subnet, options))
@@ -246,7 +246,6 @@ def run_scan_background(subnet, options=None):
         print(f"Scan failed: {e}")
         with scan_lock:
             scan_error = str(e)
-            is_scanning = False
         return
     finally:
         with scan_lock:

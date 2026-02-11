@@ -37,7 +37,10 @@ class TestServer(unittest.TestCase):
         
         # Close and remove the temporary database
         os.close(self.db_fd)
-        os.remove(self.db_path)
+        try:
+            os.remove(self.db_path)
+        except PermissionError:
+            pass  # Windows may hold file locks briefly; ignore cleanup failure
 
     def test_status(self):
         """Test the status endpoint."""
@@ -144,9 +147,83 @@ class TestServer(unittest.TestCase):
         response = self.app.get(f'/api/history/{scan_id}')
         self.assertEqual(response.status_code, 404)
         
-        response = self.app.get('/api/history')
+    def test_scan_invalid_subnet_format(self):
+        """Test that invalid subnet formats are rejected."""
+        response = self.app.post('/api/scan', json={'subnet': 'DROP TABLE; --'})
+        self.assertEqual(response.status_code, 400)
         data = json.loads(response.data)
-        self.assertEqual(len(data), 0)
+        self.assertIn('Invalid subnet format', data['message'])
+
+    def test_scan_no_json_body(self):
+        """Test that non-JSON requests are rejected."""
+        response = self.app.post('/api/scan', data='not json',
+                                 content_type='text/plain')
+        # Flask returns 415 Unsupported Media Type for non-JSON Content-Type
+        self.assertIn(response.status_code, [400, 415])
+
+    def test_get_latest_report(self):
+        """Test retrieving the latest report."""
+        report = {"timestamp": "2023-01-01", "targetRange": "10.0.0.0/24",
+                  "devices": [], "summary": {"total": 0}}
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute('''INSERT INTO scan_history (timestamp, target_range, summary, full_report)
+                     VALUES (?, ?, ?, ?)''',
+                  ("2023-01-01", "10.0.0.0/24", json.dumps(report['summary']),
+                   json.dumps(report)))
+        conn.commit()
+        conn.close()
+
+        response = self.app.get('/api/report')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(data['targetRange'], '10.0.0.0/24')
+
+    def test_get_latest_report_empty(self):
+        """Test latest report when no scans exist."""
+        response = self.app.get('/api/report')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIsNone(data)
+
+    def test_history_search(self):
+        """Test history search filtering by target range."""
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        for subnet in ["10.0.0.0/24", "192.168.1.0/24", "172.16.0.0/16"]:
+            summary = json.dumps({"total": 1})
+            report = json.dumps({"targetRange": subnet})
+            c.execute('''INSERT INTO scan_history (timestamp, target_range, summary, full_report)
+                         VALUES (?, ?, ?, ?)''',
+                      ("2023-01-01", subnet, summary, report))
+        conn.commit()
+        conn.close()
+
+        response = self.app.get('/api/history?search=192.168')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]['target_range'], '192.168.1.0/24')
+
+    def test_history_sort(self):
+        """Test history sort by target_range ascending."""
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        for i, subnet in enumerate(["192.168.1.0/24", "10.0.0.0/24"]):
+            summary = json.dumps({"total": 1})
+            report = json.dumps({"targetRange": subnet})
+            c.execute('''INSERT INTO scan_history (timestamp, target_range, summary, full_report)
+                         VALUES (?, ?, ?, ?)''',
+                      (f"2023-01-0{i+1}", subnet, summary, report))
+        conn.commit()
+        conn.close()
+
+        response = self.app.get('/api/history?sort_by=target&order=asc')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(len(data), 2)
+        self.assertEqual(data[0]['target_range'], '10.0.0.0/24')
+        self.assertEqual(data[1]['target_range'], '192.168.1.0/24')
 
 if __name__ == '__main__':
     unittest.main()

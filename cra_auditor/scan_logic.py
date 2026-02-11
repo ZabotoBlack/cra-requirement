@@ -281,10 +281,6 @@ class CRAScanner:
             
         return devices
 
-    def _normalize_mac(self, mac):
-        if not mac or mac == "Unknown": return None
-        return mac.replace(":", "").lower()
-
     def _merge_devices(self, nmap_devices, ha_devices):
         """
         Merge separate lists of devices. 
@@ -452,7 +448,7 @@ class CRAScanner:
                 if r.status_code == 200 and "mac" in r.text: # Shelly JSON signature
                     if "auth" not in r.json() or not r.json().get("auth"):
                          warnings.append("Shelly Device: Authentication is NOT enabled for local web interface.")
-            except: pass
+            except Exception: pass
 
         # Philips Hue
         if (selected_vendors == 'all' or 'hue' in selected_vendors) and 80 in ports:
@@ -460,7 +456,7 @@ class CRAScanner:
                 r = requests.get(f"http://{ip}/description.xml", timeout=1)
                 if r.status_code == 200 and "Philips hue" in r.text:
                     warnings.append("Philips Hue Bridge detected. Ensure 'Link Button' authentication is strictly required.")
-             except: pass
+             except Exception: pass
         
         # Ikea
         if (selected_vendors == 'all' or 'ikea' in selected_vendors) and 80 in ports:
@@ -469,7 +465,7 @@ class CRAScanner:
                  r = requests.get(f"http://{ip}", timeout=1)
                  if "IKEA" in r.text or "Tradfri" in r.text:
                       warnings.append("IKEA Gateway detected. Ensure latest firmware to avoid known zigbee crash exploits.")
-             except: pass
+             except Exception: pass
 
         return warnings
 

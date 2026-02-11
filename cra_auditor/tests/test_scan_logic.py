@@ -196,5 +196,193 @@ class TestCRAScanner(unittest.TestCase):
         self.assertTrue(len(warnings) > 0)
         self.assertIn("Authentication is NOT enabled", warnings[0])
 
+    def test_check_confidentiality_unencrypted_ports(self):
+        """Test that unencrypted ports are flagged."""
+        open_ports = [
+            {"port": 21, "service": "ftp", "protocol": "tcp"},
+            {"port": 23, "service": "telnet", "protocol": "tcp"},
+            {"port": 443, "service": "https", "protocol": "tcp"},
+        ]
+        result = self.scanner.check_confidentiality(open_ports)
+        self.assertFalse(result['passed'])
+        self.assertIn("ftp/21", result['details'])
+        self.assertIn("telnet/23", result['details'])
+        self.assertNotIn("443", result['details'])
+
+    def test_check_confidentiality_all_encrypted(self):
+        """Test that encrypted-only ports pass."""
+        open_ports = [
+            {"port": 443, "service": "https", "protocol": "tcp"},
+            {"port": 8443, "service": "https-alt", "protocol": "tcp"},
+        ]
+        result = self.scanner.check_confidentiality(open_ports)
+        self.assertTrue(result['passed'])
+
+    @patch('scan_logic.requests.get')
+    def test_check_vulnerabilities_critical_cve(self, mock_get):
+        """Test that critical CVEs are detected."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "data": [
+                {"id": "CVE-2024-1234", "cvss": "9.8", "summary": "Critical RCE vulnerability in vendor firmware"}
+            ]
+        }
+        mock_get.return_value = mock_response
+
+        result = self.scanner.check_vulnerabilities("TestVendor", [])
+        self.assertFalse(result['passed'])
+        self.assertEqual(len(result['cves']), 1)
+        self.assertEqual(result['cves'][0]['severity'], "CRITICAL")
+
+    def test_check_vulnerabilities_unknown_vendor(self):
+        """Test that unknown vendor skips CVE check."""
+        result = self.scanner.check_vulnerabilities("Unknown", [])
+        self.assertTrue(result['passed'])
+        self.assertIn("Vendor unknown", result['details'])
+
+    @patch('scan_logic.requests.get', side_effect=Exception("Network error"))
+    def test_check_vulnerabilities_network_error(self, mock_get):
+        """Test graceful failure on CVE API network error."""
+        result = self.scanner.check_vulnerabilities("TestVendor", [])
+        self.assertTrue(result['passed'])
+        self.assertIn("network error", result['details'])
+
+    def test_vendor_check_tuya(self):
+        """Test Tuya vendor detection by port."""
+        device = {
+            "ip": "192.168.1.10",
+            "openPorts": [{"port": 6668, "service": "unknown", "protocol": "tcp"}],
+        }
+        warnings = self.scanner._check_vendor_specifics(device, ['tuya'])
+        self.assertTrue(any("Tuya" in w for w in warnings))
+
+    def test_vendor_check_kasa(self):
+        """Test TP-Link Kasa vendor detection by port."""
+        device = {
+            "ip": "192.168.1.10",
+            "openPorts": [{"port": 9999, "service": "unknown", "protocol": "tcp"}],
+        }
+        warnings = self.scanner._check_vendor_specifics(device, ['kasa'])
+        self.assertTrue(any("Kasa" in w for w in warnings))
+
+    def test_vendor_check_sonoff(self):
+        """Test Sonoff vendor detection by port."""
+        device = {
+            "ip": "192.168.1.10",
+            "openPorts": [{"port": 8081, "service": "unknown", "protocol": "tcp"}],
+        }
+        warnings = self.scanner._check_vendor_specifics(device, ['sonoff'])
+        self.assertTrue(any("Sonoff" in w for w in warnings))
+
+    @patch('scan_logic.CRAScanner._get_ha_devices')
+    def test_merge_no_ip_device(self, mock_get_ha):
+        """Test merging HA device without IP (e.g. Zigbee)."""
+        mock_get_ha.return_value = [{
+            "entity_id": "light.zigbee_bulb",
+            "attributes": {
+                "friendly_name": "Zigbee Bulb",
+                "manufacturer": "IKEA",
+                "model": "TRADFRI"
+                # No ip_address
+            }
+        }]
+        self.scanner.nm.all_hosts.return_value = []
+        results = self.scanner.scan_subnet("192.168.1.0/24", {"scan_type": "discovery"})
+        zigbee = [d for d in results if d.get('model') == 'TRADFRI']
+        self.assertEqual(len(zigbee), 1)
+        self.assertEqual(zigbee[0]['ip'], 'N/A')
+        self.assertEqual(zigbee[0]['source'], 'Home Assistant')
+
+    @patch('scan_logic.nmap.PortScanner')
+    def test_nmap_not_initialized(self, mock_nmap_cls):
+        """Test fallback when nmap is unavailable."""
+        mock_nmap_cls.side_effect = Exception("Nmap missing")
+        scanner = CRAScanner()
+        self.assertIsNone(scanner.nm)
+        # Should still return HA devices (mock data in dev mode)
+        results = scanner.scan_subnet("192.168.1.0/24")
+        self.assertTrue(len(results) > 0)
+        self.assertTrue(all(d.get('source') == 'Home Assistant' for d in results))
+
+
+class TestScanPreservesDiscovery(unittest.TestCase):
+    """Consolidated regression tests: discovery results must survive detailed scans."""
+
+    def _run_preservation_test(self, scan_type, detailed_returns_hosts):
+        """Helper: run a scan and verify discovery device is preserved."""
+        with patch('scan_logic.nmap.PortScanner'):
+            scanner = CRAScanner()
+            mock_nm = MagicMock()
+            scanner.nm = mock_nm
+
+            current_hosts = []
+
+            def scan_side_effect(*args, **kwargs):
+                nonlocal current_hosts
+                arguments = kwargs.get('arguments', '')
+                if '-sn' in arguments:
+                    current_hosts[:] = ['192.168.1.50']
+                else:
+                    current_hosts[:] = ['192.168.1.50'] if detailed_returns_hosts else []
+                return None
+
+            mock_nm.scan.side_effect = scan_side_effect
+            mock_nm.all_hosts.side_effect = lambda: list(current_hosts)
+
+            class MockHost(dict):
+                def hostname(self): return "TestDevice"
+                def all_protocols(self): return []
+
+            def getitem(k):
+                if k == '192.168.1.50' and k in current_hosts:
+                    last_args = mock_nm.scan.call_args[1].get('arguments', '')
+                    if '-sn' in last_args:
+                        return MockHost({
+                            'addresses': {'ipv4': '192.168.1.50', 'mac': 'AA:BB:CC:DD:EE:FF'},
+                            'vendor': {'AA:BB:CC:DD:EE:FF': 'TestVendor'},
+                            'osmatch': [],
+                        })
+                    else:
+                        return MockHost({
+                            'addresses': {'ipv4': '192.168.1.50'},
+                            'vendor': {},
+                            'osmatch': [],
+                        })
+                return {}
+
+            mock_nm.__getitem__.side_effect = getitem
+
+            results = scanner.scan_subnet('192.168.1.0/24', {
+                'scan_type': scan_type,
+                'auth_checks': False,
+                'vendors': 'all'
+            })
+
+            found = any(d.get('ip') == '192.168.1.50' for d in results)
+            self.assertTrue(found, f"Device should survive {scan_type} scan")
+
+            if scan_type != 'discovery':
+                device = next(d for d in results if d.get('ip') == '192.168.1.50')
+                self.assertEqual(device.get('mac'), 'AA:BB:CC:DD:EE:FF',
+                                 "MAC should be preserved from discovery")
+
+    def test_discovery_returns_devices(self):
+        """Discovery-only scan returns discovered devices."""
+        self._run_preservation_test('discovery', detailed_returns_hosts=False)
+
+    def test_standard_scan_preserves_discovery(self):
+        """Standard scan preserves devices even if detailed scan returns empty."""
+        self._run_preservation_test('standard', detailed_returns_hosts=False)
+
+    def test_deep_scan_preserves_discovery(self):
+        """Deep scan preserves devices even if detailed scan returns empty."""
+        self._run_preservation_test('deep', detailed_returns_hosts=False)
+
+    def test_mac_preserved_across_phases(self):
+        """MAC from discovery is preserved when detailed scan omits it."""
+        self._run_preservation_test('standard', detailed_returns_hosts=True)
+
+
 if __name__ == '__main__':
     unittest.main()
