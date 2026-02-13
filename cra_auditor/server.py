@@ -282,8 +282,7 @@ def run_scan_background(subnet, options=None):
     except Exception as e:
         logger.error(f"Scan failed: {e}")
         set_scan_state(False, error=str(e))
-        return
-    finally:
+    else:
         set_scan_state(False)
 
 if __name__ == '__main__':
