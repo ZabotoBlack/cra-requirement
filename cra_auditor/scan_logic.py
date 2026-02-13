@@ -13,6 +13,12 @@ logger = logging.getLogger(__name__)
 # Pre-compiled regex for NetBIOS hostname extraction (performance)
 _NBSTAT_RE = re.compile(r"NetBIOS name:\s+([\w-]+)")
 
+# Pre-compiled regex for generic firmware version extraction from HTTP content
+_FW_VERSION_RE = re.compile(
+    r'(?:firmware|fw|version|ver|software|sw)[:\s_=-]*v?(\d+\.\d+[\w./-]*)',
+    re.IGNORECASE,
+)
+
 # Known vendor SBOM availability status (best-effort lookup)
 # Values: "available" = vendor publishes SBOMs, "unavailable" = known to NOT publish, "unknown" = no data
 VENDOR_SBOM_STATUS = {
@@ -48,6 +54,27 @@ VENDOR_SBOM_STATUS = {
     "Ring": "unknown",
     "Amazon": "unknown",
     "Yamaha": "unknown",
+    "Ubiquiti": "unknown",
+    "Synology": "unknown",
+    "QNAP": "unknown",
+    "Netgear": "unavailable",
+    "D-Link": "unavailable",
+    "Reolink": "unavailable",
+    "Hikvision": "unavailable",
+    "Dahua": "unavailable",
+    "ESPHome": "unavailable",
+    "Tasmota": "unavailable",
+    "AVM": "unknown",
+    "Raspberry Pi": "unknown",
+}
+
+# Known vendor SBOM portal URLs (for direct linking in reports)
+VENDOR_SBOM_URLS = {
+    "Siemens": "https://sbom.siemens.com/",
+    "Philips": "https://www.philips.com/a-w/security/coordinated-vulnerability-disclosure",
+    "Signify": "https://www.signify.com/global/vulnerability-disclosure",
+    "Bosch": "https://psirt.bosch.com/",
+    "Cisco": "https://www.cisco.com/c/en/us/about/trust-center.html",
 }
 
 # Known vendor firmware update / changelog URLs
@@ -64,12 +91,23 @@ VENDOR_FIRMWARE_UPDATE_URLS = {
     "Sonoff": "https://sonoff.tech/product-review/product-tutorials/",
     "ITEAD": "https://sonoff.tech/product-review/product-tutorials/",
     "AVM": "https://en.avm.de/service/current-security-notifications/",
+    "FRITZ": "https://en.avm.de/service/current-security-notifications/",
     "Cisco": "https://www.cisco.com/c/en/us/support/all-products.html",
     "Xiaomi": "https://home.mi.com/",
     "Aqara": "https://www.aqara.com/en/support",
     "Meross": "https://www.meross.com/support",
     "Ring": "https://support.ring.com/",
     "Yamaha": "https://download.yamaha.com/",
+    "Ubiquiti": "https://www.ui.com/download/",
+    "Synology": "https://www.synology.com/en-us/security/advisory",
+    "QNAP": "https://www.qnap.com/en/security-advisory",
+    "Netgear": "https://www.netgear.com/support/download/",
+    "D-Link": "https://support.dlink.com/",
+    "Reolink": "https://reolink.com/download-center/",
+    "ESPHome": "https://esphome.io/changelog/",
+    "Tasmota": "https://github.com/arendst/Tasmota/releases",
+    "Hikvision": "https://www.hikvision.com/en/support/download/firmware/",
+    "Dahua": "https://www.dahuasecurity.com/support/downloadCenter",
 }
 
 class CRAScanner:
@@ -194,6 +232,9 @@ class CRAScanner:
             if check_vendor == "Unknown " or check_vendor.strip() == "Unknown":
                  check_vendor = dev.get('vendor', 'Unknown')
 
+            # Set resolved vendor for SBOM/firmware checks to use enriched data
+            dev['resolved_vendor'] = check_vendor
+
             # ENHANCED CHECKS - Conditional
             sbd_result = {"passed": True, "details": "Skipped auth checks."}
             if auth_checks:
@@ -311,7 +352,12 @@ class CRAScanner:
             scanned_devices[ip] = device_data
 
     def _get_ha_devices(self):
-        """Fetch devices from Home Assistant Supervisor API."""
+        """Fetch devices from Home Assistant Supervisor API.
+        
+        Uses both the States API and the Device Registry API for richer data.
+        The Device Registry provides sw_version, hw_version, manufacturer, and
+        model which are often missing from entity states.
+        """
         supervisor_token = os.environ.get('SUPERVISOR_TOKEN')
         supervisor_url = "http://supervisor/core/api/states"
         
@@ -319,15 +365,18 @@ class CRAScanner:
             logger.warning("SUPERVISOR_TOKEN not found. Skipping HA device sync (Mocking for dev).")
             # MOCK DATA FOR LOCAL DEV / DEBUGGING
             return [
-                {"entity_id": "media_player.yamaha_yas_306", "attributes": {"friendly_name": "Living Room Soundbar", "ip_address": "192.168.1.55", "source": "ha", "manufacturer": "Yamaha", "model": "YAS-306"}},
-                {"entity_id": "light.zigbee_device_1", "attributes": {"friendly_name": "Kitchen Light", "source": "ha", "manufacturer": "Philips", "model": "LWB010"}}, # Zigbee, no IP
-                {"entity_id": "router.fritz_box_7590", "attributes": {"friendly_name": "FRITZ!Box 7590", "ip_address": "192.168.1.1", "source": "ha", "manufacturer": "AVM", "model": "FRITZ!Box 7590"}}
+                {"entity_id": "media_player.yamaha_yas_306", "attributes": {"friendly_name": "Living Room Soundbar", "ip_address": "192.168.1.55", "source": "ha", "manufacturer": "Yamaha", "model": "YAS-306", "sw_version": "2.51"}},
+                {"entity_id": "light.zigbee_device_1", "attributes": {"friendly_name": "Kitchen Light", "source": "ha", "manufacturer": "Philips", "model": "LWB010", "sw_version": "1.50.2"}}, # Zigbee, no IP
+                {"entity_id": "router.fritz_box_7590", "attributes": {"friendly_name": "FRITZ!Box 7590", "ip_address": "192.168.1.1", "source": "ha", "manufacturer": "AVM", "model": "FRITZ!Box 7590", "sw_version": "7.57"}}
             ]
             
         headers = {
             "Authorization": f"Bearer {supervisor_token}",
             "Content-Type": "application/json",
         }
+        
+        # Fetch device registry for richer data (sw_version, manufacturer, model)
+        device_registry = self._get_ha_device_registry(headers)
         
         devices = []
         try:
@@ -338,12 +387,16 @@ class CRAScanner:
                     # Very simple heuristic to find "devices" with interesting attributes
                     attrs = state.get('attributes', {})
                     if 'ip_address' in attrs or 'manufacturer' in attrs or 'model' in attrs:
+                        entity_id = state['entity_id']
+                        # Enrich with device registry data
+                        reg_info = device_registry.get(entity_id, {})
                         devices.append({
-                            "entity_id": state['entity_id'],
+                            "entity_id": entity_id,
                             "attributes": attrs,
                             "ip": attrs.get('ip_address'),
-                            # Try to find MAC if exposed, rarely is in states, but sometimes in device registry (which requires diff API)
-                            # For now we rely on IP merging or just separate listing
+                            "sw_version": reg_info.get('sw_version') or attrs.get('sw_version'),
+                            "manufacturer": reg_info.get('manufacturer') or attrs.get('manufacturer'),
+                            "model": reg_info.get('model') or attrs.get('model'),
                         })
             else:
                 logger.error(f"Failed to fetch HA states: {response.status_code} {response.text}")
@@ -351,6 +404,61 @@ class CRAScanner:
             logger.error(f"Error communicating with Supervisor: {e}")
             
         return devices
+
+    def _get_ha_device_registry(self, headers):
+        """Fetch the HA Device Registry for richer device metadata.
+        
+        Returns a dict mapping entity_id -> {sw_version, manufacturer, model, hw_version}.
+        The Device Registry contains more reliable manufacturer/model data and
+        software versions that the states API often lacks.
+        """
+        registry_url = "http://supervisor/core/api/config/device_registry"
+        result = {}
+        try:
+            response = self.session.get(registry_url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                devices = response.json()
+                for device in devices:
+                    # Map by identifiers — entities link to devices via device_id
+                    # We store by device name as fallback key, and build entity mapping later
+                    info = {
+                        "sw_version": device.get('sw_version'),
+                        "hw_version": device.get('hw_version'),
+                        "manufacturer": device.get('manufacturer'),
+                        "model": device.get('model'),
+                        "name": device.get('name') or device.get('name_by_user'),
+                    }
+                    # Store by device ID for later entity matching
+                    device_id = device.get('id')
+                    if device_id:
+                        result[device_id] = info
+                
+                # Also try to fetch entity registry to map entity_id -> device_id
+                entity_map = self._map_entities_to_devices(headers, result)
+                result.update(entity_map)
+            else:
+                logger.debug(f"Device Registry fetch returned {response.status_code} (may not be available)")
+        except Exception as e:
+            logger.debug(f"Device Registry fetch failed: {e}")
+        
+        return result
+
+    def _map_entities_to_devices(self, headers, device_registry):
+        """Map entity IDs to device registry entries via the Entity Registry API."""
+        entity_url = "http://supervisor/core/api/config/entity_registry"
+        entity_map = {}
+        try:
+            response = self.session.get(entity_url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                entities = response.json()
+                for entity in entities:
+                    entity_id = entity.get('entity_id')
+                    device_id = entity.get('device_id')
+                    if entity_id and device_id and device_id in device_registry:
+                        entity_map[entity_id] = device_registry[device_id]
+        except Exception as e:
+            logger.debug(f"Entity Registry fetch failed: {e}")
+        return entity_map
 
     def _merge_devices(self, nmap_devices, ha_devices):
         """
@@ -367,17 +475,23 @@ class CRAScanner:
             attrs = ha_dev.get('attributes', {})
             ip = attrs.get('ip_address')
             
+            # Use enriched data from Device Registry if available
+            manufacturer = ha_dev.get('manufacturer') or attrs.get('manufacturer', 'Unknown')
+            model = ha_dev.get('model') or attrs.get('model', 'Unknown')
+            sw_version = ha_dev.get('sw_version') or attrs.get('sw_version')
+            
             # Prepare HA device info
             new_dev_entry = {
                 "ip": ip if ip else "N/A",
                 "mac": "Unknown", # HA states rarely show MAC
-                "vendor": attrs.get('manufacturer', 'Unknown'),
-                "model": attrs.get('model', 'Unknown'),
+                "vendor": manufacturer,
+                "manufacturer": manufacturer,
+                "model": model,
                 "hostname": attrs.get('friendly_name', ha_dev['entity_id']),
                 "openPorts": [],
                 "osMatch": "Unknown",
                 "source": "Home Assistant",
-                "sw_version": attrs.get('sw_version'),
+                "sw_version": sw_version,
             }
 
             if ip and ip in merged:
@@ -386,11 +500,14 @@ class CRAScanner:
                 existing['source'] = 'Merged (Nmap + HA)'
                 if existing['vendor'] == "Unknown" and new_dev_entry['vendor'] != "Unknown":
                     existing['vendor'] = new_dev_entry['vendor']
-                if new_dev_entry['model'] != "Unknown":
-                    existing['model'] = new_dev_entry['model'] # Add model field
+                # Always carry manufacturer from HA (more reliable than Nmap OUI)
+                if manufacturer != 'Unknown':
+                    existing['manufacturer'] = manufacturer
+                if model != "Unknown":
+                    existing['model'] = model
                 # Carry sw_version from HA
-                if new_dev_entry.get('sw_version'):
-                    existing['sw_version'] = new_dev_entry['sw_version']
+                if sw_version:
+                    existing['sw_version'] = sw_version
                 # Prefer user-friendly hostname from HA
                 existing['hostname'] = f"{existing['hostname']} ({new_dev_entry['hostname']})"
             else:
@@ -615,7 +732,8 @@ class CRAScanner:
         sbom_format = None
         ip = device.get('ip')
         open_ports = device.get('openPorts', [])
-        vendor = device.get('vendor', 'Unknown')
+        # Use resolved vendor (enriched from HA) if available, fallback to raw vendor
+        vendor = device.get('resolved_vendor') or device.get('vendor', 'Unknown')
         
         # Layer 1: Device-level SBOM endpoint probing
         http_ports = [p['port'] for p in open_ports 
@@ -629,21 +747,32 @@ class CRAScanner:
         # Layer 2: Vendor-level SBOM status lookup
         vendor_status = self._lookup_vendor_sbom_status(vendor)
         
+        # Layer 3: Vendor SBOM portal URL lookup
+        sbom_url = None
+        for known_vendor, url in VENDOR_SBOM_URLS.items():
+            if known_vendor.lower() in vendor.lower() or vendor.lower() in known_vendor.lower():
+                sbom_url = url
+                break
+        
         if sbom_found:
             # Best case: device directly exposes SBOM
             return {
                 "passed": True,
                 "details": "; ".join(details),
                 "sbom_found": True,
-                "sbom_format": sbom_format
+                "sbom_format": sbom_format,
+                "sbom_url": sbom_url
             }
         elif vendor_status == "available":
             details.append(f"Vendor '{vendor}' is known to publish SBOMs for their products.")
+            if sbom_url:
+                details.append(f"SBOM portal: {sbom_url}")
             return {
                 "passed": True,
                 "details": "; ".join(details),
                 "sbom_found": False,
-                "sbom_format": None
+                "sbom_format": None,
+                "sbom_url": sbom_url
             }
         elif vendor_status == "unavailable":
             details.append(f"No SBOM endpoint found on device. Vendor '{vendor}' does not publish SBOMs.")
@@ -651,7 +780,8 @@ class CRAScanner:
                 "passed": False,
                 "details": "; ".join(details) if details else f"No SBOM found. Vendor '{vendor}' has no known SBOM publication.",
                 "sbom_found": False,
-                "sbom_format": None
+                "sbom_format": None,
+                "sbom_url": None
             }
         else:
             # Unknown vendor or vendor status
@@ -663,7 +793,8 @@ class CRAScanner:
                 "passed": False,
                 "details": "; ".join(details),
                 "sbom_found": False,
-                "sbom_format": None
+                "sbom_format": None,
+                "sbom_url": None
             }
 
     def _probe_sbom_endpoints(self, ip, http_ports):
@@ -672,10 +803,21 @@ class CRAScanner:
         Returns (sbom_found: bool, sbom_format: str|None)
         """
         sbom_paths = [
+            # IETF / CycloneDX well-known paths
             '/.well-known/sbom',
             '/sbom.json',
             '/sbom.xml',
             '/sbom',
+            # Additional standard paths
+            '/api/sbom',
+            '/api/v1/sbom',
+            '/device/sbom',
+            '/bom.json',
+            '/bom.xml',
+            # CSAF (closely related to CRA)
+            '/.well-known/csaf',
+            # VEX (Vulnerability Exploitability eXchange)
+            '/.well-known/vex',
         ]
         
         # CycloneDX and SPDX content-type indicators
@@ -683,8 +825,10 @@ class CRAScanner:
             'cyclonedx': 'CycloneDX',
             'spdx': 'SPDX',
             'bomFormat': 'CycloneDX',     # CycloneDX JSON key
+            'specVersion': 'CycloneDX',   # CycloneDX JSON key (spec version field)
             'SPDXVersion': 'SPDX',        # SPDX JSON key
             'DocumentNamespace': 'SPDX',  # SPDX JSON key
+            'spdxVersion': 'SPDX',        # SPDX JSON key (alt casing)
         }
         
         # Log SSL warning once per device check if disabled
@@ -744,8 +888,10 @@ class CRAScanner:
         
         Multi-source firmware version detection:
         1. Nmap -sV service version strings from open ports
-        2. Vendor-specific firmware endpoints (Shelly, Hue, IKEA)
-        3. Home Assistant sw_version attribute
+        2. Vendor-specific firmware endpoints (Shelly, Hue, AVM, ESPHome, Tasmota, etc.)
+        3. UPnP device description XML
+        4. Generic HTTP content scraping (regex)
+        5. Home Assistant sw_version attribute
         
         Then performs version-specific CVE lookup if version is found.
         """
@@ -754,7 +900,8 @@ class CRAScanner:
         version_cves = []
         details = []
         ip = device.get('ip')
-        vendor = device.get('vendor', 'Unknown')
+        # Use resolved vendor (enriched from HA) if available
+        vendor = device.get('resolved_vendor') or device.get('vendor', 'Unknown')
         open_ports = device.get('openPorts', [])
 
         # Layer 1: Extract version from Nmap -sV service probe results
@@ -840,6 +987,9 @@ class CRAScanner:
     def _probe_firmware_endpoints(self, ip, http_ports, vendor):
         """Probe vendor-specific firmware version endpoints.
         
+        Supports: Shelly, Hue, AVM/FRITZ!, ESPHome, Tasmota, Sonoff,
+                  IKEA Tradfri, UPnP XML descriptors, and generic HTTP scraping.
+        
         Returns (version: str|None, source: str|None)
         """
         vendor_lower = vendor.lower() if vendor else ""
@@ -868,17 +1018,131 @@ class CRAScanner:
                         if sw:
                             return sw, "Hue Bridge API (/api/config)"
                 
-                # Generic: try common firmware endpoints
-                for path in ['/firmware', '/api/firmware', '/device/info', '/system/info']:
+                # AVM/FRITZ!Box firmware version endpoints
+                if 'avm' in vendor_lower or 'fritz' in vendor_lower:
+                    for path in ['/jason_boxinfo.xml', '/cgi-bin/system_status']:
+                        r = self.session.get(f"{base_url}{path}", timeout=2)
+                        if r.status_code == 200:
+                            text = r.text
+                            # Parse FRITZ!Box version from XML or HTML
+                            fw_match = re.search(r'<(?:Version|firmware_version|Labor)>([^<]+)</', text)
+                            if fw_match:
+                                return fw_match.group(1).strip(), f"AVM API ({path})"
+                            # Try to find version pattern in text
+                            fw_match = re.search(r'FRITZ!OS[:\s]*(\d+\.\d+[\w.]*)', text, re.IGNORECASE)
+                            if fw_match:
+                                return fw_match.group(1), f"AVM API ({path})"
+                
+                # ESPHome devices expose version at /api or via headers
+                if 'esp' in vendor_lower or 'esphome' in vendor_lower:
+                    r = self.session.get(f"{base_url}/", timeout=2)
+                    if r.status_code == 200:
+                        # ESPHome sets X-Esphome-Version header
+                        esphome_ver = r.headers.get('X-Esphome-Version')
+                        if esphome_ver:
+                            return esphome_ver, "ESPHome header (X-Esphome-Version)"
+                        # Also check page content
+                        ver_match = re.search(r'ESPHome[\s_-]*v?(\d+\.\d+[\w.]*)', r.text, re.IGNORECASE)
+                        if ver_match:
+                            return ver_match.group(1), "ESPHome web interface"
+                
+                # Tasmota devices: /cm?cmnd=Status%202 returns firmware info
+                if 'tasmota' in vendor_lower:
+                    r = self.session.get(f"{base_url}/cm?cmnd=Status%202", timeout=2)
+                    if r.status_code == 200:
+                        try:
+                            data = r.json()
+                            fw = data.get('StatusFWR', {}).get('Version')
+                            if fw:
+                                return fw, "Tasmota API (Status 2)"
+                        except (ValueError, AttributeError):
+                            pass
+                    # Fallback: root page often shows version
+                    r = self.session.get(f"{base_url}/", timeout=2)
+                    if r.status_code == 200:
+                        ver_match = re.search(r'Tasmota[\s_-]*v?(\d+\.\d+[\w.]*)', r.text, re.IGNORECASE)
+                        if ver_match:
+                            return ver_match.group(1), "Tasmota web interface"
+                
+                # Sonoff DIY Mode: /zeroconf/info
+                if 'sonoff' in vendor_lower or 'itead' in vendor_lower:
+                    try:
+                        r = self.session.post(
+                            f"{base_url}/zeroconf/info",
+                            json={"deviceid": "", "data": {}},
+                            timeout=2
+                        )
+                        if r.status_code == 200:
+                            data = r.json()
+                            fw = data.get('data', {}).get('fwVersion')
+                            if fw:
+                                return fw, "Sonoff DIY API (/zeroconf/info)"
+                    except Exception:
+                        pass
+                
+                # IKEA Tradfri Gateway
+                if 'ikea' in vendor_lower or 'tradfri' in vendor_lower:
+                    r = self.session.get(f"{base_url}/", timeout=2)
+                    if r.status_code == 200:
+                        ver_match = re.search(r'(?:firmware|version)[:\s]*(\d+\.\d+[\w.]*)', r.text, re.IGNORECASE)
+                        if ver_match:
+                            return ver_match.group(1), "IKEA Gateway web interface"
+                
+                # UPnP device description XML (routers, NAS, media devices)
+                for path in ['/description.xml', '/rootDesc.xml', '/gatedesc.xml',
+                             '/DeviceDescription.xml', '/dmr/DeviceDescription.xml']:
+                    try:
+                        r = self.session.get(f"{base_url}{path}", timeout=2)
+                        if r.status_code == 200 and '<root' in r.text[:500].lower():
+                            text = r.text
+                            # Extract firmware/software version from UPnP XML
+                            for tag in ['firmwareVersion', 'softwareVersion', 'firmware_version']:
+                                fw_match = re.search(rf'<{tag}>([^<]+)</', text, re.IGNORECASE)
+                                if fw_match:
+                                    return fw_match.group(1).strip(), f"UPnP XML ({path})"
+                            # Try modelNumber as version indicator (some devices use this)
+                            model_match = re.search(r'<modelNumber>([^<]+)</', text)
+                            if model_match:
+                                model_ver = model_match.group(1).strip()
+                                # Only use if it looks like a version number
+                                if re.match(r'\d+\.\d+', model_ver):
+                                    return model_ver, f"UPnP XML modelNumber ({path})"
+                    except Exception:
+                        pass
+                
+                # Generic: try common firmware endpoints (JSON APIs)
+                for path in ['/firmware', '/api/firmware', '/device/info',
+                             '/system/info', '/api/system', '/api/device',
+                             '/api/v1/device/info', '/status', '/api/status']:
                     r = self.session.get(f"{base_url}{path}", timeout=2)
                     if r.status_code == 200:
                         try:
                             data = r.json()
-                            for key in ['fw_version', 'firmware_version', 'version', 'fw', 'softwareVersion']:
+                            for key in ['fw_version', 'firmware_version', 'version',
+                                        'fw', 'softwareVersion', 'sw_version',
+                                        'firmwareVersion', 'sys_version', 'os_version']:
                                 if key in data:
                                     return str(data[key]), f"Device API ({path})"
+                            # Check nested structures
+                            for outer in ['system', 'device', 'firmware', 'info']:
+                                if isinstance(data.get(outer), dict):
+                                    for key in ['version', 'fw_version', 'firmware_version', 'sw_version']:
+                                        if key in data[outer]:
+                                            return str(data[outer][key]), f"Device API ({path} → {outer}.{key})"
                         except (ValueError, AttributeError):
                             pass
+                
+                # Last resort: regex scan HTTP root page for version patterns
+                try:
+                    r = self.session.get(f"{base_url}/", timeout=2)
+                    if r.status_code == 200 and len(r.text) > 20:
+                        content = r.text[:5000]  # Only check first 5KB
+                        match = _FW_VERSION_RE.search(content)
+                        if match:
+                            return match.group(1), "HTTP content scraping (regex)"
+                except Exception:
+                    pass
+                
             except Exception as e:
                 logger.debug(f"Firmware endpoint probe failed for {base_url}: {e}")
         

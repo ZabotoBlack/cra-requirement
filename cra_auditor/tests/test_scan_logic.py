@@ -648,5 +648,396 @@ class TestFirmwareTracking(unittest.TestCase):
         self.assertIn('version_cves', device['checks']['firmwareTracking'])
 
 
+class TestHADeviceRegistry(unittest.TestCase):
+    """Tests for HA Device Registry integration."""
+
+    @patch('scan_logic.nmap.PortScanner')
+    def setUp(self, mock_nmap):
+        self.scanner = CRAScanner()
+        self.scanner.nm = MagicMock()
+
+    def test_device_registry_enriches_sw_version(self):
+        """Device Registry sw_version flows through to merged device."""
+        # Mock entity registry response
+        entity_resp = MagicMock()
+        entity_resp.status_code = 200
+        entity_resp.json.return_value = [
+            {"entity_id": "light.kitchen", "device_id": "dev_123"}
+        ]
+        # Mock device registry response
+        device_resp = MagicMock()
+        device_resp.status_code = 200
+        device_resp.json.return_value = [
+            {"id": "dev_123", "sw_version": "2.5.1", "manufacturer": "Philips", "model": "LCA001", "name": "Kitchen Light"}
+        ]
+        # Mock states response
+        states_resp = MagicMock()
+        states_resp.status_code = 200
+        states_resp.json.return_value = [
+            {"entity_id": "light.kitchen", "attributes": {"friendly_name": "Kitchen Light", "manufacturer": "Philips"}}
+        ]
+
+        call_count = [0]
+        def mock_get(url, **kwargs):
+            call_count[0] += 1
+            if 'device_registry' in url:
+                return device_resp
+            elif 'entity_registry' in url:
+                return entity_resp
+            else:
+                return states_resp
+
+        self.scanner.session.get = mock_get
+
+        with patch.dict(os.environ, {'SUPERVISOR_TOKEN': 'test-token'}):
+            devices = self.scanner._get_ha_devices()
+
+        # Should have at least one device with sw_version from registry
+        ha_devs_with_sw = [d for d in devices if d.get('sw_version')]
+        self.assertTrue(len(ha_devs_with_sw) > 0)
+        self.assertEqual(ha_devs_with_sw[0]['sw_version'], '2.5.1')
+        self.assertEqual(ha_devs_with_sw[0]['manufacturer'], 'Philips')
+
+    def test_device_registry_failure_graceful(self):
+        """Device Registry API failure doesn't break _get_ha_devices."""
+        fail_resp = MagicMock()
+        fail_resp.status_code = 404
+        fail_resp.text = "Not Found"
+
+        states_resp = MagicMock()
+        states_resp.status_code = 200
+        states_resp.json.return_value = [
+            {"entity_id": "sensor.test", "attributes": {"ip_address": "192.168.1.5", "manufacturer": "Test"}}
+        ]
+
+        def mock_get(url, **kwargs):
+            if 'device_registry' in url or 'entity_registry' in url:
+                return fail_resp
+            return states_resp
+
+        self.scanner.session.get = mock_get
+
+        with patch.dict(os.environ, {'SUPERVISOR_TOKEN': 'test-token'}):
+            devices = self.scanner._get_ha_devices()
+
+        # Should still return devices from states API
+        self.assertTrue(len(devices) > 0)
+
+
+class TestVendorResolution(unittest.TestCase):
+    """Tests for resolved_vendor in SBOM/firmware checks."""
+
+    @patch('scan_logic.nmap.PortScanner')
+    def setUp(self, mock_nmap):
+        self.scanner = CRAScanner()
+        self.scanner.nm = MagicMock()
+
+    def test_sbom_uses_resolved_vendor(self):
+        """SBOM check uses resolved_vendor over raw vendor."""
+        device = {
+            "ip": "192.168.1.10",
+            "openPorts": [],
+            "vendor": "Unknown",
+            "resolved_vendor": "Philips"
+        }
+
+        result = self.scanner.check_sbom_compliance(device)
+        self.assertTrue(result['passed'])
+        self.assertIn("Philips", result['details'])
+        self.assertIn("publish SBOMs", result['details'])
+
+    def test_firmware_uses_resolved_vendor(self):
+        """Firmware check uses resolved_vendor for vendor endpoint probing."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"fw": "1.14.0"}
+        self.scanner.session.get = MagicMock(return_value=mock_response)
+
+        device = {
+            "ip": "192.168.1.20",
+            "openPorts": [{"port": 80, "service": "http", "protocol": "tcp"}],
+            "vendor": "Unknown",
+            "resolved_vendor": "Shelly"
+        }
+
+        result = self.scanner.check_firmware_tracking(device)
+        self.assertEqual(result['firmware_version'], '1.14.0')
+        self.assertIn('Shelly API', result['firmware_source'])
+
+    def test_sbom_portal_url_returned(self):
+        """SBOM result includes sbom_url for known vendors."""
+        device = {
+            "ip": "192.168.1.10",
+            "openPorts": [],
+            "vendor": "Siemens"
+        }
+
+        result = self.scanner.check_sbom_compliance(device)
+        self.assertIn('sbom_url', result)
+        self.assertEqual(result['sbom_url'], "https://sbom.siemens.com/")
+
+    def test_merge_carries_manufacturer(self):
+        """_merge_devices carries manufacturer from HA to existing Nmap device."""
+        nmap_devices = [{
+            "ip": "192.168.1.10",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "vendor": "Unknown",
+            "hostname": "device1",
+            "openPorts": [],
+            "osMatch": "Unknown",
+            "source": "Nmap"
+        }]
+        ha_devices = [{
+            "entity_id": "light.test",
+            "attributes": {"ip_address": "192.168.1.10", "friendly_name": "Test Light"},
+            "manufacturer": "Philips",
+            "model": "LCA001",
+            "sw_version": "2.5.1"
+        }]
+
+        merged = self.scanner._merge_devices(nmap_devices, ha_devices)
+        device = [d for d in merged if d['ip'] == '192.168.1.10'][0]
+        self.assertEqual(device['manufacturer'], 'Philips')
+        self.assertEqual(device['sw_version'], '2.5.1')
+        self.assertEqual(device['vendor'], 'Philips')
+
+
+class TestExpandedSBOMProbing(unittest.TestCase):
+    """Tests for expanded SBOM endpoint paths."""
+
+    @patch('scan_logic.nmap.PortScanner')
+    def setUp(self, mock_nmap):
+        self.scanner = CRAScanner()
+        self.scanner.nm = MagicMock()
+
+    def test_sbom_api_v1_path(self):
+        """SBOM found at /api/v1/sbom path."""
+        call_urls = []
+        def mock_get(url, **kwargs):
+            call_urls.append(url)
+            resp = MagicMock()
+            if url.endswith('/api/v1/sbom'):
+                resp.status_code = 200
+                resp.text = '{"bomFormat": "CycloneDX", "specVersion": "1.4"}' + ' ' * 50
+                resp.headers = {'Content-Type': 'application/json'}
+            else:
+                resp.status_code = 404
+                resp.text = ''
+            return resp
+
+        self.scanner.session.get = mock_get
+        found, fmt = self.scanner._probe_sbom_endpoints("192.168.1.10", [80])
+        self.assertTrue(found)
+        self.assertEqual(fmt, 'CycloneDX')
+
+    def test_sbom_well_known_csaf(self):
+        """SBOM found at /.well-known/csaf path."""
+        def mock_get(url, **kwargs):
+            resp = MagicMock()
+            if url.endswith('/.well-known/csaf'):
+                resp.status_code = 200
+                resp.text = '{"csaf_version": "2.0", "document": {}}' + ' ' * 50
+                resp.headers = {'Content-Type': 'application/json'}
+            else:
+                resp.status_code = 404
+                resp.text = ''
+            return resp
+
+        self.scanner.session.get = mock_get
+        found, fmt = self.scanner._probe_sbom_endpoints("192.168.1.10", [443])
+        self.assertTrue(found)
+        # Should be detected as Unknown Format (no CycloneDX/SPDX signatures)
+        self.assertEqual(fmt, 'Unknown Format')
+
+    def test_sbom_probes_all_new_paths(self):
+        """Verify all expanded SBOM paths are probed."""
+        probed_urls = []
+        def mock_get(url, **kwargs):
+            probed_urls.append(url)
+            resp = MagicMock()
+            resp.status_code = 404
+            resp.text = ''
+            return resp
+
+        self.scanner.session.get = mock_get
+        self.scanner._probe_sbom_endpoints("192.168.1.10", [80])
+
+        # Check that new paths are probed
+        probed_paths = [url.split(':80')[1] for url in probed_urls if ':80' in url]
+        self.assertIn('/api/sbom', probed_paths)
+        self.assertIn('/api/v1/sbom', probed_paths)
+        self.assertIn('/bom.json', probed_paths)
+        self.assertIn('/.well-known/csaf', probed_paths)
+        self.assertIn('/.well-known/vex', probed_paths)
+
+
+class TestExpandedFirmwareProbing(unittest.TestCase):
+    """Tests for expanded vendor-specific firmware detection."""
+
+    @patch('scan_logic.nmap.PortScanner')
+    def setUp(self, mock_nmap):
+        self.scanner = CRAScanner()
+        self.scanner.nm = MagicMock()
+
+    def test_firmware_from_avm_fritz_endpoint(self):
+        """AVM/FRITZ!Box firmware version extracted from /jason_boxinfo.xml."""
+        def mock_get(url, **kwargs):
+            resp = MagicMock()
+            if 'jason_boxinfo' in url:
+                resp.status_code = 200
+                resp.text = '<BoxInfo><Version>7.57</Version><Name>FRITZ!Box 7590</Name></BoxInfo>'
+            else:
+                resp.status_code = 404
+                resp.text = ''
+            return resp
+
+        self.scanner.session.get = mock_get
+        fw, src = self.scanner._probe_firmware_endpoints("192.168.1.1", [80], "AVM FRITZ!Box")
+        self.assertEqual(fw, '7.57')
+        self.assertIn('AVM API', src)
+
+    def test_firmware_from_fritz_os_pattern(self):
+        """AVM FRITZ!OS version pattern detected from system_status."""
+        def mock_get(url, **kwargs):
+            resp = MagicMock()
+            if 'system_status' in url:
+                resp.status_code = 200
+                resp.text = '<html>FRITZ!OS: 7.57 running on FRITZ!Box 7590</html>'
+            else:
+                resp.status_code = 404
+                resp.text = ''
+            return resp
+
+        self.scanner.session.get = mock_get
+        fw, src = self.scanner._probe_firmware_endpoints("192.168.1.1", [80], "AVM")
+        self.assertEqual(fw, '7.57')
+
+    def test_firmware_from_esphome_header(self):
+        """ESPHome firmware version from X-Esphome-Version header."""
+        def mock_get(url, **kwargs):
+            resp = MagicMock()
+            if url.endswith('/'):
+                resp.status_code = 200
+                resp.text = '<html>ESPHome</html>'
+                resp.headers = {'X-Esphome-Version': '2023.12.0'}
+            else:
+                resp.status_code = 404
+                resp.text = ''
+                resp.headers = {}
+            return resp
+
+        self.scanner.session.get = mock_get
+        fw, src = self.scanner._probe_firmware_endpoints("192.168.1.30", [80], "ESPHome")
+        self.assertEqual(fw, '2023.12.0')
+        self.assertIn('ESPHome header', src)
+
+    def test_firmware_from_tasmota_status(self):
+        """Tasmota firmware version from Status 2 JSON."""
+        def mock_get(url, **kwargs):
+            resp = MagicMock()
+            if 'cmnd=Status' in url:
+                resp.status_code = 200
+                resp.json.return_value = {"StatusFWR": {"Version": "13.3.0(tasmota)"}}
+            else:
+                resp.status_code = 404
+                resp.text = ''
+            return resp
+
+        self.scanner.session.get = mock_get
+        fw, src = self.scanner._probe_firmware_endpoints("192.168.1.40", [80], "Tasmota")
+        self.assertEqual(fw, '13.3.0(tasmota)')
+        self.assertIn('Tasmota API', src)
+
+    def test_firmware_from_sonoff_zeroconf(self):
+        """Sonoff firmware version from DIY Mode /zeroconf/info."""
+        def mock_post(url, **kwargs):
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {"data": {"fwVersion": "3.5.0"}}
+            return resp
+
+        def mock_get(url, **kwargs):
+            resp = MagicMock()
+            resp.status_code = 404
+            resp.text = ''
+            return resp
+
+        self.scanner.session.get = mock_get
+        self.scanner.session.post = mock_post
+        fw, src = self.scanner._probe_firmware_endpoints("192.168.1.50", [80], "Sonoff")
+        self.assertEqual(fw, '3.5.0')
+        self.assertIn('Sonoff DIY API', src)
+
+    def test_firmware_from_upnp_description(self):
+        """Firmware version extracted from UPnP /description.xml."""
+        def mock_get(url, **kwargs):
+            resp = MagicMock()
+            if 'description.xml' in url:
+                resp.status_code = 200
+                resp.text = '''<?xml version="1.0"?>
+                <root xmlns="urn:schemas-upnp-org:device-1-0">
+                  <device>
+                    <friendlyName>My Router</friendlyName>
+                    <firmwareVersion>3.14.2</firmwareVersion>
+                    <modelNumber>RT-AC68U</modelNumber>
+                  </device>
+                </root>'''
+            else:
+                resp.status_code = 404
+                resp.text = ''
+            return resp
+
+        self.scanner.session.get = mock_get
+        fw, src = self.scanner._probe_firmware_endpoints("192.168.1.1", [80], "Unknown")
+        self.assertEqual(fw, '3.14.2')
+        self.assertIn('UPnP XML', src)
+
+    def test_firmware_generic_http_scrape(self):
+        """Firmware version scraped from HTTP page content via regex."""
+        call_count = [0]
+        def mock_get(url, **kwargs):
+            call_count[0] += 1
+            resp = MagicMock()
+            resp.headers = {}
+            # All specific endpoints return 404
+            if url.endswith('/'):
+                resp.status_code = 200
+                resp.text = '<html><body>Device Info: Firmware Version: 4.2.1-build123</body></html>'
+            elif 'description.xml' in url or 'rootDesc' in url or 'gatedesc' in url or 'DeviceDescription' in url or 'dmr' in url:
+                resp.status_code = 404
+                resp.text = ''
+            else:
+                resp.status_code = 404
+                resp.text = ''
+                resp.json.side_effect = ValueError("No JSON")
+            return resp
+
+        self.scanner.session.get = mock_get
+        fw, src = self.scanner._probe_firmware_endpoints("192.168.1.60", [80], "SomeUnknownVendor")
+        self.assertEqual(fw, '4.2.1-build123')
+        self.assertIn('HTTP content scraping', src)
+
+    def test_firmware_nested_json_structure(self):
+        """Firmware version found in nested JSON structure."""
+        def mock_get(url, **kwargs):
+            resp = MagicMock()
+            if url.endswith(('/firmware', '/api/firmware', '/device/info', '/system/info',
+                            '/api/system', '/api/device', '/api/v1/device/info',
+                            '/status', '/api/status')):
+                resp.status_code = 200
+                resp.json.return_value = {"system": {"version": "5.0.3", "uptime": 12345}}
+            else:
+                resp.status_code = 404
+                resp.text = ''
+                resp.json.side_effect = ValueError
+            return resp
+
+        self.scanner.session.get = mock_get
+        fw, src = self.scanner._probe_firmware_endpoints("192.168.1.70", [80], "SomeVendor")
+        self.assertEqual(fw, '5.0.3')
+        self.assertIn('Device API', src)
+        self.assertIn('system.version', src)
+
+
 if __name__ == '__main__':
     unittest.main()
