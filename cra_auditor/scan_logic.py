@@ -64,7 +64,6 @@ VENDOR_SBOM_STATUS = {
     "Dahua": "unavailable",
     "ESPHome": "unavailable",
     "Tasmota": "unavailable",
-    "AVM": "unknown",
     "Raspberry Pi": "unknown",
 }
 
