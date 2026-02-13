@@ -27,9 +27,6 @@ if not os.path.exists(FRONTEND_DIR):
         FRONTEND_DIR = None
 
 # Global State
-scan_lock = threading.Lock()
-is_scanning = False
-scan_error = None
 scanner = CRAScanner()
 DB_FILE = "scans.db"
 
@@ -46,11 +43,53 @@ def init_db():
             full_report TEXT NOT NULL
         )
     ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS scan_state (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            is_scanning INTEGER NOT NULL DEFAULT 0,
+            scan_error TEXT
+        )
+    ''')
+    c.execute('INSERT OR IGNORE INTO scan_state (id, is_scanning) VALUES (1, 0)')
     conn.commit()
     conn.close()
 
-# Initialize DB on startup
+def reset_scan_state():
+    """Reset scan state on startup to clear zombie states from crashes."""
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute('UPDATE scan_state SET is_scanning = 0, scan_error = NULL WHERE id = 1')
+        conn.commit()
+
+def try_claim_scan() -> bool:
+    """Atomically try to claim the scan lock. Returns True if acquired."""
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.execute(
+            'UPDATE scan_state SET is_scanning = 1, scan_error = NULL WHERE id = 1 AND is_scanning = 0'
+        )
+        conn.commit()
+        return c.rowcount > 0
+
+def get_scan_state() -> dict:
+    """Read the current scan state from the database."""
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute('SELECT is_scanning, scan_error FROM scan_state WHERE id = 1').fetchone()
+    if row:
+        return {"scanning": bool(row['is_scanning']), "error": row['scan_error']}
+    return {"scanning": False, "error": None}
+
+def set_scan_state(scanning: bool, error: str = None):
+    """Update the scan state in the database."""
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute(
+            'UPDATE scan_state SET is_scanning = ?, scan_error = ? WHERE id = 1',
+            (int(scanning), error)
+        )
+        conn.commit()
+
+# Initialize DB and reset zombie state on startup
 init_db()
+reset_scan_state()
 
 @app.route('/')
 def index():
@@ -78,14 +117,6 @@ def set_security_headers(response):
 
 @app.route('/api/scan', methods=['POST'])
 def start_scan():
-    global is_scanning, scan_error
-    with scan_lock:
-        if is_scanning:
-            return jsonify({"status": "error", "message": "Scan already in progress"}), 409
-        is_scanning = True
-        scan_error = None
-    
-    
     data = request.json
     if not data:
         return jsonify({"status": "error", "message": "Invalid JSON body"}), 400
@@ -98,16 +129,21 @@ def start_scan():
     # Basic CIDR/IP validation
     if not re.match(r'^[\d./\-]+$', subnet):
         return jsonify({"status": "error", "message": "Invalid subnet format"}), 400
+    
+    # Atomic lock: only one scan at a time across all workers
+    if not try_claim_scan():
+        return jsonify({"status": "error", "message": "Scan already in progress"}), 409
+    
     thread = threading.Thread(target=run_scan_background, args=(subnet, options))
     thread.start()
     return jsonify({"status": "success", "message": "Scan started"})
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
-    with scan_lock:
-        result = {"scanning": is_scanning}
-        if scan_error:
-            result["error"] = scan_error
+    state = get_scan_state()
+    result = {"scanning": state["scanning"]}
+    if state["error"]:
+        result["error"] = state["error"]
     return jsonify(result)
 
 @app.route('/api/config', methods=['GET'])
@@ -206,8 +242,6 @@ def delete_history_item(scan_id):
         return jsonify({"error": str(e)}), 500
 
 def run_scan_background(subnet, options=None):
-    global is_scanning, scan_error
-    # is_scanning = True - set in start_scan now under lock
     try:
         devices = scanner.scan_subnet(subnet, options)
         
@@ -247,12 +281,10 @@ def run_scan_background(subnet, options=None):
 
     except Exception as e:
         logger.error(f"Scan failed: {e}")
-        with scan_lock:
-            scan_error = str(e)
+        set_scan_state(False, error=str(e))
         return
     finally:
-        with scan_lock:
-            is_scanning = False
+        set_scan_state(False)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8099)  # Gunicorn takes over in production via run.sh

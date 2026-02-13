@@ -17,14 +17,14 @@ export const startScan = async (subnet: string, options: ScanOptions): Promise<v
   }
 };
 
-export const getScanStatus = async (): Promise<{ scanning: boolean; error?: string }> => {
+export const getScanStatus = async (): Promise<{ scanning: boolean; error?: string } | null> => {
   try {
     const response = await fetch('api/status');
-    if (!response.ok) return { scanning: false };
+    if (!response.ok) return null;
     const data = await response.json();
     return { scanning: data.scanning, error: data.error };
   } catch (e) {
-    return { scanning: false };
+    return null;
   }
 };
 

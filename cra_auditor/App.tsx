@@ -9,6 +9,7 @@ import { ScanReport, ViewState, ScanOptions } from './types';
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>('dashboard');
   const [scanning, setScanning] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [report, setReport] = useState<ScanReport | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [config, setConfig] = useState<{ gemini_enabled: boolean; version: string } | null>(null);
@@ -35,17 +36,21 @@ const App: React.FC = () => {
 
   const fetchData = useCallback(async () => {
     const statusData = await getScanStatus();
-    const isScanning = statusData.scanning;
-    setScanning(isScanning);
 
-    if (statusData.error) {
-      setScanError(statusData.error);
-    }
+    // Only update scanning state on successful fetch; preserve last known state on error
+    if (statusData !== null) {
+      setScanning(statusData.scanning);
+      setLoading(false);
 
-    // Auto-refresh report when not scanning and on dashboard view
-    if (viewRef.current === 'dashboard' && !isScanning) {
-      const data = await getReport();
-      if (data) setReport(data);
+      if (statusData.error) {
+        setScanError(statusData.error);
+      }
+
+      // Auto-refresh report when not scanning and on dashboard view
+      if (viewRef.current === 'dashboard' && !statusData.scanning) {
+        const data = await getReport();
+        if (data) setReport(data);
+      }
     }
   }, []);
 
@@ -202,8 +207,8 @@ const App: React.FC = () => {
                   <button
                     onClick={() => setScanOptions({ ...scanOptions, vendors: 'all' })}
                     className={`px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-2 transition-all ${scanOptions.vendors === 'all'
-                        ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400'
-                        : 'bg-slate-800 border-slate-700 text-slate-400'
+                      ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400'
+                      : 'bg-slate-800 border-slate-700 text-slate-400'
                       }`}
                   >
                     {scanOptions.vendors === 'all' ? <CheckSquare size={12} /> : <Square size={12} />}
@@ -212,8 +217,8 @@ const App: React.FC = () => {
                   <button
                     onClick={() => setScanOptions({ ...scanOptions, vendors: [] })}
                     className={`px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-2 transition-all ${Array.isArray(scanOptions.vendors) && scanOptions.vendors.length === 0
-                        ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400'
-                        : 'bg-slate-800 border-slate-700 text-slate-400'
+                      ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400'
+                      : 'bg-slate-800 border-slate-700 text-slate-400'
                       }`}
                   >
                     {Array.isArray(scanOptions.vendors) && scanOptions.vendors.length === 0 ? <CheckSquare size={12} /> : <Square size={12} />}
@@ -310,7 +315,12 @@ const App: React.FC = () => {
 
         {/* View Container */}
         <div className="p-8">
-          {scanning ? (
+          {loading ? (
+            <div className="h-[60vh] flex flex-col items-center justify-center space-y-4">
+              <div className="w-12 h-12 border-4 border-slate-700 border-t-indigo-500 rounded-full animate-spin"></div>
+              <p className="text-slate-400">Connecting to backend...</p>
+            </div>
+          ) : scanning ? (
             <div className="h-[60vh] flex flex-col items-center justify-center space-y-4">
               <div className="relative">
                 <div className="w-16 h-16 border-4 border-slate-700 border-t-emerald-500 rounded-full animate-spin"></div>

@@ -13,10 +13,6 @@ import server
 
 class TestServer(unittest.TestCase):
     def setUp(self):
-        # Reset global state
-        server.is_scanning = False
-        server.scan_error = None
-
         # Create a temporary file for the database
         self.db_fd, self.db_path = tempfile.mkstemp()
 
@@ -85,21 +81,16 @@ class TestServer(unittest.TestCase):
         response = self.app.post('/api/scan', json={})
         self.assertEqual(response.status_code, 400)
 
-    @patch('server.is_scanning', True)
     def test_scan_start_already_in_progress(self):
         """Test starting a scan when one is already running."""
-        # Note: server.is_scanning is a global variable.
-        # Patching it directly here might be tricky because it's imported in the module scope.
-        # A better way is to set it and unset it, or use patch.object if it were in a class.
-        # Since it's a global in 'server', we need to set it on the module.
-        
-        original_state = server.is_scanning
-        server.is_scanning = True
-        try:
-            response = self.app.post('/api/scan', json={'subnet': '1.2.3.4'})
-            self.assertEqual(response.status_code, 409)
-        finally:
-            server.is_scanning = original_state
+        # Set scan state to in-progress in the DB
+        conn = sqlite3.connect(self.db_path)
+        conn.execute('UPDATE scan_state SET is_scanning = 1 WHERE id = 1')
+        conn.commit()
+        conn.close()
+
+        response = self.app.post('/api/scan', json={'subnet': '1.2.3.4/32'})
+        self.assertEqual(response.status_code, 409)
 
     def test_history_empty(self):
         """Test fetching history when empty."""
@@ -224,6 +215,46 @@ class TestServer(unittest.TestCase):
         self.assertEqual(len(data), 2)
         self.assertEqual(data[0]['target_range'], '10.0.0.0/24')
         self.assertEqual(data[1]['target_range'], '192.168.1.0/24')
+
+    def test_zombie_state_reset(self):
+        """Test that scan state is reset on startup (zombie prevention)."""
+        # Simulate a zombie state: is_scanning stuck at 1
+        conn = sqlite3.connect(self.db_path)
+        conn.execute('UPDATE scan_state SET is_scanning = 1 WHERE id = 1')
+        conn.commit()
+        conn.close()
+
+        # Verify it's stuck
+        response = self.app.get('/api/status')
+        data = json.loads(response.data)
+        self.assertTrue(data['scanning'])
+
+        # Call reset (simulating app restart)
+        server.reset_scan_state()
+
+        # Verify it's cleared
+        response = self.app.get('/api/status')
+        data = json.loads(response.data)
+        self.assertFalse(data['scanning'])
+
+    def test_atomic_scan_lock(self):
+        """Test that try_claim_scan is atomic - second claim fails."""
+        # First claim should succeed
+        self.assertTrue(server.try_claim_scan())
+
+        # Second claim should fail (scan already running)
+        self.assertFalse(server.try_claim_scan())
+
+        # Status should show scanning
+        response = self.app.get('/api/status')
+        data = json.loads(response.data)
+        self.assertTrue(data['scanning'])
+
+        # Release
+        server.set_scan_state(False)
+
+        # Now claim should succeed again
+        self.assertTrue(server.try_claim_scan())
 
 if __name__ == '__main__':
     unittest.main()
