@@ -514,6 +514,145 @@ class TestSBOMCheck(unittest.TestCase):
         self.assertIn('passed', device['checks']['sbomCompliance'])
         self.assertIn('sbom_found', device['checks']['sbomCompliance'])
 
+class TestFirmwareTracking(unittest.TestCase):
+    """Tests for firmware version tracking (CRA Annex I §2(2))."""
+
+    @patch('scan_logic.nmap.PortScanner')
+    def setUp(self, mock_nmap):
+        self.scanner = CRAScanner()
+        self.scanner.nm = MagicMock()
+
+    def test_firmware_from_nmap_service_version(self):
+        """Firmware version extracted from Nmap -sV service data."""
+        device = {
+            "ip": "192.168.1.10",
+            "openPorts": [
+                {"port": 80, "service": "http", "protocol": "tcp", "product": "lighttpd", "version": "1.4.59"}
+            ],
+            "vendor": "Shelly"
+        }
+
+        result = self.scanner.check_firmware_tracking(device)
+        self.assertTrue(result['passed'])
+        self.assertEqual(result['firmware_version'], '1.4.59')
+        self.assertIn('Nmap service scan', result['firmware_source'])
+        self.assertIn('lighttpd', result['firmware_source'])
+
+    @patch('scan_logic.requests.get')
+    def test_firmware_from_vendor_endpoint_shelly(self, mock_get):
+        """Version extracted from Shelly /settings endpoint."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"fw": "20230913-112003/v1.14.0-gcb84623", "mac": "aabbcc"}
+        mock_get.return_value = mock_response
+
+        device = {
+            "ip": "192.168.1.20",
+            "openPorts": [{"port": 80, "service": "http", "protocol": "tcp"}],  # No product/version keys
+            "vendor": "Shelly"
+        }
+
+        result = self.scanner.check_firmware_tracking(device)
+        self.assertEqual(result['firmware_version'], '20230913-112003/v1.14.0-gcb84623')
+        self.assertIn('Shelly API', result['firmware_source'])
+        self.assertIsNotNone(result['update_url'])
+
+    def test_firmware_from_ha_sw_version(self):
+        """Version extracted from HA device sw_version attribute."""
+        device = {
+            "ip": "192.168.1.30",
+            "openPorts": [],  # No ports, no Nmap version
+            "vendor": "Philips",
+            "sw_version": "1.50.2"
+        }
+
+        result = self.scanner.check_firmware_tracking(device)
+        self.assertTrue(result['passed'])
+        self.assertEqual(result['firmware_version'], '1.50.2')
+        self.assertEqual(result['firmware_source'], 'Home Assistant')
+
+    def test_firmware_unknown_vendor(self):
+        """Unknown vendor and no version → not passed."""
+        device = {
+            "ip": "192.168.1.40",
+            "openPorts": [],
+            "vendor": "Unknown"
+        }
+
+        result = self.scanner.check_firmware_tracking(device)
+        self.assertFalse(result['passed'])
+        self.assertIsNone(result['firmware_version'])
+        self.assertIn("Could not determine", result['details'])
+
+    @patch('scan_logic.requests.get')
+    def test_firmware_with_version_cves(self, mock_get):
+        """Version-specific CVE lookup returns matching CVEs."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "data": [
+                {"id": "CVE-2024-5678", "cvss": "8.5", "summary": "Buffer overflow in firmware v1.2.3"}
+            ]
+        }
+        mock_get.return_value = mock_response
+
+        device = {
+            "ip": "192.168.1.50",
+            "openPorts": [
+                {"port": 80, "service": "http", "protocol": "tcp", "product": "httpd", "version": "1.2.3"}
+            ],
+            "vendor": "TestVendor"
+        }
+
+        result = self.scanner.check_firmware_tracking(device)
+        self.assertFalse(result['passed'])
+        self.assertEqual(len(result['version_cves']), 1)
+        self.assertEqual(result['version_cves'][0]['id'], 'CVE-2024-5678')
+        self.assertEqual(result['version_cves'][0]['severity'], 'HIGH')
+
+    @patch('scan_logic.requests.get', side_effect=Exception("Connection refused"))
+    def test_firmware_network_error(self, mock_get):
+        """Network errors during firmware probing handled gracefully."""
+        device = {
+            "ip": "192.168.1.60",
+            "openPorts": [{"port": 80, "service": "http", "protocol": "tcp"}],
+            "vendor": "Shelly"
+        }
+
+        # Should not raise
+        result = self.scanner.check_firmware_tracking(device)
+        self.assertFalse(result['passed'])
+
+    @patch('scan_logic.CRAScanner._get_ha_devices')
+    def test_firmware_integrated_in_scan(self, mock_get_ha):
+        """firmwareTracking key present in scan_subnet output."""
+        mock_get_ha.return_value = []
+        host_ip = "192.168.1.50"
+        self.scanner.nm.all_hosts.return_value = [host_ip]
+
+        mock_host_data = MagicMock()
+        mock_host_data.hostname.return_value = "test-host"
+        mock_host_data.__getitem__.side_effect = lambda key: {
+            'addresses': {'ipv4': host_ip, 'mac': 'AA:BB:CC:DD:EE:FF'},
+            'vendor': {'AA:BB:CC:DD:EE:FF': 'TestVendor'},
+            'osmatch': [],
+        }.get(key, {})
+        mock_host_data.__contains__.side_effect = lambda key: key in ['addresses', 'vendor', 'osmatch']
+        mock_host_data.all_protocols.return_value = []
+        self.scanner.nm.__getitem__.return_value = mock_host_data
+
+        results = self.scanner.scan_subnet("192.168.1.0/24", {
+            "scan_type": "discovery",
+            "auth_checks": False
+        })
+
+        self.assertTrue(len(results) > 0)
+        device = results[0]
+        self.assertIn('firmwareTracking', device['checks'])
+        self.assertIn('passed', device['checks']['firmwareTracking'])
+        self.assertIn('firmware_version', device['checks']['firmwareTracking'])
+        self.assertIn('version_cves', device['checks']['firmwareTracking'])
+
 
 if __name__ == '__main__':
     unittest.main()

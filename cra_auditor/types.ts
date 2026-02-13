@@ -50,6 +50,15 @@ export interface Device {
       sbom_found: boolean;
       sbom_format: string | null;
     };
+    firmwareTracking: {
+      passed: boolean;
+      details: string;
+      firmware_version: string | null;
+      firmware_source: string | null;
+      update_available: boolean | null;
+      update_url: string | null;
+      version_cves: Vulnerability[];
+    };
   };
   lastScanned: string;
   osMatch: string;

@@ -46,6 +46,28 @@ VENDOR_SBOM_STATUS = {
     "Yamaha": "unknown",
 }
 
+# Known vendor firmware update / changelog URLs
+VENDOR_FIRMWARE_UPDATE_URLS = {
+    "Shelly": "https://shelly-api-docs.shelly.cloud/gen2/changelog/",
+    "Allterco": "https://shelly-api-docs.shelly.cloud/gen2/changelog/",
+    "Philips": "https://www.philips-hue.com/en-us/support/release-notes",
+    "Signify": "https://www.philips-hue.com/en-us/support/release-notes",
+    "IKEA": "https://www.ikea.com/us/en/customer-service/product-support/smart-home/",
+    "TP-Link": "https://www.tp-link.com/us/support/download/",
+    "Kasa": "https://www.tp-link.com/us/support/download/",
+    "Tapo": "https://www.tp-link.com/us/support/download/",
+    "Tuya": "https://developer.tuya.com/en/docs/iot/firmware-update",
+    "Sonoff": "https://sonoff.tech/product-review/product-tutorials/",
+    "ITEAD": "https://sonoff.tech/product-review/product-tutorials/",
+    "AVM": "https://en.avm.de/service/current-security-notifications/",
+    "Cisco": "https://www.cisco.com/c/en/us/support/all-products.html",
+    "Xiaomi": "https://home.mi.com/",
+    "Aqara": "https://www.aqara.com/en/support",
+    "Meross": "https://www.meross.com/support",
+    "Ring": "https://support.ring.com/",
+    "Yamaha": "https://download.yamaha.com/",
+}
+
 class CRAScanner:
     def __init__(self):
         self.nm = None
@@ -172,6 +194,7 @@ class CRAScanner:
             conf_result = self.check_confidentiality(dev.get('openPorts', []))
             vuln_result = self.check_vulnerabilities(check_vendor, dev.get('openPorts', []))
             sbom_result = self.check_sbom_compliance(dev)
+            fw_result = self.check_firmware_tracking(dev)
             
             # Vendor Specific Checks - Conditional
             vendor_warnings = self._check_vendor_specifics(dev, selected_vendors)
@@ -183,9 +206,9 @@ class CRAScanner:
                 sbd_result['passed'] = False
                 
             status = "Compliant"
-            if not sbd_result['passed'] or not vuln_result['passed']:
+            if not sbd_result['passed'] or not vuln_result['passed'] or (not fw_result['passed'] and fw_result.get('version_cves')):
                 status = "Non-Compliant"
-            elif not conf_result['passed'] or not sbom_result['passed']:
+            elif not conf_result['passed'] or not sbom_result['passed'] or not fw_result['passed']:
                 status = "Warning"
 
             dev.update({
@@ -194,7 +217,8 @@ class CRAScanner:
                     "secureByDefault": sbd_result,
                     "dataConfidentiality": conf_result,
                     "vulnerabilities": vuln_result,
-                    "sbomCompliance": sbom_result
+                    "sbomCompliance": sbom_result,
+                    "firmwareTracking": fw_result
                 },
                 "lastScanned": "Just now"
             })
@@ -345,7 +369,8 @@ class CRAScanner:
                 "hostname": attrs.get('friendly_name', ha_dev['entity_id']),
                 "openPorts": [],
                 "osMatch": "Unknown",
-                "source": "Home Assistant"
+                "source": "Home Assistant",
+                "sw_version": attrs.get('sw_version'),
             }
 
             if ip and ip in merged:
@@ -356,6 +381,9 @@ class CRAScanner:
                     existing['vendor'] = new_dev_entry['vendor']
                 if new_dev_entry['model'] != "Unknown":
                     existing['model'] = new_dev_entry['model'] # Add model field
+                # Carry sw_version from HA
+                if new_dev_entry.get('sw_version'):
+                    existing['sw_version'] = new_dev_entry['sw_version']
                 # Prefer user-friendly hostname from HA
                 existing['hostname'] = f"{existing['hostname']} ({new_dev_entry['hostname']})"
             else:
@@ -371,8 +399,15 @@ class CRAScanner:
             for port in lport:
                 state = self.nm[host][proto][port]['state']
                 if state == 'open':
-                    service = self.nm[host][proto][port]['name']
-                    ports.append({"port": port, "protocol": proto, "service": service})
+                    port_info = self.nm[host][proto][port]
+                    service = port_info['name']
+                    entry = {"port": port, "protocol": proto, "service": service}
+                    # Capture product/version from Nmap -sV (service version detection)
+                    if port_info.get('product'):
+                        entry['product'] = port_info['product']
+                    if port_info.get('version'):
+                        entry['version'] = port_info['version']
+                    ports.append(entry)
         return ports
 
     def _get_os_match(self, host):
@@ -691,6 +726,151 @@ class CRAScanner:
                 return status
         
         return "unknown"
+
+    def check_firmware_tracking(self, device):
+        """Check firmware version tracking per CRA Annex I §2(2).
+        
+        Multi-source firmware version detection:
+        1. Nmap -sV service version strings from open ports
+        2. Vendor-specific firmware endpoints (Shelly, Hue, IKEA)
+        3. Home Assistant sw_version attribute
+        
+        Then performs version-specific CVE lookup if version is found.
+        """
+        firmware_version = None
+        firmware_source = None
+        version_cves = []
+        details = []
+        ip = device.get('ip')
+        vendor = device.get('vendor', 'Unknown')
+        open_ports = device.get('openPorts', [])
+
+        # Layer 1: Extract version from Nmap -sV service probe results
+        for port_info in open_ports:
+            product = port_info.get('product', '')
+            version = port_info.get('version', '')
+            if version:
+                firmware_version = version
+                firmware_source = f"Nmap service scan (port {port_info['port']}: {product} {version})".strip()
+                details.append(f"Service version detected: {product} {version} on port {port_info['port']}.")
+                break  # Use the first versioned service found
+
+        # Layer 2: Vendor-specific firmware endpoint probing
+        if not firmware_version and ip and ip != "N/A":
+            http_ports = [p['port'] for p in open_ports
+                          if p.get('service') in ('http', 'https') or p['port'] in (80, 443, 8080, 8443)]
+            if http_ports:
+                fw_ver, fw_src = self._probe_firmware_endpoints(ip, http_ports, vendor)
+                if fw_ver:
+                    firmware_version = fw_ver
+                    firmware_source = fw_src
+                    details.append(f"Firmware version detected via {fw_src}: {fw_ver}.")
+
+        # Layer 3: Home Assistant sw_version
+        if not firmware_version and device.get('sw_version'):
+            firmware_version = device['sw_version']
+            firmware_source = "Home Assistant"
+            details.append(f"Firmware version from Home Assistant: {firmware_version}.")
+
+        # Version-specific CVE lookup
+        if firmware_version and vendor and vendor != "Unknown":
+            search_term = f"{vendor.split('(')[0].strip()} {firmware_version}"
+            try:
+                url = f"https://cve.circl.lu/api/search/{search_term}"
+                response = requests.get(url, timeout=5)
+                if response.status_code == 200:
+                    data = response.json()
+                    for item in data.get('data', [])[:5]:
+                        if 'cvss' in item and item['cvss'] and float(item['cvss']) > 7.0:
+                            severity = "CRITICAL" if float(item['cvss']) > 9.0 else "HIGH"
+                            version_cves.append({
+                                "id": item.get('id', 'Unknown'),
+                                "severity": severity,
+                                "description": item.get('summary', 'No description')[:100] + "..."
+                            })
+            except Exception as e:
+                logger.error(f"Version-specific CVE lookup failed: {e}")
+                details.append("Version-specific CVE lookup failed (network error).")
+
+        if version_cves:
+            details.append(f"Found {len(version_cves)} CVEs affecting firmware version '{firmware_version}'.")
+
+        # Determine update URL
+        update_url = None
+        for known_vendor, url in VENDOR_FIRMWARE_UPDATE_URLS.items():
+            if known_vendor.lower() in vendor.lower() or vendor.lower() in known_vendor.lower():
+                update_url = url
+                break
+
+        # Determine pass/fail
+        if firmware_version:
+            if version_cves:
+                passed = False
+                details.append("Firmware has known vulnerabilities — update recommended.")
+            else:
+                passed = True
+                if not details:
+                    details.append(f"Firmware version '{firmware_version}' detected, no known CVEs.")
+        else:
+            passed = False
+            details.append("Could not determine firmware version. CRA §2(2) requires version tracking.")
+
+        return {
+            "passed": passed,
+            "details": "; ".join(details),
+            "firmware_version": firmware_version,
+            "firmware_source": firmware_source,
+            "update_available": True if version_cves else None,
+            "update_url": update_url,
+            "version_cves": version_cves
+        }
+
+    def _probe_firmware_endpoints(self, ip, http_ports, vendor):
+        """Probe vendor-specific firmware version endpoints.
+        
+        Returns (version: str|None, source: str|None)
+        """
+        vendor_lower = vendor.lower() if vendor else ""
+        
+        for port in http_ports:
+            scheme = 'https' if port in (443, 8443) else 'http'
+            base_url = f"{scheme}://{ip}:{port}"
+            
+            try:
+                # Shelly devices expose firmware version at /settings or /shelly
+                if 'shelly' in vendor_lower or 'allterco' in vendor_lower:
+                    for path in ['/settings', '/shelly']:
+                        r = requests.get(f"{base_url}{path}", timeout=2, verify=self.verify_ssl)
+                        if r.status_code == 200:
+                            data = r.json()
+                            fw = data.get('fw') or data.get('fw_version')
+                            if fw:
+                                return fw, f"Shelly API ({path})"
+                
+                # Philips Hue bridges expose version at /api/config
+                if 'philips' in vendor_lower or 'signify' in vendor_lower or 'hue' in vendor_lower:
+                    r = requests.get(f"{base_url}/api/config", timeout=2, verify=self.verify_ssl)
+                    if r.status_code == 200:
+                        data = r.json()
+                        sw = data.get('swversion') or data.get('apiversion')
+                        if sw:
+                            return sw, "Hue Bridge API (/api/config)"
+                
+                # Generic: try common firmware endpoints
+                for path in ['/firmware', '/api/firmware', '/device/info', '/system/info']:
+                    r = requests.get(f"{base_url}{path}", timeout=2, verify=self.verify_ssl)
+                    if r.status_code == 200:
+                        try:
+                            data = r.json()
+                            for key in ['fw_version', 'firmware_version', 'version', 'fw', 'softwareVersion']:
+                                if key in data:
+                                    return str(data[key]), f"Device API ({path})"
+                        except (ValueError, AttributeError):
+                            pass
+            except Exception as e:
+                logger.debug(f"Firmware endpoint probe failed for {base_url}: {e}")
+        
+        return None, None
 
 # For standalone testing
 if __name__ == "__main__":

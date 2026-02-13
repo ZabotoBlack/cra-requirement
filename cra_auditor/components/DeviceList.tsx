@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Device, ComplianceStatus } from '../types';
-import { AlertTriangle, CheckCircle, XCircle, ChevronDown, ChevronUp, Cpu, Server, Lock, Bot, FileText } from 'lucide-react';
+import { AlertTriangle, CheckCircle, XCircle, ChevronDown, ChevronUp, Cpu, Server, Lock, Bot, FileText, Wifi } from 'lucide-react';
 import { getRemediationAdvice } from '../services/geminiService';
 
 interface DeviceListProps {
@@ -59,7 +59,7 @@ const DeviceRow: React.FC<{ device: Device }> = ({ device }) => {
       {expanded && (
         <tr className="bg-slate-800/50">
           <td colSpan={5} className="p-6 border-b border-slate-700">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-6">
               {/* Check 1: Secure by Default */}
               <div className="bg-slate-900 rounded p-4 border border-slate-700">
                 <div className="flex items-center gap-2 mb-2">
@@ -136,6 +136,49 @@ const DeviceRow: React.FC<{ device: Device }> = ({ device }) => {
                 <p className="text-xs text-slate-500">{device.checks.sbomCompliance?.details}</p>
                 {device.checks.sbomCompliance?.sbom_format && (
                   <p className="text-xs text-indigo-400 mt-1">Format: {device.checks.sbomCompliance.sbom_format}</p>
+                )}
+              </div>
+
+              {/* Check 5: Firmware Tracking */}
+              <div className="bg-slate-900 rounded p-4 border border-slate-700">
+                <div className="flex items-center gap-2 mb-2">
+                  <Wifi size={16} className="text-slate-400" />
+                  <h4 className="font-medium text-slate-200">Firmware</h4>
+                </div>
+                <div className="flex items-center gap-2 mb-1">
+                  {device.checks.firmwareTracking?.passed
+                    ? <CheckCircle size={16} className="text-emerald-500" />
+                    : <AlertTriangle size={16} className="text-amber-500" />}
+                  <span className={`text-sm ${device.checks.firmwareTracking?.passed ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {device.checks.firmwareTracking?.passed ? 'Tracked' : 'Unknown / Vulnerable'}
+                  </span>
+                </div>
+                {device.checks.firmwareTracking?.firmware_version && (
+                  <p className="text-xs text-indigo-400 mb-1">
+                    Version: {device.checks.firmwareTracking.firmware_version}
+                    {device.checks.firmwareTracking.firmware_source && (
+                      <span className="text-slate-500"> via {device.checks.firmwareTracking.firmware_source}</span>
+                    )}
+                  </p>
+                )}
+                <p className="text-xs text-slate-500">{device.checks.firmwareTracking?.details}</p>
+                {device.checks.firmwareTracking?.version_cves && device.checks.firmwareTracking.version_cves.length > 0 && (
+                  <ul className="list-disc ml-4 space-y-1 mt-1">
+                    {device.checks.firmwareTracking.version_cves.map(cve => (
+                      <li key={cve.id} className="text-xs text-rose-400">{cve.id} ({cve.severity})</li>
+                    ))}
+                  </ul>
+                )}
+                {device.checks.firmwareTracking?.update_url && (
+                  <a
+                    href={device.checks.firmwareTracking.update_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block mt-2 text-xs text-indigo-400 hover:text-indigo-300 underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Check for updates &rarr;
+                  </a>
                 )}
               </div>
             </div>
