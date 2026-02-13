@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Device, ComplianceStatus } from '../types';
-import { AlertTriangle, CheckCircle, XCircle, ChevronDown, ChevronUp, Cpu, Server, Lock, Bot, FileText, Wifi } from 'lucide-react';
+import { AlertTriangle, CheckCircle, XCircle, ChevronDown, ChevronUp, Cpu, Server, Lock, Bot, FileText, Wifi, Shield } from 'lucide-react';
 import { getRemediationAdvice } from '../services/geminiService';
 
 interface DeviceListProps {
@@ -59,7 +59,7 @@ const DeviceRow: React.FC<{ device: Device }> = ({ device }) => {
       {expanded && (
         <tr className="bg-slate-800/50">
           <td colSpan={5} className="p-6 border-b border-slate-700">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6 mb-6">
               {/* Check 1: Secure by Default */}
               <div className="bg-slate-900 rounded p-4 border border-slate-700">
                 <div className="flex items-center gap-2 mb-2">
@@ -178,6 +178,40 @@ const DeviceRow: React.FC<{ device: Device }> = ({ device }) => {
                     onClick={(e) => e.stopPropagation()}
                   >
                     Check for updates &rarr;
+                  </a>
+                )}
+              </div>
+
+              {/* Check 6: Security.txt */}
+              <div className="bg-slate-900 rounded p-4 border border-slate-700">
+                <div className="flex items-center gap-2 mb-2">
+                  <Shield size={16} className="text-slate-400" />
+                  <h4 className="font-medium text-slate-200">Security.txt</h4>
+                </div>
+                <div className="flex items-center gap-2 mb-1">
+                  {device.checks.securityTxt?.passed
+                    ? <CheckCircle size={16} className="text-emerald-500" />
+                    : <AlertTriangle size={16} className="text-amber-500" />}
+                  <span className={`text-sm ${device.checks.securityTxt?.passed ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {device.checks.securityTxt?.passed ? 'Available' : 'Not Found'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500">{device.checks.securityTxt?.details}</p>
+                {device.checks.securityTxt?.fields?.contact && (
+                  <p className="text-xs text-indigo-400 mt-1">Contact: {device.checks.securityTxt.fields.contact}</p>
+                )}
+                {device.checks.securityTxt?.fields?.policy && (
+                  <p className="text-xs text-indigo-400 mt-1">Policy: {device.checks.securityTxt.fields.policy}</p>
+                )}
+                {device.checks.securityTxt?.vendor_url && !device.checks.securityTxt?.security_txt_found && (
+                  <a
+                    href={device.checks.securityTxt.vendor_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block mt-2 text-xs text-indigo-400 hover:text-indigo-300 underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Vendor disclosure policy &rarr;
                   </a>
                 )}
               </div>

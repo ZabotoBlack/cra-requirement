@@ -109,6 +109,71 @@ VENDOR_FIRMWARE_UPDATE_URLS = {
     "Dahua": "https://www.dahuasecurity.com/support/downloadCenter",
 }
 
+# Known vendor security.txt / vulnerability disclosure policy status
+# Values: "available" = vendor publishes security.txt, "unavailable" = no known disclosure, "unknown" = no data
+VENDOR_SECURITY_TXT_STATUS = {
+    "Philips": "available",
+    "Signify": "available",
+    "Siemens": "available",
+    "Bosch": "available",
+    "Schneider Electric": "available",
+    "ABB": "available",
+    "Honeywell": "available",
+    "Cisco": "available",
+    "Intel": "available",
+    "Microsoft": "available",
+    "Google": "available",
+    "Apple": "available",
+    "Samsung": "available",
+    "Ubiquiti": "available",
+    "Synology": "available",
+    "QNAP": "available",
+    "AVM": "available",
+    "Tuya": "unavailable",
+    "Sonoff": "unavailable",
+    "ITEAD": "unavailable",
+    "Shelly": "unavailable",
+    "Allterco": "unavailable",
+    "TP-Link": "unavailable",
+    "Kasa": "unavailable",
+    "Tapo": "unavailable",
+    "IKEA": "unknown",
+    "Xiaomi": "unavailable",
+    "Aqara": "unavailable",
+    "Espressif": "unknown",
+    "Meross": "unavailable",
+    "Govee": "unavailable",
+    "Wyze": "unavailable",
+    "Ring": "unknown",
+    "Amazon": "unknown",
+    "Netgear": "unavailable",
+    "D-Link": "unavailable",
+    "Reolink": "unavailable",
+    "Hikvision": "unavailable",
+    "Dahua": "unavailable",
+    "ESPHome": "unavailable",
+    "Tasmota": "unavailable",
+    "Raspberry Pi": "unknown",
+}
+
+# Known vendor security.txt / disclosure policy URLs
+VENDOR_SECURITY_TXT_URLS = {
+    "Siemens": "https://www.siemens.com/.well-known/security.txt",
+    "Philips": "https://www.philips.com/.well-known/security.txt",
+    "Signify": "https://www.signify.com/.well-known/security.txt",
+    "Bosch": "https://psirt.bosch.com/.well-known/security.txt",
+    "Cisco": "https://www.cisco.com/.well-known/security.txt",
+    "Google": "https://www.google.com/.well-known/security.txt",
+    "Apple": "https://www.apple.com/.well-known/security.txt",
+    "Microsoft": "https://www.microsoft.com/.well-known/security.txt",
+    "Samsung": "https://www.samsung.com/.well-known/security.txt",
+    "AVM": "https://www.avm.de/.well-known/security.txt",
+    "Intel": "https://www.intel.com/.well-known/security.txt",
+    "Ubiquiti": "https://www.ui.com/.well-known/security.txt",
+    "Synology": "https://www.synology.com/.well-known/security.txt",
+    "QNAP": "https://www.qnap.com/.well-known/security.txt",
+}
+
 class CRAScanner:
     def __init__(self):
         self.nm = None
@@ -265,6 +330,7 @@ class CRAScanner:
             vuln_result = self.check_vulnerabilities(check_vendor, dev.get('openPorts', []))
             sbom_result = self.check_sbom_compliance(dev)
             fw_result = self.check_firmware_tracking(dev)
+            sec_txt_result = self.check_security_txt(dev)
             
             # Vendor Specific Checks - Conditional
             vendor_warnings = self._check_vendor_specifics(dev, selected_vendors)
@@ -278,14 +344,14 @@ class CRAScanner:
             status = "Compliant"
             if not sbd_result['passed'] or not vuln_result['passed'] or (not fw_result['passed'] and fw_result.get('version_cves')):
                 status = "Non-Compliant"
-            elif not conf_result['passed'] or not sbom_result['passed'] or not fw_result['passed']:
+            elif not conf_result['passed'] or not sbom_result['passed'] or not fw_result['passed'] or not sec_txt_result['passed']:
                 status = "Warning"
 
             # Log per-device check results with pass/fail symbols
             _p = lambda r: "pass" if r['passed'] else "FAIL"
             logger.info(
                 f"[SCAN]     Secure={_p(sbd_result)}  Confid={_p(conf_result)}  "
-                f"CVE={_p(vuln_result)}  SBOM={_p(sbom_result)}  FW={_p(fw_result)}  => {status}"
+                f"CVE={_p(vuln_result)}  SBOM={_p(sbom_result)}  FW={_p(fw_result)}  SecTxt={_p(sec_txt_result)}  => {status}"
             )
 
             dev.update({
@@ -295,7 +361,8 @@ class CRAScanner:
                     "dataConfidentiality": conf_result,
                     "vulnerabilities": vuln_result,
                     "sbomCompliance": sbom_result,
-                    "firmwareTracking": fw_result
+                    "firmwareTracking": fw_result,
+                    "securityTxt": sec_txt_result
                 },
                 "lastScanned": "Just now"
             })
@@ -936,6 +1003,165 @@ class CRAScanner:
             if known_vendor.lower() in vendor_lower or vendor_lower in known_vendor.lower():
                 return status
         
+        return "unknown"
+
+    def check_security_txt(self, device):
+        """Check for security.txt disclosure policy per CRA §2(5) and §2(6).
+
+        Two-layer approach:
+        1. Device-level: probe /.well-known/security.txt on HTTP/HTTPS ports
+        2. Vendor-level: lookup known vendor disclosure policy status
+        """
+        details = []
+        security_txt_found = False
+        parsed_fields = None
+        ip = device.get('ip')
+        open_ports = device.get('openPorts', [])
+        vendor = device.get('resolved_vendor') or device.get('vendor', 'Unknown')
+
+        # Layer 1: Device-level security.txt probing
+        http_ports = [p['port'] for p in open_ports
+                      if p.get('service') in ('http', 'https') or p['port'] in (80, 443, 8080, 8443)]
+
+        if ip and ip != "N/A" and http_ports:
+            security_txt_found, parsed_fields = self._probe_security_txt(ip, http_ports)
+            if security_txt_found:
+                details.append("security.txt found on device.")
+                if parsed_fields.get('contact'):
+                    details.append(f"Contact: {parsed_fields['contact']}")
+                if parsed_fields.get('expires'):
+                    details.append(f"Expires: {parsed_fields['expires']}")
+                    # Check if expired
+                    try:
+                        from datetime import datetime, timezone
+                        exp_str = parsed_fields['expires'].strip()
+                        # Try ISO 8601 format
+                        exp_date = datetime.fromisoformat(exp_str.replace('Z', '+00:00'))
+                        if exp_date < datetime.now(timezone.utc):
+                            details.append("WARNING: security.txt has expired!")
+                    except Exception:
+                        pass
+
+        # Layer 2: Vendor-level disclosure status lookup
+        vendor_status = self._lookup_vendor_security_txt_status(vendor)
+
+        # Layer 3: Vendor disclosure URL lookup
+        vendor_url = None
+        for known_vendor, url in VENDOR_SECURITY_TXT_URLS.items():
+            if known_vendor.lower() in vendor.lower() or vendor.lower() in known_vendor.lower():
+                vendor_url = url
+                break
+
+        if security_txt_found:
+            return {
+                "passed": True,
+                "details": "; ".join(details),
+                "security_txt_found": True,
+                "fields": parsed_fields,
+                "vendor_url": vendor_url
+            }
+        elif vendor_status == "available":
+            details.append(f"Vendor '{vendor}' is known to publish a security.txt disclosure policy.")
+            if vendor_url:
+                details.append(f"Disclosure policy: {vendor_url}")
+            return {
+                "passed": True,
+                "details": "; ".join(details),
+                "security_txt_found": False,
+                "fields": None,
+                "vendor_url": vendor_url
+            }
+        elif vendor_status == "unavailable":
+            details.append(f"No security.txt found on device. Vendor '{vendor}' has no known disclosure policy.")
+            return {
+                "passed": False,
+                "details": "; ".join(details) if details else f"No security.txt found. Vendor '{vendor}' has no known vulnerability disclosure policy.",
+                "security_txt_found": False,
+                "fields": None,
+                "vendor_url": None
+            }
+        else:
+            if vendor == "Unknown":
+                details.append("Vendor unknown — cannot determine disclosure policy status.")
+            else:
+                details.append(f"No security.txt found on device. Vendor '{vendor}' disclosure status is unknown.")
+            return {
+                "passed": False,
+                "details": "; ".join(details),
+                "security_txt_found": False,
+                "fields": None,
+                "vendor_url": None
+            }
+
+    def _probe_security_txt(self, ip, http_ports):
+        """Probe /.well-known/security.txt on a device.
+
+        Returns (found: bool, fields: dict|None)
+        Parses RFC 9116 fields: Contact, Expires, Encryption, Policy, Preferred-Languages, Canonical, Hiring
+        """
+        for port in http_ports:
+            scheme = 'https' if port in (443, 8443) else 'http'
+            url = f"{scheme}://{ip}:{port}/.well-known/security.txt"
+            try:
+                r = self.session.get(url, timeout=2)
+                if r.status_code == 200 and len(r.text) > 10:
+                    content = r.text
+                    # Validate it looks like a security.txt (must have Contact field per RFC 9116)
+                    if 'contact:' not in content.lower():
+                        continue
+
+                    fields = {
+                        "contact": None,
+                        "expires": None,
+                        "encryption": None,
+                        "policy": None,
+                        "preferred_languages": None,
+                    }
+
+                    for line in content.splitlines():
+                        line = line.strip()
+                        if line.startswith('#') or not line:
+                            continue
+                        # RFC 9116 format: "Field: Value" — use first colon+space as delimiter
+                        match = re.match(r'^([A-Za-z-]+):\s*(.*)', line)
+                        if match:
+                            key_lower = match.group(1).lower()
+                            val = match.group(2).strip()
+                            if key_lower == 'contact':
+                                fields['contact'] = val
+                            elif key_lower == 'expires':
+                                fields['expires'] = val
+                            elif key_lower == 'encryption':
+                                fields['encryption'] = val
+                            elif key_lower == 'policy':
+                                fields['policy'] = val
+                            elif key_lower == 'preferred-languages':
+                                fields['preferred_languages'] = val
+
+                    # Must have Contact to be valid
+                    if fields['contact']:
+                        return True, fields
+            except Exception as e:
+                logger.debug(f"security.txt probe failed for {url}: {e}")
+
+        return False, None
+
+    def _lookup_vendor_security_txt_status(self, vendor):
+        """Check if vendor is known to publish a security.txt disclosure policy.
+
+        Returns 'available', 'unavailable', or 'unknown'.
+        """
+        if not vendor or vendor == "Unknown":
+            return "unknown"
+
+        if vendor in VENDOR_SECURITY_TXT_STATUS:
+            return VENDOR_SECURITY_TXT_STATUS[vendor]
+
+        vendor_lower = vendor.lower()
+        for known_vendor, status in VENDOR_SECURITY_TXT_STATUS.items():
+            if known_vendor.lower() in vendor_lower or vendor_lower in known_vendor.lower():
+                return status
+
         return "unknown"
 
     def check_firmware_tracking(self, device):

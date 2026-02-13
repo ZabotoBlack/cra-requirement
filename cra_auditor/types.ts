@@ -59,6 +59,19 @@ export interface Device {
       update_url: string | null;
       version_cves: Vulnerability[];
     };
+    securityTxt: {
+      passed: boolean;
+      details: string;
+      security_txt_found: boolean;
+      fields: {
+        contact: string | null;
+        expires: string | null;
+        encryption: string | null;
+        policy: string | null;
+        preferred_languages: string | null;
+      } | null;
+      vendor_url: string | null;
+    };
   };
   lastScanned: string;
   osMatch: string;
