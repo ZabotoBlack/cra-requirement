@@ -1,4 +1,5 @@
 import nmap
+import re
 import requests
 import socket
 import logging
@@ -8,6 +9,9 @@ import time
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Pre-compiled regex for NetBIOS hostname extraction (performance)
+_NBSTAT_RE = re.compile(r"NetBIOS name:\s+([\w-]+)")
 
 # Known vendor SBOM availability status (best-effort lookup)
 # Values: "available" = vendor publishes SBOMs, "unavailable" = known to NOT publish, "unknown" = no data
@@ -85,6 +89,10 @@ class CRAScanner:
             
         self.common_creds = [('admin', 'admin'), ('root', 'root'), ('user', '1234'), ('admin', '1234')]
         self.verify_ssl = False  # Configurable: set True to enforce SSL certificate verification during probes
+
+        # Reuse a single requests.Session for connection pooling (performance)
+        self.session = requests.Session()
+        self.session.verify = self.verify_ssl
 
     def scan_subnet(self, subnet, options=None):
         """
@@ -251,8 +259,7 @@ class CRAScanner:
             if not hostname and 'script' in nmap_host:
                 # Try to extract from nbstat
                 if 'nbstat' in nmap_host['script']:
-                    import re
-                    match = re.search(r"NetBIOS name:\s+([\w-]+)", nmap_host['script']['nbstat'])
+                    match = _NBSTAT_RE.search(nmap_host['script']['nbstat'])
                     if match:
                         hostname = match.group(1)
             
@@ -324,7 +331,7 @@ class CRAScanner:
         
         devices = []
         try:
-            response = requests.get(supervisor_url, headers=headers, timeout=10)
+            response = self.session.get(supervisor_url, headers=headers, timeout=10)
             if response.status_code == 200:
                 states = response.json()
                 for state in states:
@@ -452,6 +459,7 @@ class CRAScanner:
         """Try common credentials on Telnet."""
         # Simple socket-based brute force
         for user, password in self.common_creds:
+            s = None
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 s.settimeout(2)
@@ -474,11 +482,15 @@ class CRAScanner:
                 # This is heuristic.
                 resp = data.decode('utf-8', errors='ignore')
                 if "#" in resp or "$" in resp or ">" in resp or "Success" in resp:
-                    s.close()
                     return f"{user}/{password}"
-                s.close()
             except Exception:
                 pass
+            finally:
+                if s:
+                    try:
+                        s.close()
+                    except Exception:
+                        pass
         return None
 
     def _check_http_auth(self, ip, port):
@@ -487,7 +499,7 @@ class CRAScanner:
         for ep in endpoints:
             try:
                 url = f"http://{ip}:{port}{ep}"
-                r = requests.get(url, timeout=2)
+                r = self.session.get(url, timeout=2)
                 if r.status_code == 200:
                     # Filter out simple login pages
                     if "login" not in r.text.lower() and "password" not in r.text.lower():
@@ -519,7 +531,7 @@ class CRAScanner:
         # Shelly
         if (selected_vendors == 'all' or 'shelly' in selected_vendors) and 80 in ports:
             try:
-                r = requests.get(f"http://{ip}/status", timeout=1)
+                r = self.session.get(f"http://{ip}/status", timeout=1)
                 if r.status_code == 200 and "mac" in r.text: # Shelly JSON signature
                     if "auth" not in r.json() or not r.json().get("auth"):
                          warnings.append("Shelly Device: Authentication is NOT enabled for local web interface.")
@@ -528,7 +540,7 @@ class CRAScanner:
         # Philips Hue
         if (selected_vendors == 'all' or 'hue' in selected_vendors) and 80 in ports:
              try:
-                r = requests.get(f"http://{ip}/description.xml", timeout=1)
+                r = self.session.get(f"http://{ip}/description.xml", timeout=1)
                 if r.status_code == 200 and "Philips hue" in r.text:
                     warnings.append("Philips Hue Bridge detected. Ensure 'Link Button' authentication is strictly required.")
              except Exception: pass
@@ -537,7 +549,7 @@ class CRAScanner:
         if (selected_vendors == 'all' or 'ikea' in selected_vendors) and 80 in ports:
              # Basic header check for Ikea gateway signature (heuristic)
              try:
-                 r = requests.get(f"http://{ip}", timeout=1)
+                 r = self.session.get(f"http://{ip}", timeout=1)
                  if "IKEA" in r.text or "Tradfri" in r.text:
                       warnings.append("IKEA Gateway detected. Ensure latest firmware to avoid known zigbee crash exploits.")
              except Exception: pass
@@ -570,7 +582,7 @@ class CRAScanner:
         try:
             # Using cve.circl.lu API
             url = f"https://cve.circl.lu/api/search/{search_term}"
-            response = requests.get(url, timeout=5)
+            response = self.session.get(url, timeout=5)
             
             if response.status_code == 200:
                 data = response.json()
@@ -684,7 +696,7 @@ class CRAScanner:
             for path in sbom_paths:
                 url = f"{scheme}://{ip}:{port}{path}"
                 try:
-                    r = requests.get(url, timeout=2, verify=self.verify_ssl)
+                    r = self.session.get(url, timeout=2)
                     if r.status_code == 200 and len(r.text) > 50:
                         # Check content for known SBOM format signatures
                         content = r.text[:2000]  # Only check first 2KB
@@ -777,7 +789,7 @@ class CRAScanner:
             search_term = f"{vendor.split('(')[0].strip()} {firmware_version}"
             try:
                 url = f"https://cve.circl.lu/api/search/{search_term}"
-                response = requests.get(url, timeout=5)
+                response = self.session.get(url, timeout=5)
                 if response.status_code == 200:
                     data = response.json()
                     for item in data.get('data', [])[:5]:
@@ -840,7 +852,7 @@ class CRAScanner:
                 # Shelly devices expose firmware version at /settings or /shelly
                 if 'shelly' in vendor_lower or 'allterco' in vendor_lower:
                     for path in ['/settings', '/shelly']:
-                        r = requests.get(f"{base_url}{path}", timeout=2, verify=self.verify_ssl)
+                        r = self.session.get(f"{base_url}{path}", timeout=2)
                         if r.status_code == 200:
                             data = r.json()
                             fw = data.get('fw') or data.get('fw_version')
@@ -849,7 +861,7 @@ class CRAScanner:
                 
                 # Philips Hue bridges expose version at /api/config
                 if 'philips' in vendor_lower or 'signify' in vendor_lower or 'hue' in vendor_lower:
-                    r = requests.get(f"{base_url}/api/config", timeout=2, verify=self.verify_ssl)
+                    r = self.session.get(f"{base_url}/api/config", timeout=2)
                     if r.status_code == 200:
                         data = r.json()
                         sw = data.get('swversion') or data.get('apiversion')
@@ -858,7 +870,7 @@ class CRAScanner:
                 
                 # Generic: try common firmware endpoints
                 for path in ['/firmware', '/api/firmware', '/device/info', '/system/info']:
-                    r = requests.get(f"{base_url}{path}", timeout=2, verify=self.verify_ssl)
+                    r = self.session.get(f"{base_url}{path}", timeout=2)
                     if r.status_code == 200:
                         try:
                             data = r.json()

@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request, send_from_directory
+import logging
 import os
 import re
 import threading
@@ -7,6 +8,9 @@ import sqlite3
 import json
 from datetime import datetime
 from scan_logic import CRAScanner
+
+# Configure logging (replaces print() for structured HA output)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -19,7 +23,7 @@ if not os.path.exists(FRONTEND_DIR):
     elif os.path.exists("dist"): # Local dev fallback
         FRONTEND_DIR = os.path.abspath("dist")
     else:
-        print("Warning: Frontend directory not found.")
+        logger.warning("Frontend directory not found.")
         FRONTEND_DIR = None
 
 # Global State
@@ -62,6 +66,15 @@ def serve_static(path):
     if FRONTEND_DIR:
         return send_from_directory(FRONTEND_DIR, 'index.html')
     return "File not found", 404
+
+# Security headers middleware
+@app.after_request
+def set_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 @app.route('/api/scan', methods=['POST'])
 def start_scan():
@@ -121,14 +134,16 @@ def get_latest_report():
             return jsonify(json.loads(row[0]))
         return jsonify(None)
     except sqlite3.Error as e:
-        print(f"Error fetching latest report: {e}")
+        logger.error(f"Error fetching latest report: {e}")
         return jsonify({"error": "Database error"}), 500
 @app.route('/api/history', methods=['GET'])
 def get_history():
     """Get list of past scans with search and sort."""
     search_query = request.args.get('search', '').strip()
-    sort_by = request.args.get('sort_by', 'timestamp') # timestamp, target
-    order = request.args.get('order', 'desc') # asc, desc
+    # Whitelist sort_by to prevent SQL injection (user input goes into query)
+    ALLOWED_SORT = {'timestamp': 'timestamp', 'target': 'target_range'}
+    sort_by = ALLOWED_SORT.get(request.args.get('sort_by', 'timestamp'), 'timestamp')
+    order = 'ASC' if request.args.get('order', 'desc').lower() == 'asc' else 'DESC'
 
     query = 'SELECT id, timestamp, target_range, summary FROM scan_history'
     params = []
@@ -137,23 +152,14 @@ def get_history():
         query += ' WHERE target_range LIKE ?'
         params.append(f'%{search_query}%')
     
-    if sort_by == 'target':
-        query += ' ORDER BY target_range'
-    else:
-        query += ' ORDER BY timestamp'
-        
-    if order == 'asc':
-        query += ' ASC'
-    else:
-        query += ' DESC'
+    query += f' ORDER BY {sort_by} {order}'
 
     try:
-        conn = sqlite3.connect(DB_FILE)
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
-        c.execute(query, params)
-        rows = c.fetchall()
-        conn.close()
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            c = conn.cursor()
+            c.execute(query, params)
+            rows = c.fetchall()
         
         history = []
         for row in rows:
@@ -165,18 +171,17 @@ def get_history():
             })
         return jsonify(history)
     except Exception as e:
-        print(f"Error fetching history: {e}")
+        logger.error(f"Error fetching history: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/history/<int:scan_id>', methods=['GET'])
 def get_history_detail(scan_id):
     """Get full report for a specific scan."""
     try:
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute('SELECT full_report FROM scan_history WHERE id = ?', (scan_id,))
-        row = c.fetchone()
-        conn.close()
+        with sqlite3.connect(DB_FILE) as conn:
+            c = conn.cursor()
+            c.execute('SELECT full_report FROM scan_history WHERE id = ?', (scan_id,))
+            row = c.fetchone()
         
         if row:
             return jsonify(json.loads(row[0]))
@@ -188,12 +193,11 @@ def get_history_detail(scan_id):
 def delete_history_item(scan_id):
     """Delete a scan from history."""
     try:
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute('DELETE FROM scan_history WHERE id = ?', (scan_id,))
-        conn.commit()
-        deleted = c.rowcount > 0
-        conn.close()
+        with sqlite3.connect(DB_FILE) as conn:
+            c = conn.cursor()
+            c.execute('DELETE FROM scan_history WHERE id = ?', (scan_id,))
+            conn.commit()
+            deleted = c.rowcount > 0
         
         if deleted:
             return jsonify({"status": "success"})
@@ -229,21 +233,20 @@ def run_scan_background(subnet, options=None):
         
         # Save to DB
         try:
-            conn = sqlite3.connect(DB_FILE)
-            c = conn.cursor()
-            c.execute('''
-                INSERT INTO scan_history (timestamp, target_range, summary, full_report)
-                VALUES (?, ?, ?, ?)
-            ''', (report['timestamp'], subnet, json.dumps(summary), json.dumps(report)))
-            conn.commit()
-            last_id = c.lastrowid
-            conn.close()
-            print(f"Scan finished and saved to DB. ID: {last_id}")
+            with sqlite3.connect(DB_FILE) as conn:
+                c = conn.cursor()
+                c.execute('''
+                    INSERT INTO scan_history (timestamp, target_range, summary, full_report)
+                    VALUES (?, ?, ?, ?)
+                ''', (report['timestamp'], subnet, json.dumps(summary), json.dumps(report)))
+                conn.commit()
+                last_id = c.lastrowid
+            logger.info(f"Scan finished and saved to DB. ID: {last_id}")
         except Exception as db_err:
-            print(f"Failed to save scan to DB: {db_err}")
+            logger.error(f"Failed to save scan to DB: {db_err}")
 
     except Exception as e:
-        print(f"Scan failed: {e}")
+        logger.error(f"Scan failed: {e}")
         with scan_lock:
             scan_error = str(e)
         return
@@ -252,4 +255,4 @@ def run_scan_background(subnet, options=None):
             is_scanning = False
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8099)
+    app.run(host='0.0.0.0', port=8099)  # Gunicorn takes over in production via run.sh

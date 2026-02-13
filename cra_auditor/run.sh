@@ -10,10 +10,7 @@ else
 fi
 
 
-# 2. Start the Flask server
-# Flask handles serving the static files and the API
-echo "Starting Flask server on port 8099..."
-
+# 2. Export Gemini API key if configured
 export GEMINI_API_KEY=$(bashio::config 'gemini_api_key')
 
 if [ -z "$GEMINI_API_KEY" ]; then
@@ -22,4 +19,12 @@ else
     bashio::log.info "Gemini API Key found. AI features enabled."
 fi
 
-exec python3 -u /app/server.py
+# 3. Start production WSGI server (gunicorn replaces Flask dev server)
+exec gunicorn \
+    --bind 0.0.0.0:8099 \
+    --workers 2 \
+    --threads 2 \
+    --timeout 300 \
+    --access-logfile - \
+    --error-logfile - \
+    server:app

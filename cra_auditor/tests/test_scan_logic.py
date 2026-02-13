@@ -175,8 +175,7 @@ class TestCRAScanner(unittest.TestCase):
         self.assertIn("CRITICAL: Found weak Telnet credentials", result['details'])
 
 
-    @patch('scan_logic.requests.get')
-    def test_check_vendor_specifics_shelly(self, mock_get):
+    def test_check_vendor_specifics_shelly(self):
         """Test Shelly specific check for auth."""
         device = {
             "ip": "192.168.1.20",
@@ -189,7 +188,7 @@ class TestCRAScanner(unittest.TestCase):
         mock_response.status_code = 200
         mock_response.text = '{"mac": "aabbcc", "auth": false}'
         mock_response.json.return_value = {"auth": False}
-        mock_get.return_value = mock_response
+        self.scanner.session.get = MagicMock(return_value=mock_response)
         
         warnings = self.scanner._check_vendor_specifics(device, ["shelly"])
         
@@ -218,8 +217,7 @@ class TestCRAScanner(unittest.TestCase):
         result = self.scanner.check_confidentiality(open_ports)
         self.assertTrue(result['passed'])
 
-    @patch('scan_logic.requests.get')
-    def test_check_vulnerabilities_critical_cve(self, mock_get):
+    def test_check_vulnerabilities_critical_cve(self):
         """Test that critical CVEs are detected."""
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -228,7 +226,7 @@ class TestCRAScanner(unittest.TestCase):
                 {"id": "CVE-2024-1234", "cvss": "9.8", "summary": "Critical RCE vulnerability in vendor firmware"}
             ]
         }
-        mock_get.return_value = mock_response
+        self.scanner.session.get = MagicMock(return_value=mock_response)
 
         result = self.scanner.check_vulnerabilities("TestVendor", [])
         self.assertFalse(result['passed'])
@@ -241,9 +239,9 @@ class TestCRAScanner(unittest.TestCase):
         self.assertTrue(result['passed'])
         self.assertIn("Vendor unknown", result['details'])
 
-    @patch('scan_logic.requests.get', side_effect=Exception("Network error"))
-    def test_check_vulnerabilities_network_error(self, mock_get):
+    def test_check_vulnerabilities_network_error(self):
         """Test graceful failure on CVE API network error."""
+        self.scanner.session.get = MagicMock(side_effect=Exception("Network error"))
         result = self.scanner.check_vulnerabilities("TestVendor", [])
         self.assertTrue(result['passed'])
         self.assertIn("network error", result['details'])
@@ -392,14 +390,13 @@ class TestSBOMCheck(unittest.TestCase):
         self.scanner = CRAScanner()
         self.scanner.nm = MagicMock()
 
-    @patch('scan_logic.requests.get')
-    def test_sbom_endpoint_found_cyclonedx(self, mock_get):
+    def test_sbom_endpoint_found_cyclonedx(self):
         """SBOM endpoint returns CycloneDX document."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.text = '{"bomFormat": "CycloneDX", "specVersion": "1.5", "components": []}' + ' ' * 50
         mock_response.headers = {'Content-Type': 'application/json'}
-        mock_get.return_value = mock_response
+        self.scanner.session.get = MagicMock(return_value=mock_response)
 
         device = {
             "ip": "192.168.1.10",
@@ -412,14 +409,13 @@ class TestSBOMCheck(unittest.TestCase):
         self.assertTrue(result['sbom_found'])
         self.assertEqual(result['sbom_format'], 'CycloneDX')
 
-    @patch('scan_logic.requests.get')
-    def test_sbom_endpoint_found_spdx(self, mock_get):
+    def test_sbom_endpoint_found_spdx(self):
         """SBOM endpoint returns SPDX document."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.text = '{"SPDXVersion": "SPDX-2.3", "dataLicense": "CC0-1.0"}' + ' ' * 50
         mock_response.headers = {'Content-Type': 'application/json'}
-        mock_get.return_value = mock_response
+        self.scanner.session.get = MagicMock(return_value=mock_response)
 
         device = {
             "ip": "192.168.1.10",
@@ -471,9 +467,9 @@ class TestSBOMCheck(unittest.TestCase):
         self.assertFalse(result['passed'])
         self.assertIn("unknown", result['details'].lower())
 
-    @patch('scan_logic.requests.get', side_effect=Exception("Connection refused"))
-    def test_sbom_network_error(self, mock_get):
+    def test_sbom_network_error(self):
         """Network errors during SBOM probing handled gracefully."""
+        self.scanner.session.get = MagicMock(side_effect=Exception("Connection refused"))
         device = {
             "ip": "192.168.1.10",
             "openPorts": [{"port": 80, "service": "http", "protocol": "tcp"}],
@@ -538,13 +534,12 @@ class TestFirmwareTracking(unittest.TestCase):
         self.assertIn('Nmap service scan', result['firmware_source'])
         self.assertIn('lighttpd', result['firmware_source'])
 
-    @patch('scan_logic.requests.get')
-    def test_firmware_from_vendor_endpoint_shelly(self, mock_get):
+    def test_firmware_from_vendor_endpoint_shelly(self):
         """Version extracted from Shelly /settings endpoint."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"fw": "20230913-112003/v1.14.0-gcb84623", "mac": "aabbcc"}
-        mock_get.return_value = mock_response
+        self.scanner.session.get = MagicMock(return_value=mock_response)
 
         device = {
             "ip": "192.168.1.20",
@@ -584,8 +579,7 @@ class TestFirmwareTracking(unittest.TestCase):
         self.assertIsNone(result['firmware_version'])
         self.assertIn("Could not determine", result['details'])
 
-    @patch('scan_logic.requests.get')
-    def test_firmware_with_version_cves(self, mock_get):
+    def test_firmware_with_version_cves(self):
         """Version-specific CVE lookup returns matching CVEs."""
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -594,7 +588,7 @@ class TestFirmwareTracking(unittest.TestCase):
                 {"id": "CVE-2024-5678", "cvss": "8.5", "summary": "Buffer overflow in firmware v1.2.3"}
             ]
         }
-        mock_get.return_value = mock_response
+        self.scanner.session.get = MagicMock(return_value=mock_response)
 
         device = {
             "ip": "192.168.1.50",
@@ -610,9 +604,9 @@ class TestFirmwareTracking(unittest.TestCase):
         self.assertEqual(result['version_cves'][0]['id'], 'CVE-2024-5678')
         self.assertEqual(result['version_cves'][0]['severity'], 'HIGH')
 
-    @patch('scan_logic.requests.get', side_effect=Exception("Connection refused"))
-    def test_firmware_network_error(self, mock_get):
+    def test_firmware_network_error(self):
         """Network errors during firmware probing handled gracefully."""
+        self.scanner.session.get = MagicMock(side_effect=Exception("Connection refused"))
         device = {
             "ip": "192.168.1.60",
             "openPorts": [{"port": 80, "service": "http", "protocol": "tcp"}],
