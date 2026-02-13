@@ -133,7 +133,7 @@ VENDOR_SECURITY_TXT_STATUS = {
     "HP": "available",              # Contact: hp-security-alert@hp.com
     "Dell": "available",            # Contact: bugcrowd.com/dell-com, Expires: 2026
     "Fortinet": "available",        # Contact: fortiguard.com/faq/psirt-contact
-    "Honeywell": "available",       # Has PSIRT program, no security.txt file directly
+    "Honeywell": "unknown",          # Has PSIRT program but no RFC 9116 security.txt file
     # === Verified UNAVAILABLE (404/403/no valid security.txt) ===
     "Siemens": "unavailable",       # Returns 404 page (despite being security-mature)
     "ABB": "unavailable",           # Connection timeout / no response
