@@ -242,6 +242,9 @@ def delete_history_item(scan_id):
         return jsonify({"error": str(e)}), 500
 
 def run_scan_background(subnet, options=None):
+    scan_type = (options or {}).get('scan_type', 'deep')
+    logger.info(f"[SCAN] Background scan starting: subnet={subnet}, type={scan_type}")
+    bg_start = time.time()
     try:
         devices = scanner.scan_subnet(subnet, options)
         
@@ -275,12 +278,16 @@ def run_scan_background(subnet, options=None):
                 ''', (report['timestamp'], subnet, json.dumps(summary), json.dumps(report)))
                 conn.commit()
                 last_id = c.lastrowid
-            logger.info(f"Scan finished and saved to DB. ID: {last_id}")
+            elapsed = time.time() - bg_start
+            logger.info(
+                f"[SCAN] Scan saved to DB (ID: {last_id}). "
+                f"Total: {total} devices ({compliant}C/{warning}W/{non_compliant}NC) in {elapsed:.1f}s"
+            )
         except Exception as db_err:
-            logger.error(f"Failed to save scan to DB: {db_err}")
+            logger.error(f"[SCAN] Failed to save scan to DB: {db_err}")
 
     except Exception as e:
-        logger.error(f"Scan failed: {e}")
+        logger.error(f"[SCAN] Scan failed: {e}")
         set_scan_state(False, error=str(e))
     else:
         set_scan_state(False)

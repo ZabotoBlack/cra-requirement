@@ -146,33 +146,45 @@ class CRAScanner:
         auth_checks = options.get('auth_checks', True)
         selected_vendors = options.get('vendors', 'all') # 'all' or list of strings
 
+        scan_start = time.time()
+        total_stages = 4 if scan_type != 'discovery' else 3
+        logger.info("[SCAN] " + "=" * 56)
+        logger.info(f"[SCAN] Starting scan on {subnet} (type={scan_type}, auth_checks={auth_checks}, vendors={selected_vendors})")
+        logger.info("[SCAN] " + "-" * 56)
+
         ha_devices = self._get_ha_devices() 
         
         if not self.nm:
-            logger.error("Nmap not initialized. Relying solely on Home Assistant data.")
+            logger.error("[SCAN] Nmap not initialized. Relying solely on Home Assistant data.")
             return self._merge_devices([], ha_devices)
 
         # Scanned devices accumulator (IP -> Device Dict)
         scanned_devices = {}
 
         # Stage 1: Discovery Scan (Ping + ARP)
-        logger.info(f"Starting discovery scan on {subnet}")
+        logger.info(f"[SCAN] Stage 1/{total_stages}: Discovery scan (-sn -PR)...")
+        stage_start = time.time()
         try:
             self.nm.scan(hosts=subnet, arguments='-sn -PR')
             self._update_scanned_devices(scanned_devices, discovery_phase=True)
         except Exception as e:
-            logger.error(f"Nmap discovery scan failed: {e}")
+            logger.error(f"[SCAN] Nmap discovery scan failed: {e}")
             return self._merge_devices([], ha_devices)
 
         hosts_to_scan = list(scanned_devices.keys())
-        logger.info(f"Discovery complete. Found {len(hosts_to_scan)} live hosts.")
+        stage_elapsed = time.time() - stage_start
+        logger.info(f"[SCAN]   Found {len(hosts_to_scan)} live hosts in {stage_elapsed:.1f}s")
+        for ip, dev in scanned_devices.items():
+            logger.info(f"[SCAN]   -> {ip} (MAC: {dev.get('mac', 'Unknown')}, vendor: {dev.get('vendor', 'Unknown')})")
 
         nmap_devices = []
         
         # If discovery only, skip detailed scan
+        current_stage = 2
         if hosts_to_scan and scan_type != 'discovery':
             # Stage 2: Detailed Scan
-            logger.info(f"Starting detailed scan mode: {scan_type}")
+            logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Detailed port scan on {len(hosts_to_scan)} hosts...")
+            stage_start = time.time()
             
             target_spec = " ".join(hosts_to_scan)
             
@@ -210,26 +222,36 @@ class CRAScanner:
                 nmap_args += " -F" # Fast scan (top 100 ports) if unnamed type
             
             try:
-                logger.info(f"Running Nmap with args: {nmap_args}")
+                logger.info(f"[SCAN]   Nmap args: {nmap_args}")
                 self.nm.scan(hosts=target_spec, arguments=nmap_args)
                 self._update_scanned_devices(scanned_devices, discovery_phase=False)
-                logger.info(f"Detailed scan complete. Updated {len(scanned_devices)} devices.")
+                stage_elapsed = time.time() - stage_start
+                logger.info(f"[SCAN]   Completed in {stage_elapsed:.1f}s -- updated {len(scanned_devices)} devices")
             except Exception as e:
-                logger.error(f"Nmap detail scan failed: {e}. Falling back to discovery results ({len(scanned_devices)} devices).")
+                logger.error(f"[SCAN] Nmap detail scan failed: {e}. Falling back to discovery results ({len(scanned_devices)} devices).")
+            current_stage += 1
         
         nmap_devices = list(scanned_devices.values())
 
-        # Merge Nmap and HA devices
+        # Stage: HA Merge
+        logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Merging with Home Assistant devices...")
         merged_devices = self._merge_devices(nmap_devices, ha_devices)
+        current_stage += 1
         
-        # Run compliance checks on the FINAL merged list
+        # Stage: Compliance checks
+        total_devices = len(merged_devices)
+        logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Compliance checks on {total_devices} devices...")
+        stage_start = time.time()
         final_results = []
-        for dev in merged_devices:
+        for idx, dev in enumerate(merged_devices, 1):
             check_vendor = dev.get('model') if dev.get('model') and dev.get('model') != "Unknown" else dev.get('vendor', 'Unknown')
             if dev.get('manufacturer') and dev.get('manufacturer') != "Unknown":
                  check_vendor = f"{dev['manufacturer']} {check_vendor}"
             if check_vendor == "Unknown " or check_vendor.strip() == "Unknown":
                  check_vendor = dev.get('vendor', 'Unknown')
+
+            dev_label = dev.get('hostname') or dev.get('ip', 'Unknown')
+            logger.info(f"[SCAN]   [{idx}/{total_devices}] {dev.get('ip', 'N/A')} ({check_vendor}) - {dev_label}")
 
             # Set resolved vendor for SBOM/firmware checks to use enriched data
             dev['resolved_vendor'] = check_vendor
@@ -259,6 +281,13 @@ class CRAScanner:
             elif not conf_result['passed'] or not sbom_result['passed'] or not fw_result['passed']:
                 status = "Warning"
 
+            # Log per-device check results with pass/fail symbols
+            _p = lambda r: "pass" if r['passed'] else "FAIL"
+            logger.info(
+                f"[SCAN]     Secure={_p(sbd_result)}  Confid={_p(conf_result)}  "
+                f"CVE={_p(vuln_result)}  SBOM={_p(sbom_result)}  FW={_p(fw_result)}  => {status}"
+            )
+
             dev.update({
                 "status": status,
                 "checks": {
@@ -271,8 +300,20 @@ class CRAScanner:
                 "lastScanned": "Just now"
             })
             final_results.append(dev)
-            
-        logger.info(f"Detailed scan complete. Processed {len(final_results)} devices.")
+
+        stage_elapsed = time.time() - stage_start
+        total_elapsed = time.time() - scan_start
+
+        # Final summary
+        compliant = sum(1 for d in final_results if d['status'] == 'Compliant')
+        warning = sum(1 for d in final_results if d['status'] == 'Warning')
+        non_compliant = sum(1 for d in final_results if d['status'] == 'Non-Compliant')
+        logger.info("[SCAN] " + "=" * 56)
+        logger.info(
+            f"[SCAN] Scan complete: {len(final_results)} devices "
+            f"({compliant} Compliant, {warning} Warning, {non_compliant} Non-Compliant) "
+            f"in {total_elapsed:.1f}s"
+        )
         return final_results
 
     def _update_scanned_devices(self, scanned_devices, discovery_phase=False):
@@ -357,17 +398,20 @@ class CRAScanner:
         The Device Registry provides sw_version, hw_version, manufacturer, and
         model which are often missing from entity states.
         """
+        logger.info("[SCAN] Fetching Home Assistant devices...")
         supervisor_token = os.environ.get('SUPERVISOR_TOKEN')
         supervisor_url = "http://supervisor/core/api/states"
         
         if not supervisor_token:
-            logger.warning("SUPERVISOR_TOKEN not found. Skipping HA device sync (Mocking for dev).")
+            logger.warning("[SCAN]   SUPERVISOR_TOKEN not found. Using mock data for dev.")
             # MOCK DATA FOR LOCAL DEV / DEBUGGING
-            return [
+            mock_devices = [
                 {"entity_id": "media_player.yamaha_yas_306", "attributes": {"friendly_name": "Living Room Soundbar", "ip_address": "192.168.1.55", "source": "ha", "manufacturer": "Yamaha", "model": "YAS-306", "sw_version": "2.51"}},
                 {"entity_id": "light.zigbee_device_1", "attributes": {"friendly_name": "Kitchen Light", "source": "ha", "manufacturer": "Philips", "model": "LWB010", "sw_version": "1.50.2"}}, # Zigbee, no IP
                 {"entity_id": "router.fritz_box_7590", "attributes": {"friendly_name": "FRITZ!Box 7590", "ip_address": "192.168.1.1", "source": "ha", "manufacturer": "AVM", "model": "FRITZ!Box 7590", "sw_version": "7.57"}}
             ]
+            logger.info(f"[SCAN]   Loaded {len(mock_devices)} mock HA devices")
+            return mock_devices
             
         headers = {
             "Authorization": f"Bearer {supervisor_token}",
@@ -376,6 +420,7 @@ class CRAScanner:
         
         # Fetch device registry for richer data (sw_version, manufacturer, model)
         device_registry = self._get_ha_device_registry(headers)
+        logger.info(f"[SCAN]   Device Registry: {len(device_registry)} entries")
         
         devices = []
         try:
@@ -398,10 +443,11 @@ class CRAScanner:
                             "model": reg_info.get('model') or attrs.get('model'),
                         })
             else:
-                logger.error(f"Failed to fetch HA states: {response.status_code} {response.text}")
+                logger.error(f"[SCAN]   Failed to fetch HA states: {response.status_code} {response.text}")
         except Exception as e:
-            logger.error(f"Error communicating with Supervisor: {e}")
-            
+            logger.error(f"[SCAN]   Error communicating with Supervisor: {e}")
+        
+        logger.info(f"[SCAN]   Found {len(devices)} HA devices")
         return devices
 
     def _get_ha_device_registry(self, headers):
@@ -470,6 +516,9 @@ class CRAScanner:
         # Keep track of non-IP devices separately
         non_ip_devices = [d for d in nmap_devices if not d.get('ip')]
 
+        ip_matched = 0
+        ha_only_added = 0
+
         for ha_dev in ha_devices:
             attrs = ha_dev.get('attributes', {})
             ip = attrs.get('ip_address')
@@ -495,6 +544,7 @@ class CRAScanner:
 
             if ip and ip in merged:
                 # MERGE: We found this IP in Nmap results. Enrich it.
+                ip_matched += 1
                 existing = merged[ip]
                 existing['source'] = 'Merged (Nmap + HA)'
                 if existing['vendor'] == "Unknown" and new_dev_entry['vendor'] != "Unknown":
@@ -511,9 +561,15 @@ class CRAScanner:
                 existing['hostname'] = f"{existing['hostname']} ({new_dev_entry['hostname']})"
             else:
                 # NEW FOUND: Either no IP (Zigbee?) or Nmap missed it
+                ha_only_added += 1
                 merged[ip if ip else f"no_ip_{ha_dev['entity_id']}"] = new_dev_entry
 
-        return list(merged.values()) + non_ip_devices
+        result = list(merged.values()) + non_ip_devices
+        logger.info(
+            f"[SCAN]   Merged: {ip_matched} matched by IP, "
+            f"{ha_only_added} HA-only added, {len(result)} total devices"
+        )
+        return result
 
     def _get_open_ports(self, host):
         ports = []
