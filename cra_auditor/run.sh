@@ -11,8 +11,21 @@ fi
 
 
 # 2. Export Gemini API key if configured
-export GEMINI_API_KEY=$(bashio::config 'gemini_api_key')
-export NVD_API_KEY=$(bashio::config 'nvd_api_key')
+GEMINI_API_KEY=$(bashio::config 'gemini_api_key')
+gemini_config_status=$?
+if [ $gemini_config_status -ne 0 ]; then
+    bashio::log.error "Failed to read gemini_api_key from add-on config (exit: $gemini_config_status)."
+    exit $gemini_config_status
+fi
+export GEMINI_API_KEY
+
+NVD_API_KEY=$(bashio::config 'nvd_api_key')
+nvd_config_status=$?
+if [ $nvd_config_status -ne 0 ]; then
+    bashio::log.error "Failed to read nvd_api_key from add-on config (exit: $nvd_config_status)."
+    exit $nvd_config_status
+fi
+export NVD_API_KEY
 
 if [ -z "$GEMINI_API_KEY" ]; then
     bashio::log.warning "Gemini API Key is not set. AI features will be disabled."
