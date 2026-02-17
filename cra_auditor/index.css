@@ -4,7 +4,78 @@
   --font-sans: "Inter", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
 
-  --color-slate-850: #1e293b;
-  --color-slate-900: #0f172a;
-  --color-slate-950: #020617;
+  --color-bg-main: #020617;
+  --color-bg-surface: #0b1120;
+  --color-glass: rgba(15, 23, 42, 0.56);
+  --color-glass-border: rgba(148, 163, 184, 0.22);
+
+  --color-cyan: #22d3ee;
+  --color-emerald: #34d399;
+  --color-crimson: #fb7185;
+  --color-amber: #fbbf24;
+  --color-violet: #818cf8;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 10% 20%, rgba(34, 211, 238, 0.1), transparent 36%),
+    radial-gradient(circle at 86% 2%, rgba(129, 140, 248, 0.12), transparent 32%),
+    linear-gradient(160deg, #020617, #030712 60%, #020617 100%);
+  color: #dbeafe;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.glass-panel {
+  background: var(--color-glass);
+  border: 1px solid var(--color-glass-border);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 12px 40px rgba(2, 6, 23, 0.35);
+}
+
+.tech-border {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--color-glass), var(--color-glass)) padding-box,
+    linear-gradient(135deg, rgba(34, 211, 238, 0.55), rgba(129, 140, 248, 0.35), rgba(52, 211, 153, 0.45)) border-box;
+}
+
+.neon-text {
+  text-shadow: 0 0 8px currentColor;
+}
+
+.scan-grid {
+  background-image:
+    linear-gradient(rgba(34, 211, 238, 0.15) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.15) 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+
+.typing-cursor::after {
+  content: "▋";
+  margin-left: 0.35rem;
+  color: var(--color-cyan);
+  animation: blink 1.1s step-end infinite;
+}
+
+.reverse {
+  animation-direction: reverse;
+}
+
+@keyframes blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
 }

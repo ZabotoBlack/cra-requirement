@@ -1,7 +1,8 @@
-import React from 'react';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { ScanReport, ComplianceStatus } from '../types';
-import { ShieldAlert, ShieldCheck, ShieldQuestion, Sparkles } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, ShieldCheck, ShieldQuestion, Sparkles } from 'lucide-react';
+import { ComplianceStatus, ScanReport } from '../types';
+import GlassCard from './ui/GlassCard';
+import StatusBadge from './ui/StatusBadge';
 
 interface DashboardProps {
   report: ScanReport;
@@ -9,275 +10,192 @@ interface DashboardProps {
   nvdEnabled?: boolean;
 }
 
-const COLORS = {
-  [ComplianceStatus.COMPLIANT]: '#10b981', // emerald-500
-  [ComplianceStatus.WARNING]: '#f59e0b',   // amber-500
-  [ComplianceStatus.NON_COMPLIANT]: '#f43f5e' // rose-500
+const toneByStatus: Record<string, 'success' | 'warning' | 'danger' | 'neutral'> = {
+  [ComplianceStatus.COMPLIANT]: 'success',
+  [ComplianceStatus.WARNING]: 'warning',
+  [ComplianceStatus.NON_COMPLIANT]: 'danger',
+  [ComplianceStatus.DISCOVERED]: 'neutral'
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled }) => {
-  const pieData = [
-    { name: 'Compliant', value: report.summary.compliant },
-    { name: 'Warning', value: report.summary.warning },
-    { name: 'Non-Compliant', value: report.summary.nonCompliant },
-  ].filter(d => d.value > 0);
+  const complianceScore = useMemo(() => {
+    if (report.summary.total === 0) return 0;
+    return Math.round((report.summary.compliant / report.summary.total) * 100);
+  }, [report.summary]);
 
-  // 1. Vendor Vulnerability Distribution (Improved)
-  const vendorDataMap = new Map<string, number>();
-  report.devices.forEach(d => {
-    if (d.status !== ComplianceStatus.COMPLIANT) {
-      // Clean vendor name
-      let v = d.vendor.split('(')[0].trim();
-      if (v === 'Unknown' && d.osMatch !== 'Unknown') v = `Unknown (${d.osMatch})`;
-      vendorDataMap.set(v, (vendorDataMap.get(v) || 0) + 1);
-    }
-  });
+  const circumference = 2 * Math.PI * 52;
+  const scoreOffset = circumference - (complianceScore / 100) * circumference;
 
-  // Sort by count desc, take top 7
-  const barData = Array.from(vendorDataMap.entries())
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 7);
+  const vendorRisk = useMemo(() => {
+    const vendorDataMap = new Map<string, number>();
+    report.devices.forEach((device) => {
+      if (device.status !== ComplianceStatus.COMPLIANT) {
+        let vendor = device.vendor.split('(')[0].trim();
+        if (vendor === 'Unknown' && device.osMatch !== 'Unknown') vendor = `Unknown (${device.osMatch})`;
+        vendorDataMap.set(vendor, (vendorDataMap.get(vendor) || 0) + 1);
+      }
+    });
 
-  // 2. Common Services (New)
-  const serviceMap = new Map<string, number>();
-  report.devices.forEach(d => {
-    if (d.openPorts) {
-      d.openPorts.forEach(p => {
-        serviceMap.set(p.service, (serviceMap.get(p.service) || 0) + 1);
-      });
-    }
-  });
-  const serviceData = Array.from(serviceMap.entries())
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5);
+    return Array.from(vendorDataMap.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6);
+  }, [report.devices]);
 
-  // 3. OS Distribution (New)
-  const osMap = new Map<string, number>();
-  report.devices.forEach(d => {
-    const os = d.osMatch === 'Unknown' ? 'Unknown OS' : d.osMatch;
-    osMap.set(os, (osMap.get(os) || 0) + 1);
-  });
-  const osData = Array.from(osMap.entries())
-    .map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value);
+  const aiSummary = useMemo(() => {
+    const critical = report.summary.nonCompliant;
+    const warnings = report.summary.warning;
+    const riskTier = critical > 0 ? 'HIGH' : warnings > 0 ? 'MODERATE' : 'LOW';
+    return `Command assessment complete. Risk tier is ${riskTier}. ${critical} non-compliant and ${warnings} warning device${warnings === 1 ? '' : 's'} detected across ${report.summary.total} assets.`;
+  }, [report.summary]);
 
-  const Card = ({ title, value, sub, icon: Icon, color }: any) => (
-    <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 flex items-start justify-between shadow-lg">
-      <div>
-        <p className="text-slate-400 text-sm font-medium mb-1">{title}</p>
-        <h3 className="text-3xl font-bold text-white">{value}</h3>
-        {sub && <p className="text-xs text-slate-500 mt-2">{sub}</p>}
-      </div>
-      <div className={`p-3 rounded-full bg-slate-700/50 ${color}`}>
-        <Icon size={24} />
-      </div>
-    </div>
-  );
+  const [typedText, setTypedText] = useState('');
+
+  useEffect(() => {
+    setTypedText('');
+    let i = 0;
+    const timer = setInterval(() => {
+      i += 1;
+      setTypedText(aiSummary.slice(0, i));
+      if (i >= aiSummary.length) clearInterval(timer);
+    }, 18);
+
+    return () => clearInterval(timer);
+  }, [aiSummary]);
+
+  const topVendors = vendorRisk.slice(0, 4);
+  const maxVendorCount = Math.max(...topVendors.map(item => item.count), 1);
 
   return (
-    <div className="space-y-6">
-      {/* Stats Row */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card
-          title="Total Devices"
-          value={report.summary.total}
-          sub={`Scanned: ${report.targetRange}`}
-          icon={ShieldQuestion}
-          color="text-blue-400"
-        />
-        <Card
-          title="Compliant"
-          value={report.summary.compliant}
-          sub="Passed Annex I Checks"
-          icon={ShieldCheck}
-          color="text-emerald-400"
-        />
-        <Card
-          title="Warnings"
-          value={report.summary.warning}
-          sub="Encryption Issues"
-          icon={ShieldAlert}
-          color="text-amber-400"
-        />
-        <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 flex items-start justify-between shadow-lg">
-          <div>
-            <p className="text-slate-400 text-sm font-medium mb-1">AI Insights</p>
-            <h3 className="text-xl font-bold text-white mt-1">
-              {geminiEnabled ? 'Active' : 'Disabled'}
-            </h3>
-            <p className="text-xs text-slate-500 mt-2">
-              {geminiEnabled ? 'Gemini Pro Connected' : 'Add Key in Config'}
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-5">
+        <GlassCard className="rounded-2xl p-4 xl:col-span-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-wider text-slate-400">Total Devices</p>
+              <h3 className="mt-1 text-3xl font-bold text-white">{report.summary.total}</h3>
+              <p className="mt-1 text-xs text-slate-400">Target: {report.targetRange}</p>
+            </div>
+            <div className="rounded-full border border-cyan-400/35 bg-cyan-500/10 p-3 text-cyan-200">
+              <ShieldQuestion size={22} />
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <StatusBadge label={`${report.summary.compliant} Compliant`} tone="success" />
+            <StatusBadge label={`${report.summary.warning} Warning`} tone="warning" />
+            <StatusBadge label={`${report.summary.nonCompliant} Non-Compliant`} tone="danger" />
+          </div>
+        </GlassCard>
+
+        <GlassCard className="rounded-2xl p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-wider text-slate-400">AI Insight</p>
+              <h3 className="mt-1 text-xl font-bold text-white">{geminiEnabled ? 'Operational' : 'Disabled'}</h3>
+            </div>
+            <Sparkles className={geminiEnabled ? 'text-violet-300 neon-text' : 'text-slate-500'} size={20} />
+          </div>
+          <div className="mt-3 flex gap-2">
+            <StatusBadge label={geminiEnabled ? 'Gemini Online' : 'No API key'} tone={geminiEnabled ? 'success' : 'warning'} />
+            <StatusBadge label={nvdEnabled ? 'NVD Synced' : 'NVD Offline'} tone={nvdEnabled ? 'success' : 'danger'} />
+          </div>
+        </GlassCard>
+
+        <GlassCard className="rounded-2xl p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-wider text-slate-400">Warning Devices</p>
+              <h3 className="mt-1 text-2xl font-bold text-amber-200">{report.summary.warning}</h3>
+            </div>
+            <AlertTriangle size={20} className="text-amber-300" />
+          </div>
+        </GlassCard>
+
+        <GlassCard className="rounded-2xl p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-wider text-slate-400">Compliant Devices</p>
+              <h3 className="mt-1 text-2xl font-bold text-emerald-200">{report.summary.compliant}</h3>
+            </div>
+            <ShieldCheck size={20} className="text-emerald-300" />
+          </div>
+        </GlassCard>
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+        <GlassCard className="rounded-2xl p-5 xl:col-span-1">
+          <p className="text-xs uppercase tracking-wider text-slate-400">Compliance Score</p>
+          <div className="mt-4 flex items-center justify-center">
+            <div className="relative h-44 w-44">
+              <svg viewBox="0 0 140 140" className="h-full w-full -rotate-90">
+                <circle cx="70" cy="70" r="52" fill="transparent" stroke="rgba(148,163,184,0.15)" strokeWidth="12" />
+                <circle
+                  cx="70"
+                  cy="70"
+                  r="52"
+                  fill="transparent"
+                  stroke={complianceScore >= 80 ? '#34d399' : complianceScore >= 50 ? '#fbbf24' : '#fb7185'}
+                  strokeWidth="12"
+                  strokeLinecap="round"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={scoreOffset}
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <p className="font-mono text-4xl font-bold text-white">{complianceScore}%</p>
+                <p className="text-xs uppercase tracking-widest text-slate-400">Compliance</p>
+              </div>
+            </div>
+          </div>
+          <p className="mt-2 text-center text-xs text-slate-400">Score is based on compliant devices versus scanned inventory.</p>
+        </GlassCard>
+
+        <GlassCard className="rounded-2xl p-5 xl:col-span-1">
+          <p className="text-xs uppercase tracking-wider text-slate-400">Risk Analysis</p>
+          <div className="mt-4 space-y-3">
+            {topVendors.length > 0 ? topVendors.map((item) => {
+              const ratio = item.count / maxVendorCount;
+              const width = Math.max(16, Math.round(ratio * 100));
+              const tone = item.count >= 3 ? 'danger' : item.count === 2 ? 'warning' : 'info';
+              return (
+                <div key={item.name}>
+                  <div className="mb-1 flex items-center justify-between text-xs">
+                    <span className="truncate text-slate-300">{item.name}</span>
+                    <StatusBadge label={`${item.count} risk`} tone={tone} />
+                  </div>
+                  <div className="h-2 rounded-full bg-slate-800">
+                    <div
+                      className="h-2 rounded-full"
+                      style={{
+                        width: `${width}%`,
+                        background: 'linear-gradient(90deg, rgba(244,63,94,0.95), rgba(251,191,36,0.8), rgba(34,211,238,0.65))'
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            }) : (
+              <p className="pt-8 text-center text-sm text-slate-500">No elevated vendor risk detected.</p>
+            )}
+          </div>
+        </GlassCard>
+
+        <GlassCard className="rounded-2xl p-5 xl:col-span-1">
+          <p className="text-xs uppercase tracking-wider text-slate-400">Message from Command</p>
+          <div className="mt-3 rounded-xl border border-violet-400/25 bg-violet-500/10 p-4">
+            <p className="typing-cursor min-h-[110px] text-sm leading-relaxed text-violet-100">
+              {typedText}
             </p>
-            <div className="mt-2">
-              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${nvdEnabled ? 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10' : 'text-rose-400 border-rose-500/40 bg-rose-500/10'}`}>
-                NVD {nvdEnabled ? 'Active' : 'Disabled'}
-              </span>
-            </div>
           </div>
-          <div className={`p-3 rounded-full bg-slate-700/50 ${geminiEnabled ? 'text-purple-400' : 'text-slate-500'}`}>
-            <Sparkles size={24} />
+          <div className="mt-3 flex flex-wrap gap-2">
+            {Object.entries(report.summary)
+              .filter(([key]) => key !== 'total')
+              .map(([key, value]) => (
+                <StatusBadge key={key} label={`${key} ${value}`} tone={toneByStatus[key === 'compliant' ? ComplianceStatus.COMPLIANT : key === 'warning' ? ComplianceStatus.WARNING : ComplianceStatus.NON_COMPLIANT]} />
+              ))}
           </div>
-        </div>
+        </GlassCard>
       </div>
-
-      {/* Row 1: Compliance & Vendor Risks */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Compliance Distribution */}
-        <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">Compliance Status</h3>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[entry.name as ComplianceStatus]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#fff' }}
-                  itemStyle={{ color: '#fff' }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="flex justify-center gap-4 mt-2">
-            {pieData.map((entry) => (
-              <div key={entry.name} className="flex items-center gap-2 text-sm text-slate-300">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[entry.name as ComplianceStatus] }} />
-                {entry.name} ({entry.value})
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Vendor Risk Analysis (Improved) */}
-        <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">Top Risks by Vendor</h3>
-          {barData.length > 0 ? (
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barData} layout="vertical" margin={{ left: 40, right: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
-                  <XAxis type="number" stroke="#94a3b8" />
-                  <YAxis dataKey="name" type="category" width={110} stroke="#94a3b8" style={{ fontSize: '11px', fontWeight: 500 }} />
-                  <Tooltip
-                    cursor={{ fill: '#334155', opacity: 0.4 }}
-                    contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#fff' }}
-                  />
-                  <Bar dataKey="count" fill="#f43f5e" radius={[0, 4, 4, 0]} barSize={20} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="h-64 flex items-center justify-center text-slate-500">
-              No High Risk Vendors Found
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Row 2: Services & OS */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Common Services */}
-        <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">Top 5 Detected Services</h3>
-          {serviceData.length > 0 ? (
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={serviceData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                  <XAxis dataKey="name" stroke="#94a3b8" />
-                  <YAxis stroke="#94a3b8" allowDecimals={false} />
-                  <Tooltip
-                    cursor={{ fill: '#334155', opacity: 0.4 }}
-                    contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#fff' }}
-                  />
-                  <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={40} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="h-64 flex items-center justify-center text-slate-500">
-              No Services Detected
-            </div>
-          )}
-        </div>
-
-        {/* OS Distribution */}
-        <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">OS Distribution</h3>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={osData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={0}
-                  outerRadius={80}
-                  paddingAngle={2}
-                  dataKey="value"
-                >
-                  {osData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={['#3b82f6', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6'][index % 5]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#fff' }}
-                  itemStyle={{ color: '#fff' }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 mt-2">
-            {osData.slice(0, 5).map((entry, index) => (
-              <div key={entry.name} className="flex items-center gap-2 text-xs text-slate-300">
-                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: ['#3b82f6', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6'][index % 5] }} />
-                {entry.name}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Row 3: Scan Architecture */}
-      <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-white mb-4">Scan Profiles & Feature Flags</h3>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 text-sm">
-          <div>
-            <h4 className="text-slate-200 font-semibold mb-2">Profile Defaults</h4>
-            <ul className="space-y-2 text-slate-300">
-              <li><span className="text-indigo-300 font-medium">Discovery:</span> Ping/ARP only, no compliance checks.</li>
-              <li><span className="text-indigo-300 font-medium">Standard:</span> Ports 1-100, service versioning, web checks on, auth brute-force off.</li>
-              <li><span className="text-indigo-300 font-medium">Deep:</span> Ports 1-1024, OS + service detection, full compliance checks.</li>
-            </ul>
-          </div>
-          <div>
-            <h4 className="text-slate-200 font-semibold mb-2">Toggleable Modules</h4>
-            <div className="grid grid-cols-2 gap-2 text-slate-300">
-              <span>network_discovery</span>
-              <span>port_scan</span>
-              <span>os_detection</span>
-              <span>service_version</span>
-              <span>netbios_info</span>
-              <span>compliance_checks</span>
-              <span>auth_brute_force</span>
-              <span>web_crawling</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
     </div>
   );
 };

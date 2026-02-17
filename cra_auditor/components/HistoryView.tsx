@@ -1,147 +1,155 @@
 import React, { useEffect, useState } from 'react';
-import { Clock, Search, Trash2, Eye, Calendar, Target, ShieldAlert, ArrowUp, ArrowDown } from 'lucide-react';
-import { getHistory, deleteHistory } from '../services/api';
+import { ArrowDown, ArrowUp, Calendar, Eye, Search, Target, Trash2 } from 'lucide-react';
+import { deleteHistory, getHistory } from '../services/api';
 import { ScanHistoryItem } from '../types';
+import GlassCard from './ui/GlassCard';
+import StatusBadge from './ui/StatusBadge';
+import TechButton from './ui/TechButton';
 
 interface HistoryViewProps {
-    onViewReport: (id: number) => void;
+  onViewReport: (id: number) => void;
 }
 
-const HistoryView: React.FC<HistoryViewProps> = ({ onViewReport }) => {
-    const [history, setHistory] = useState<ScanHistoryItem[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [search, setSearch] = useState('');
-    const [sortBy, setSortBy] = useState<'timestamp' | 'target'>('timestamp');
-    const [order, setOrder] = useState<'asc' | 'desc'>('desc');
+const SnapshotBar: React.FC<{ item: ScanHistoryItem }> = ({ item }) => {
+  const total = Math.max(item.summary.total, 1);
+  const compliantPct = Math.round((item.summary.compliant / total) * 100);
+  const warningPct = Math.round((item.summary.warning / total) * 100);
+  const nonCompliantPct = Math.round((item.summary.nonCompliant / total) * 100);
 
-    const fetchHistory = async () => {
-        setLoading(true);
-        const data = await getHistory(search, sortBy, order);
-        setHistory(data);
-        setLoading(false);
-    };
-
-    useEffect(() => {
-        const debounce = setTimeout(fetchHistory, 300);
-        return () => clearTimeout(debounce);
-    }, [search, sortBy, order]);
-
-    const handleDelete = async (id: number, e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (confirm('Are you sure you want to delete this scan report?')) {
-            const success = await deleteHistory(id);
-            if (success) {
-                fetchHistory();
-            }
-        }
-    };
-
-    const toggleSort = (field: 'timestamp' | 'target') => {
-        if (sortBy === field) {
-            setOrder(order === 'asc' ? 'desc' : 'asc');
-        } else {
-            setSortBy(field);
-            setOrder('desc');
-        }
-    };
-
-    const SortIcon = ({ field }: { field: 'timestamp' | 'target' }) => {
-        if (sortBy !== field) return null;
-        return order === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />;
-    };
-
-    return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between gap-4">
-                <h2 className="text-2xl font-bold text-white">Scan History</h2>
-
-                <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                    <input
-                        type="text"
-                        placeholder="Search targets..."
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        className="pl-10 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500 w-64"
-                    />
-                </div>
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
-                <div className="grid grid-cols-12 gap-4 px-6 py-3 bg-slate-800/50 border-b border-slate-800 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    <div
-                        className="col-span-3 flex items-center gap-2 cursor-pointer hover:text-white transition-colors"
-                        onClick={() => toggleSort('timestamp')}
-                    >
-                        <Calendar size={14} /> Date <SortIcon field="timestamp" />
-                    </div>
-                    <div
-                        className="col-span-3 flex items-center gap-2 cursor-pointer hover:text-white transition-colors"
-                        onClick={() => toggleSort('target')}
-                    >
-                        <Target size={14} /> Target <SortIcon field="target" />
-                    </div>
-                    <div className="col-span-4 flex items-center gap-2">
-                        <ShieldAlert size={14} /> Summary
-                    </div>
-                    <div className="col-span-2 text-right">Actions</div>
-                </div>
-
-                {loading ? (
-                    <div className="p-8 text-center text-slate-500">Loading history...</div>
-                ) : history.length === 0 ? (
-                    <div className="p-8 text-center text-slate-500">No history found.</div>
-                ) : (
-                    <div className="divide-y divide-slate-800">
-                        {history.map((item) => (
-                            <div
-                                key={item.id}
-                                className="grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-slate-800/30 transition-colors group"
-                            >
-                                <div className="col-span-3 text-slate-300 font-medium">
-                                    {new Date(item.timestamp).toLocaleString()}
-                                </div>
-                                <div className="col-span-3 text-emerald-400 font-mono text-sm">
-                                    {item.target_range}
-                                </div>
-                                <div className="col-span-4 flex gap-3 text-xs">
-                                    <span className="px-2 py-1 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                                        {item.summary.total} Devices
-                                    </span>
-                                    {item.summary.nonCompliant > 0 && (
-                                        <span className="px-2 py-1 rounded bg-red-900/20 text-red-400 border border-red-900/30">
-                                            {item.summary.nonCompliant} Issues
-                                        </span>
-                                    )}
-                                    {item.summary.warning > 0 && (
-                                        <span className="px-2 py-1 rounded bg-amber-900/20 text-amber-400 border border-amber-900/30">
-                                            {item.summary.warning} Warnings
-                                        </span>
-                                    )}
-                                </div>
-                                <div className="col-span-2 flex justify-end gap-2 opacity-60 group-hover:opacity-100 transition-opacity">
-                                    <button
-                                        onClick={() => onViewReport(item.id)}
-                                        className="p-2 rounded-lg bg-indigo-600/10 text-indigo-400 hover:bg-indigo-600 hover:text-white transition-colors"
-                                        title="View Report"
-                                    >
-                                        <Eye size={16} />
-                                    </button>
-                                    <button
-                                        onClick={(e) => handleDelete(item.id, e)}
-                                        className="p-2 rounded-lg bg-red-600/10 text-red-400 hover:bg-red-600 hover:text-white transition-colors"
-                                        title="Delete Report"
-                                    >
-                                        <Trash2 size={16} />
-                                    </button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
+  return (
+    <div>
+      <div className="mb-1 h-2 overflow-hidden rounded-full bg-slate-800">
+        <div className="flex h-full w-full">
+          <div style={{ width: `${compliantPct}%` }} className="bg-emerald-400/90" />
+          <div style={{ width: `${warningPct}%` }} className="bg-amber-400/90" />
+          <div style={{ width: `${nonCompliantPct}%` }} className="bg-rose-400/90" />
         </div>
-    );
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <StatusBadge label={`${item.summary.total} Devices`} tone="info" />
+        {item.summary.nonCompliant > 0 && <StatusBadge label={`${item.summary.nonCompliant} Issues`} tone="danger" />}
+        {item.summary.warning > 0 && <StatusBadge label={`${item.summary.warning} Warnings`} tone="warning" />}
+      </div>
+    </div>
+  );
+};
+
+const HistoryView: React.FC<HistoryViewProps> = ({ onViewReport }) => {
+  const [history, setHistory] = useState<ScanHistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [sortBy, setSortBy] = useState<'timestamp' | 'target'>('timestamp');
+  const [order, setOrder] = useState<'asc' | 'desc'>('desc');
+
+  const fetchHistory = async () => {
+    setLoading(true);
+    const data = await getHistory(search, sortBy, order);
+    setHistory(data);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    const debounce = setTimeout(fetchHistory, 300);
+    return () => clearTimeout(debounce);
+  }, [search, sortBy, order]);
+
+  const handleDelete = async (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('Are you sure you want to delete this scan report?')) {
+      const success = await deleteHistory(id);
+      if (success) fetchHistory();
+    }
+  };
+
+  const toggleSort = (field: 'timestamp' | 'target') => {
+    if (sortBy === field) {
+      setOrder(order === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setOrder('desc');
+    }
+  };
+
+  const sortIcon = (field: 'timestamp' | 'target') => {
+    if (sortBy !== field) return null;
+    return order === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />;
+  };
+
+  return (
+    <div className="space-y-4">
+      <GlassCard className="rounded-2xl p-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-white">Scan History Timeline</h2>
+            <p className="text-xs text-slate-400">Review previous scan snapshots and reopen full reports.</p>
+          </div>
+
+          <div className="relative w-full md:w-auto">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+            <input
+              type="text"
+              placeholder="Search target ranges..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full rounded-xl border border-slate-700 bg-slate-900/85 py-2 pl-9 pr-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 md:w-72"
+            />
+          </div>
+        </div>
+
+        <div className="mt-3 flex gap-2">
+          <button
+            onClick={() => toggleSort('timestamp')}
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-300 hover:text-white"
+          >
+            <Calendar size={13} /> Date {sortIcon('timestamp')}
+          </button>
+          <button
+            onClick={() => toggleSort('target')}
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-300 hover:text-white"
+          >
+            <Target size={13} /> Target {sortIcon('target')}
+          </button>
+        </div>
+      </GlassCard>
+
+      <GlassCard className="rounded-2xl p-5">
+        {loading ? (
+          <div className="py-20 text-center text-sm text-slate-500">Loading timeline...</div>
+        ) : history.length === 0 ? (
+          <div className="py-20 text-center text-sm text-slate-500">No history found.</div>
+        ) : (
+          <div className="space-y-4">
+            {history.map((item, index) => (
+              <div key={item.id} className="relative rounded-xl border border-slate-700/70 bg-slate-900/50 p-4">
+                <div className="absolute -left-[26px] top-6 hidden h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.8)] lg:block" />
+                {index < history.length - 1 && <div className="absolute -left-[23px] top-8 hidden h-[calc(100%+12px)] w-px bg-slate-700 lg:block" />}
+
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-100">{new Date(item.timestamp).toLocaleString()}</p>
+                    <p className="font-mono text-xs text-cyan-200">{item.target_range}</p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <TechButton variant="secondary" className="px-3 py-1.5 text-xs" onClick={() => onViewReport(item.id)}>
+                      <Eye size={14} /> View
+                    </TechButton>
+                    <TechButton variant="danger" className="px-3 py-1.5 text-xs" onClick={(e) => handleDelete(item.id, e)}>
+                      <Trash2 size={14} /> Delete
+                    </TechButton>
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <SnapshotBar item={item} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </GlassCard>
+    </div>
+  );
 };
 
 export default HistoryView;
