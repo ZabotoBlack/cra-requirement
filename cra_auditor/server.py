@@ -310,7 +310,8 @@ def delete_history_item(scan_id):
         return jsonify({"error": str(e)}), 500
 
 def run_scan_background(subnet, options=None):
-    scan_type = (options or {}).get('profile') or (options or {}).get('scan_type', 'deep')
+    scan_options = options or {}
+    scan_type = scan_options.get('profile') or scan_options.get('scan_type', 'deep')
     logger.info(f"[SCAN] Background scan starting: subnet={subnet}, type={scan_type}")
     bg_start = time.time()
     try:
@@ -332,6 +333,8 @@ def run_scan_background(subnet, options=None):
         report = {
             "timestamp": datetime.now().isoformat(),
             "targetRange": subnet,
+            "scanProfile": scan_type,
+            "scanFeatures": scan_options.get('features', {}),
             "devices": devices,
             "summary": summary
         }

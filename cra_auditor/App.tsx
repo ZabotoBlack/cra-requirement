@@ -299,10 +299,17 @@ const App: React.FC = () => {
               {view === 'history' ? 'Previous Scans' : view}
             </h2>
             {report && view !== 'history' && (
-              <span className="px-3 py-1 rounded-full bg-slate-800 text-xs text-slate-400 border border-slate-700 flex items-center gap-2">
-                <Activity size={12} className="text-emerald-500" />
-                Last Scan: {new Date(report.timestamp).toLocaleTimeString()}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 rounded-full bg-slate-800 text-xs text-slate-400 border border-slate-700 flex items-center gap-2">
+                  <Activity size={12} className="text-emerald-500" />
+                  Last Scan: {new Date(report.timestamp).toLocaleTimeString()}
+                </span>
+                {report.scanProfile && (
+                  <span className="px-3 py-1 rounded-full bg-indigo-500/10 text-xs text-indigo-300 border border-indigo-500/30 uppercase tracking-wide">
+                    Profile: {report.scanProfile}
+                  </span>
+                )}
+              </div>
             )}
           </div>
           <div className="flex items-center gap-4">

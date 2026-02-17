@@ -124,6 +124,8 @@ export interface Device {
 export interface ScanReport {
   timestamp: string;
   targetRange: string;
+  scanProfile?: 'discovery' | 'standard' | 'deep';
+  scanFeatures?: ScanFeatureFlags;
   devices: Device[];
   summary: {
     total: number;
