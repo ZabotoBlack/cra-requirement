@@ -1,0 +1,7 @@
+log_paths:
+  - /api/logs
+  - /logs
+  - /admin/logs
+  - /syslog
+  - /journal
+  - /cgi-bin/log.cgi

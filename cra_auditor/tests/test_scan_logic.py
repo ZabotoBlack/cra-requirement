@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 import sys
 import os
+import tempfile
 
 # Ensure we can import scan_logic from parent directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -249,6 +250,37 @@ class TestCRAScanner(unittest.TestCase):
         self.assertTrue(len(result['logging_endpoints']) > 0)
         self.assertIn('/api/logs', result['logging_endpoints'][0])
         mock_udp_probe.assert_called_once_with("192.168.1.20")
+
+    @patch('scan_logic.CRAScanner._probe_udp_syslog', return_value=(False, 'closed'))
+    def test_check_security_logging_passes_on_http_403_log_endpoint(self, mock_udp_probe):
+        """Security logging should treat 403 on a log endpoint as a valid signal."""
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        self.scanner.session.get = MagicMock(return_value=mock_response)
+
+        device = {
+            "ip": "192.168.1.21",
+            "openPorts": [{"port": 443, "service": "https", "protocol": "tcp"}]
+        }
+
+        result = self.scanner.check_security_logging(device)
+        self.assertTrue(result['passed'])
+        self.assertTrue(any('/api/logs' in endpoint for endpoint in result['logging_endpoints']))
+        mock_udp_probe.assert_called_once_with("192.168.1.21")
+
+    def test_load_security_log_paths_from_yaml(self):
+        """Security logging endpoint paths should be loaded from YAML config."""
+        with tempfile.NamedTemporaryFile('w', delete=False, suffix='.yaml', encoding='utf-8') as handle:
+            handle.write("log_paths:\n  - /custom/logs\n  - journal/custom\n")
+            temp_path = handle.name
+
+        try:
+            with patch.dict(os.environ, {'CRA_SECURITY_LOG_PATHS_FILE': temp_path}, clear=False):
+                loaded_paths = self.scanner._load_security_log_paths()
+
+            self.assertEqual(loaded_paths, ['/custom/logs', '/journal/custom'])
+        finally:
+            os.remove(temp_path)
 
     @patch('scan_logic.CRAScanner._probe_udp_syslog', return_value=(False, 'closed'))
     def test_check_security_logging_warns_when_not_detected(self, mock_udp_probe):

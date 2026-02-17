@@ -63,3 +63,26 @@ The backend still accepts:
 
 ### Important Discovery Behavior
 Discovery mode now **skips all compliance checks** by design. It returns discovered device metadata only (IP/MAC/vendor/hostname and merged HA data where available).
+
+## Security Logging Probe (CRA Annex I §1(3)(j))
+
+HTTP log endpoint paths are configurable from YAML:
+
+- Default file: `data/security_logging_paths.yaml`
+- Optional override: environment variable `CRA_SECURITY_LOG_PATHS_FILE`
+
+YAML shape:
+
+```yaml
+log_paths:
+	- /api/logs
+	- /logs
+```
+
+Manual validation helper is available at `scripts/mock_security_logging_device.py`.
+
+Example:
+
+```bash
+python scripts/mock_security_logging_device.py --http-port 8080 --udp-port 514
+```

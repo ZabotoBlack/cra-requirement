@@ -58,6 +58,41 @@ The backend now supports modular scanning profiles and explicit feature flags vi
 
 Legacy `scan_type` and `auth_checks` are still accepted and mapped to the new model server-side.
 
+## Security Logging Probe Configuration
+
+Security logging endpoint detection (CRA Annex I §1(3)(j)) is configured via:
+
+- `data/security_logging_paths.yaml`
+- Optional env override: `CRA_SECURITY_LOG_PATHS_FILE` (absolute path to a YAML file with the same shape)
+
+Default file format:
+
+```yaml
+log_paths:
+	- /api/logs
+	- /logs
+	- /admin/logs
+	- /syslog
+	- /journal
+	- /cgi-bin/log.cgi
+```
+
+## Manual Probe Validation (Mock Device)
+
+Run a local mock device that exposes:
+- HTTP log endpoint at `/logs` (and `/api/logs`)
+- Optional UDP syslog listener
+
+```bash
+python scripts/mock_security_logging_device.py --http-port 8080 --udp-port 514
+```
+
+If binding UDP/514 is restricted on your platform, disable UDP and validate via HTTP endpoint detection:
+
+```bash
+python scripts/mock_security_logging_device.py --http-port 8080 --disable-udp
+```
+
 ## NVD Cache Policy
 
 - The NVD API cache file is runtime-generated at `data/nvd_cache.json` and is intentionally not committed to Git.

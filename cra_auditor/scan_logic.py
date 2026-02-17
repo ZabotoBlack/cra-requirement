@@ -5,6 +5,7 @@ import socket
 import logging
 import os
 import time
+import yaml
 from vulnerability_data import NVDClient, VendorRules, build_cpe, match_cpe
 
 # Configure logging
@@ -19,6 +20,15 @@ _FW_VERSION_RE = re.compile(
     r'(?:firmware|fw|version|ver|software|sw)[:\s_=-]*v?(\d+\.\d+[\w./-]*)',
     re.IGNORECASE,
 )
+
+_DEFAULT_SECURITY_LOG_PATHS = [
+    '/api/logs',
+    '/logs',
+    '/admin/logs',
+    '/syslog',
+    '/journal',
+    '/cgi-bin/log.cgi',
+]
 
 _FEATURE_FLAG_KEYS = {
     "network_discovery",
@@ -86,10 +96,56 @@ class CRAScanner:
         self.verify_ssl = False  # Configurable: set True to enforce SSL certificate verification during probes
         self.nvd_client = NVDClient(api_key=os.environ.get('NVD_API_KEY'))
         self.vendor_rules = VendorRules()
+        self.security_log_paths = self._load_security_log_paths()
 
         # Reuse a single requests.Session for connection pooling (performance)
         self.session = requests.Session()
         self.session.verify = self.verify_ssl
+
+    def _load_security_log_paths(self):
+        """Load HTTP logging probe paths from YAML config with safe defaults.
+
+        Config format (YAML):
+            log_paths:
+              - /api/logs
+              - /logs
+        """
+        config_path = os.environ.get(
+            'CRA_SECURITY_LOG_PATHS_FILE',
+            os.path.join(os.path.dirname(__file__), 'data', 'security_logging_paths.yaml')
+        )
+
+        try:
+            if not os.path.exists(config_path):
+                return list(_DEFAULT_SECURITY_LOG_PATHS)
+
+            with open(config_path, 'r', encoding='utf-8') as handle:
+                parsed = yaml.safe_load(handle) or {}
+
+            raw_paths = parsed.get('log_paths', []) if isinstance(parsed, dict) else []
+            if not isinstance(raw_paths, list):
+                logger.warning("Security logging path config invalid format at %s; using defaults.", config_path)
+                return list(_DEFAULT_SECURITY_LOG_PATHS)
+
+            cleaned_paths = []
+            for path in raw_paths:
+                if not isinstance(path, str):
+                    continue
+                normalized = path.strip()
+                if not normalized:
+                    continue
+                if not normalized.startswith('/'):
+                    normalized = '/' + normalized
+                cleaned_paths.append(normalized)
+
+            if not cleaned_paths:
+                logger.warning("Security logging path config empty at %s; using defaults.", config_path)
+                return list(_DEFAULT_SECURITY_LOG_PATHS)
+
+            return cleaned_paths
+        except Exception:
+            logger.error("Failed to load security logging path config from %s; using defaults.", config_path, exc_info=True)
+            return list(_DEFAULT_SECURITY_LOG_PATHS)
 
     def _resolve_device_cpe(self, vendor: str, product: str | None = None, version: str | None = None):
         if not vendor or vendor == "Unknown":
@@ -1044,7 +1100,7 @@ class CRAScanner:
             )
         ]
 
-        log_paths = ['/api/logs', '/logs', '/admin/logs', '/syslog', '/journal', '/cgi-bin/log.cgi']
+        log_paths = self.security_log_paths
 
         for port_info in http_ports:
             port = port_info.get('port')
