@@ -333,7 +333,8 @@ class CRAScanner:
                 if vendor_warnings:
                     if sbd_result['details'].startswith("Skipped"):
                         sbd_result['details'] = ""
-                    sbd_result['details'] += " " + "; ".join(vendor_warnings)
+                    sep = " " if sbd_result['details'] else ""
+                    sbd_result['details'] += sep + "; ".join(vendor_warnings)
                     sbd_result['passed'] = False
 
                 status = "Compliant"
@@ -370,6 +371,7 @@ class CRAScanner:
                 final_results.append(dev)
 
             stage_elapsed = time.time() - stage_start
+            logger.info(f"[SCAN]   Compliance checks completed in {stage_elapsed:.1f}s")
 
         total_elapsed = time.time() - scan_start
 
