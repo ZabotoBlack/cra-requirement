@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ArrowDown, ArrowUp, Calendar, Eye, Search, Target, Trash2 } from 'lucide-react';
 import { deleteHistory, getHistory } from '../services/api';
 import { ScanHistoryItem } from '../types';
@@ -14,7 +14,7 @@ const SnapshotBar: React.FC<{ item: ScanHistoryItem }> = ({ item }) => {
   const total = Math.max(item.summary.total, 1);
   const compliantPct = Math.round((item.summary.compliant / total) * 100);
   const warningPct = Math.round((item.summary.warning / total) * 100);
-  const nonCompliantPct = Math.round((item.summary.nonCompliant / total) * 100);
+  const nonCompliantPct = Math.max(0, 100 - compliantPct - warningPct);
 
   return (
     <div>
@@ -41,17 +41,17 @@ const HistoryView: React.FC<HistoryViewProps> = ({ onViewReport }) => {
   const [sortBy, setSortBy] = useState<'timestamp' | 'target'>('timestamp');
   const [order, setOrder] = useState<'asc' | 'desc'>('desc');
 
-  const fetchHistory = async () => {
+  const fetchHistory = useCallback(async () => {
     setLoading(true);
     const data = await getHistory(search, sortBy, order);
     setHistory(data);
     setLoading(false);
-  };
+  }, [search, sortBy, order]);
 
   useEffect(() => {
     const debounce = setTimeout(fetchHistory, 300);
     return () => clearTimeout(debounce);
-  }, [search, sortBy, order]);
+  }, [fetchHistory, search, sortBy, order]);
 
   const handleDelete = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();

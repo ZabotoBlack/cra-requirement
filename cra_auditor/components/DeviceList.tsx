@@ -189,7 +189,7 @@ const DeviceList: React.FC<DeviceListProps> = ({ devices }) => {
     const text = filterText.toLowerCase();
     return devices.filter((device) =>
       device.hostname.toLowerCase().includes(text) ||
-      device.ip.includes(filterText) ||
+      device.ip.toLowerCase().includes(text) ||
       device.vendor.toLowerCase().includes(text) ||
       device.mac.toLowerCase().includes(text)
     );

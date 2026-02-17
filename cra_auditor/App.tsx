@@ -312,7 +312,7 @@ const App: React.FC = () => {
                           } else {
                             if (current.includes(vendor)) {
                               current = current.filter(v => v !== vendor);
-                              if (current.length === 0) current = 'all';
+                              if (current.length === 0) current = [];
                             } else {
                               current = [...current, vendor];
                             }
