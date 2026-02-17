@@ -33,6 +33,8 @@ RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
 
 # Copy backend source
 COPY *.py ./
+COPY vulnerability_data ./vulnerability_data
+COPY data ./data
 COPY run.sh ./
 
 # Copy built frontend from Stage 1
