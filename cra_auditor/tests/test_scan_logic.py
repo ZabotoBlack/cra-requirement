@@ -7,7 +7,7 @@ import tempfile
 # Ensure we can import scan_logic from parent directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from scan_logic import CRAScanner
+from scan_logic import CRAScanner, MDNSResolver
 
 class TestCRAScanner(unittest.TestCase):
 
@@ -121,6 +121,75 @@ class TestCRAScanner(unittest.TestCase):
         # Should have extracted hostname from nbstat script
         self.assertEqual(result[0]['hostname'], "DESKTOP-TEST")
         self.assertEqual(result[0]['vendor'], "TestVendor")
+
+    @patch('scan_logic.socket.gethostbyaddr', side_effect=Exception("reverse lookup failed"))
+    def test_enrich_hostnames_reverse_dns_failure_is_graceful(self, mock_gethostbyaddr):
+        """Reverse DNS lookup failures should not break hostname enrichment."""
+        scanned_devices = {
+            "192.168.1.70": {
+                "ip": "192.168.1.70",
+                "hostname": "unknown",
+            }
+        }
+
+        self.scanner._enrich_hostnames(scanned_devices, mdns_hostnames={})
+
+        self.assertEqual(scanned_devices["192.168.1.70"]["hostname"], "unknown")
+        mock_gethostbyaddr.assert_called_once_with("192.168.1.70")
+
+    @patch('scan_logic.socket.gethostbyaddr', return_value=("ip-192-168-1-80", [], []))
+    def test_enrich_hostnames_prefers_mdns_over_generic_names(self, mock_gethostbyaddr):
+        """mDNS hostname should be preferred over generic hostnames from scan/reverse DNS."""
+        scanned_devices = {
+            "192.168.1.80": {
+                "ip": "192.168.1.80",
+                "hostname": "ip-192-168-1-80",
+            }
+        }
+
+        self.scanner._enrich_hostnames(
+            scanned_devices,
+            mdns_hostnames={"192.168.1.80": ["LivingRoom-Speaker.local"]}
+        )
+
+        self.assertEqual(
+            scanned_devices["192.168.1.80"]["hostname"],
+            "LivingRoom-Speaker.local"
+        )
+        mock_gethostbyaddr.assert_called_once_with("192.168.1.80")
+
+    @patch('scan_logic.ServiceBrowser')
+    @patch('scan_logic.Zeroconf')
+    @patch('scan_logic.time.sleep', return_value=None)
+    def test_discover_collects_hostnames_from_zeroconf(
+        self,
+        _mock_sleep,
+        mock_zeroconf_cls,
+        mock_service_browser,
+    ):
+        """Resolver should collect IP->hostname mapping from zeroconf callbacks."""
+        zeroconf_client = MagicMock()
+        mock_zeroconf_cls.return_value = zeroconf_client
+
+        service_info = MagicMock()
+        service_info.parsed_addresses.return_value = ["192.168.1.90"]
+        service_info.server = "My-iPhone.local."
+        zeroconf_client.get_service_info.return_value = service_info
+
+        def browser_side_effect(zc, service_type, listener):
+            listener.add_service(zc, service_type, "My-iPhone._http._tcp.local.")
+            return MagicMock()
+
+        mock_service_browser.side_effect = browser_side_effect
+
+        resolver = MDNSResolver()
+        resolver.enabled = True
+
+        result = resolver.discover(timeout=0, service_types=['_http._tcp.local.'])
+
+        self.assertIn("192.168.1.90", result)
+        self.assertIn("My-iPhone.local", result["192.168.1.90"])
+        zeroconf_client.close.assert_called_once()
 
     @patch('scan_logic.CRAScanner._get_ha_devices')
     def test_merge_logic(self, mock_get_ha):

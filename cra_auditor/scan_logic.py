@@ -5,8 +5,17 @@ import socket
 import logging
 import os
 import time
+import threading
 import yaml
 from vulnerability_data import NVDClient, VendorRules, build_cpe, match_cpe
+
+try:
+    from zeroconf import ServiceBrowser, Zeroconf
+    _ZEROCONF_AVAILABLE = True
+except Exception:
+    ServiceBrowser = None
+    Zeroconf = None
+    _ZEROCONF_AVAILABLE = False
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -19,6 +28,21 @@ _NBSTAT_RE = re.compile(r"NetBIOS name:\s+([\w-]+)")
 _FW_VERSION_RE = re.compile(
     r'(?:firmware|fw|version|ver|software|sw)[:\s_=-]*v?(\d+\.\d+[\w./-]*)',
     re.IGNORECASE,
+)
+
+_GENERIC_HOSTNAME_RE = re.compile(
+    r'^(?:ip|host|dhcp|unknown)[-_]?(?:\d+[-_]){2,}\d+$',
+    re.IGNORECASE,
+)
+
+_MDNS_SERVICE_TYPES = (
+    '_workstation._tcp.local.',
+    '_http._tcp.local.',
+    '_ipp._tcp.local.',
+    '_printer._tcp.local.',
+    '_airplay._tcp.local.',
+    '_hap._tcp.local.',
+    '_googlecast._tcp.local.',
 )
 
 _DEFAULT_SECURITY_LOG_PATHS = [
@@ -77,6 +101,88 @@ _SCAN_PROFILES = {
     },
 }
 
+
+class MDNSResolver:
+    def __init__(self):
+        self.enabled = _ZEROCONF_AVAILABLE
+
+    def discover(self, timeout=5, service_types=None):
+        if not self.enabled:
+            return {}
+
+        service_types = service_types or list(_MDNS_SERVICE_TYPES)
+        discovered = {}
+        lock = threading.Lock()
+
+        class _Listener:
+            def _process(self, zeroconf_client, service_type, service_name):
+                try:
+                    info = zeroconf_client.get_service_info(service_type, service_name, timeout=2000)
+                except Exception:
+                    return
+
+                if not info:
+                    return
+
+                hostnames = []
+                if getattr(info, 'server', None):
+                    hostnames.append(str(info.server).strip().rstrip('.'))
+
+                if isinstance(service_name, str):
+                    label = service_name.split('.', 1)[0].strip()
+                    if label:
+                        hostnames.append(f"{label}.local")
+
+                try:
+                    addresses = info.parsed_addresses() or []
+                except Exception:
+                    addresses = []
+
+                for address in addresses:
+                    if not address:
+                        continue
+                    with lock:
+                        host_bucket = discovered.setdefault(address, set())
+                        for hostname in hostnames:
+                            cleaned = str(hostname).strip().rstrip('.')
+                            if cleaned:
+                                host_bucket.add(cleaned)
+
+            def add_service(self, zeroconf_client, service_type, service_name):
+                self._process(zeroconf_client, service_type, service_name)
+
+            def update_service(self, zeroconf_client, service_type, service_name):
+                self._process(zeroconf_client, service_type, service_name)
+
+        try:
+            zeroconf_client = Zeroconf()
+        except Exception:
+            logger.debug("mDNS resolver initialization failed.", exc_info=True)
+            return {}
+
+        try:
+            listener = _Listener()
+            browsers = []
+            for service_type in service_types:
+                try:
+                    browsers.append(ServiceBrowser(zeroconf_client, service_type, listener))
+                except Exception:
+                    logger.debug("mDNS service browse failed for %s", service_type, exc_info=True)
+
+            if browsers:
+                time.sleep(max(0.0, float(timeout)))
+        finally:
+            try:
+                zeroconf_client.close()
+            except Exception:
+                pass
+
+        return {
+            ip: sorted(hostnames)
+            for ip, hostnames in discovered.items()
+            if hostnames
+        }
+
 class CRAScanner:
     def __init__(self):
         self.nm = None
@@ -97,6 +203,7 @@ class CRAScanner:
         self.nvd_client = NVDClient(api_key=os.environ.get('NVD_API_KEY'))
         self.vendor_rules = VendorRules()
         self.security_log_paths = self._load_security_log_paths()
+        self.mdns_resolver = MDNSResolver()
 
         # Reuse a single requests.Session for connection pooling (performance)
         self.session = requests.Session()
@@ -282,6 +389,10 @@ class CRAScanner:
             logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Discovery disabled by feature flags (skipped).")
 
         hosts_to_scan = list(scanned_devices.keys())
+        mdns_hostnames = {}
+
+        if hosts_to_scan:
+            mdns_hostnames = self._discover_mdns_hostnames(timeout=5)
 
         nmap_devices = []
 
@@ -319,6 +430,9 @@ class CRAScanner:
             logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Detailed scan skipped (no discovered hosts).")
         elif not features.get('port_scan'):
             logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Detailed scan disabled by profile/features.")
+
+        if scanned_devices:
+            self._enrich_hostnames(scanned_devices, mdns_hostnames)
         
         nmap_devices = list(scanned_devices.values())
 
@@ -471,14 +585,8 @@ class CRAScanner:
                     match = _NBSTAT_RE.search(nmap_host['script']['nbstat'])
                     if match:
                         hostname = match.group(1)
-            
-            if not hostname and discovery_phase:
-                 # Try reverse DNS only in discovery or if missing
-                 try:
-                    hostname = socket.gethostbyaddr(ip)[0]
-                 except Exception:
-                    pass
-            elif not hostname and existing and existing.get('hostname'):
+
+            if not hostname and existing and existing.get('hostname'):
                  # Keep existing hostname if new one is empty
                  hostname = existing.get('hostname')
             # Vendor
@@ -518,6 +626,125 @@ class CRAScanner:
             }
             
             scanned_devices[ip] = device_data
+
+    def _discover_mdns_hostnames(self, timeout=5):
+        if not self.mdns_resolver.enabled:
+            return {}
+
+        try:
+            mdns_results = self.mdns_resolver.discover(timeout=timeout)
+            if mdns_results:
+                total_names = sum(len(names) for names in mdns_results.values())
+                logger.info(
+                    "[SCAN] mDNS discovery found %s hostname(s) across %s host(s)",
+                    total_names,
+                    len(mdns_results),
+                )
+            else:
+                logger.info("[SCAN] mDNS discovery found no hostnames.")
+            return mdns_results
+        except Exception:
+            logger.error("[SCAN] mDNS discovery failed.", exc_info=True)
+            return {}
+
+    def _normalize_hostname(self, hostname):
+        if not isinstance(hostname, str):
+            return None
+
+        cleaned = hostname.strip().rstrip('.')
+        return cleaned or None
+
+    def _is_generic_hostname(self, hostname, ip=None):
+        normalized = self._normalize_hostname(hostname)
+        if not normalized:
+            return True
+
+        lowered = normalized.lower()
+        if lowered in {'unknown', 'n/a', 'na', 'localhost', 'localhost.localdomain'}:
+            return True
+
+        if ip:
+            ip_lower = str(ip).strip().lower()
+            if lowered == ip_lower:
+                return True
+
+        compact = lowered.replace('.', '-').replace('_', '-')
+        if _GENERIC_HOSTNAME_RE.match(compact):
+            return True
+
+        return False
+
+    def _hostname_score(self, hostname, ip=None):
+        normalized = self._normalize_hostname(hostname)
+        if not normalized:
+            return -1
+
+        score = 0
+        if not self._is_generic_hostname(normalized, ip):
+            score += 10
+
+        lowered = normalized.lower()
+        if lowered.endswith('.local'):
+            score += 4
+        if '.' in lowered:
+            score += 1
+
+        score += min(len(normalized), 24) / 24.0
+        return score
+
+    def _pick_best_hostname(self, candidates, ip=None):
+        normalized_candidates = []
+        for candidate in candidates:
+            normalized = self._normalize_hostname(candidate)
+            if normalized and normalized not in normalized_candidates:
+                normalized_candidates.append(normalized)
+
+        if not normalized_candidates:
+            return None
+
+        primary = max(
+            normalized_candidates,
+            key=lambda value: self._hostname_score(value, ip),
+        )
+
+        aliases = [
+            value for value in normalized_candidates
+            if value != primary and not self._is_generic_hostname(value, ip)
+        ]
+
+        if aliases:
+            return f"{primary} ({', '.join(aliases[:2])})"
+        return primary
+
+    def _safe_reverse_dns(self, ip):
+        try:
+            return socket.gethostbyaddr(ip)[0]
+        except Exception:
+            return None
+
+    def _enrich_hostnames(self, scanned_devices, mdns_hostnames=None):
+        mdns_hostnames = mdns_hostnames or {}
+
+        for ip, device in scanned_devices.items():
+            if not ip or ip == "N/A":
+                continue
+
+            current_hostname = self._normalize_hostname(device.get('hostname'))
+            candidates = []
+            if current_hostname:
+                candidates.append(current_hostname)
+
+            if not current_hostname or self._is_generic_hostname(current_hostname, ip):
+                reverse_dns_hostname = self._safe_reverse_dns(ip)
+                if reverse_dns_hostname:
+                    candidates.append(reverse_dns_hostname)
+
+            for mdns_hostname in mdns_hostnames.get(ip, []):
+                candidates.append(mdns_hostname)
+
+            best_hostname = self._pick_best_hostname(candidates, ip)
+            if best_hostname:
+                device['hostname'] = best_hostname
 
     def _get_ha_devices(self):
         """Fetch devices from Home Assistant Supervisor API.

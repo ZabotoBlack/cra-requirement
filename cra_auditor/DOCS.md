@@ -64,6 +64,21 @@ The backend still accepts:
 ### Important Discovery Behavior
 Discovery mode now **skips all compliance checks** by design. It returns discovered device metadata only (IP/MAC/vendor/hostname and merged HA data where available).
 
+## Hostname Resolution (Reverse DNS + mDNS)
+
+Device hostnames are now enriched in a post-discovery stage to improve identification of Apple devices, printers, and IoT devices that may not expose NetBIOS names.
+
+Resolution priority is:
+1. Nmap hostname / NetBIOS (`nbstat`) when available.
+2. Reverse DNS (`PTR`) when hostname is missing or generic.
+3. mDNS discovery (`.local`) via `zeroconf` for more descriptive local names.
+
+When multiple non-generic names are found, the most descriptive one is used and additional names may be appended as aliases in the same `hostname` string field (for example: `PrimaryName (AliasName)`).
+
+Notes:
+- Python dependency: `zeroconf` (included in `requirements.txt`).
+- mDNS uses multicast DNS behavior on UDP 5353; ensure container/network policy allows local multicast traffic.
+
 ## Security Logging Probe (CRA Annex I §1(3)(j))
 
 HTTP log endpoint paths are configurable from YAML:
