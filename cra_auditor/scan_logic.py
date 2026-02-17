@@ -154,6 +154,47 @@ class MDNSResolver:
             def update_service(self, zeroconf_client, service_type, service_name):
                 self._process(zeroconf_client, service_type, service_name)
 
+            def remove_service(self, zeroconf_client, service_type, service_name):
+                try:
+                    try:
+                        info = zeroconf_client.get_service_info(service_type, service_name, timeout=2000)
+                    except Exception:
+                        info = None
+
+                    hostnames = []
+                    if info and getattr(info, 'server', None):
+                        hostnames.append(str(info.server).strip().rstrip('.'))
+
+                    if isinstance(service_name, str):
+                        label = service_name.split('.', 1)[0].strip()
+                        if label:
+                            hostnames.append(f"{label}.local")
+
+                    addresses = []
+                    if info:
+                        try:
+                            addresses = info.parsed_addresses() or []
+                        except Exception:
+                            addresses = []
+
+                    for address in addresses:
+                        if not address:
+                            continue
+                        with lock:
+                            existing_hostnames = discovered.get(address)
+                            if not existing_hostnames:
+                                continue
+
+                            for hostname in hostnames:
+                                cleaned = str(hostname).strip().rstrip('.')
+                                if cleaned:
+                                    existing_hostnames.discard(cleaned)
+
+                            if not existing_hostnames:
+                                discovered.pop(address, None)
+                except Exception:
+                    return
+
         try:
             zeroconf_client = Zeroconf()
         except Exception:
@@ -587,8 +628,8 @@ class CRAScanner:
                         hostname = match.group(1)
 
             if not hostname and existing and existing.get('hostname'):
-                 # Keep existing hostname if new one is empty
-                 hostname = existing.get('hostname')
+                # Keep existing hostname if new one is empty
+                hostname = existing.get('hostname')
             # Vendor
             vendor = "Unknown"
             if 'vendor' in nmap_host and mac != 'Unknown' and mac in nmap_host['vendor']:
