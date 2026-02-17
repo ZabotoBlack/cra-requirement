@@ -18,7 +18,7 @@ const SnapshotBar: React.FC<{ item: ScanHistoryItem }> = ({ item }) => {
 
   return (
     <div>
-      <div className="mb-1 h-2 overflow-hidden rounded-full bg-slate-800">
+      <div className="mb-2 h-2 overflow-hidden rounded-full bg-slate-800">
         <div className="flex h-full w-full">
           <div style={{ width: `${compliantPct}%` }} className="bg-emerald-400/90" />
           <div style={{ width: `${warningPct}%` }} className="bg-amber-400/90" />
@@ -77,11 +77,11 @@ const HistoryView: React.FC<HistoryViewProps> = ({ onViewReport }) => {
 
   return (
     <div className="space-y-4">
-      <GlassCard className="rounded-2xl p-4">
+      <GlassCard className="rounded-2xl p-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-lg font-bold text-white">Scan History Timeline</h2>
-            <p className="text-xs text-slate-400">Review previous scan snapshots and reopen full reports.</p>
+            <p className="text-sm text-slate-300">Review previous scan snapshots and reopen full reports.</p>
           </div>
 
           <div className="relative w-full md:w-auto">
@@ -99,13 +99,13 @@ const HistoryView: React.FC<HistoryViewProps> = ({ onViewReport }) => {
         <div className="mt-3 flex gap-2">
           <button
             onClick={() => toggleSort('timestamp')}
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-300 hover:text-white"
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-sm font-semibold uppercase tracking-wider text-slate-300 hover:text-white"
           >
             <Calendar size={13} /> Date {sortIcon('timestamp')}
           </button>
           <button
             onClick={() => toggleSort('target')}
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-300 hover:text-white"
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-sm font-semibold uppercase tracking-wider text-slate-300 hover:text-white"
           >
             <Target size={13} /> Target {sortIcon('target')}
           </button>
@@ -120,14 +120,14 @@ const HistoryView: React.FC<HistoryViewProps> = ({ onViewReport }) => {
         ) : (
           <div className="space-y-4">
             {history.map((item, index) => (
-              <div key={item.id} className="relative rounded-xl border border-slate-700/70 bg-slate-900/50 p-4">
+              <div key={item.id} className="relative rounded-xl border border-slate-700/70 bg-slate-900/50 p-5">
                 <div className="absolute -left-[26px] top-6 hidden h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.8)] lg:block" />
                 {index < history.length - 1 && <div className="absolute -left-[23px] top-8 hidden h-[calc(100%+12px)] w-px bg-slate-700 lg:block" />}
 
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-slate-100">{new Date(item.timestamp).toLocaleString()}</p>
-                    <p className="font-mono text-xs text-cyan-200">{item.target_range}</p>
+                    <p className="font-mono text-sm text-cyan-200">{item.target_range}</p>
                   </div>
 
                   <div className="flex flex-wrap gap-2">

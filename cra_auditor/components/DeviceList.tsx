@@ -67,11 +67,11 @@ const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
   );
 
   return (
-    <div className="rounded-xl border border-slate-700/70 bg-slate-950/55 p-4">
+    <div className="rounded-xl border border-slate-700/70 bg-slate-950/55 p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h4 className="text-sm font-bold text-white">Device Dossier</h4>
-          <p className="font-mono text-xs text-slate-400">{device.ip} · {device.mac}</p>
+          <p className="font-mono text-sm text-slate-300">{device.ip} · {device.mac}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {tabButton('checks', 'Security Checks')}
@@ -89,22 +89,22 @@ const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
       {tab === 'checks' && (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 xl:grid-cols-5">
           {checks.map((check) => (
-            <div key={check.key} className="rounded-xl border border-slate-700/70 bg-slate-900/70 p-3">
+            <div key={check.key} className="rounded-xl border border-slate-700/70 bg-slate-900/70 p-4">
               <div className="mb-2 flex items-center justify-between text-slate-300">
-                <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider">{check.icon}{check.key}</span>
+                <span className="inline-flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wider">{check.icon}{check.key}</span>
               </div>
               <StatusBadge
                 label={check.passed === undefined ? 'Not Evaluated' : check.passed ? 'Pass' : 'Attention'}
                 tone={check.passed === undefined ? 'neutral' : check.passed ? 'success' : 'warning'}
               />
-              <p className="mt-2 text-xs leading-relaxed text-slate-400">{check.details || 'No data returned for this profile.'}</p>
+              <p className="mt-2 text-sm leading-relaxed text-slate-300">{check.details || 'No data returned for this profile.'}</p>
             </div>
           ))}
         </div>
       )}
 
       {tab === 'raw' && (
-        <pre className="max-h-[340px] overflow-auto rounded-xl border border-slate-700/80 bg-slate-900/80 p-3 font-mono text-xs leading-relaxed text-cyan-100">
+        <pre className="max-h-[340px] overflow-auto rounded-xl border border-slate-700/80 bg-slate-900/80 p-4 font-mono text-sm leading-relaxed text-cyan-100">
           {JSON.stringify(device, null, 2)}
         </pre>
       )}
@@ -112,7 +112,7 @@ const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
       {tab === 'ai' && (
         <div className="rounded-xl border border-violet-400/30 bg-violet-500/10 p-3">
           {advice ? (
-            <p className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-violet-100">{advice}</p>
+            <p className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-violet-100">{advice}</p>
           ) : (
             <p className="text-sm text-slate-300">Run Analyze to generate remediation guidance for this device.</p>
           )}
@@ -140,13 +140,13 @@ const DeviceRow: React.FC<{ device: Device; rowId: string }> = ({ device, rowId 
               <p className={`font-medium ${device.hostname ? 'text-white' : 'text-slate-500 italic'}`}>
                 {device.hostname || 'Unknown Hostname'}
               </p>
-              <p className="text-xs text-slate-500">{device.osMatch || 'Unknown OS'}</p>
+              <p className="text-sm text-slate-300">{device.osMatch || 'Unknown OS'}</p>
             </div>
           </div>
         </td>
         <td className="px-4 py-3">
-          <p className="font-mono text-xs text-cyan-100">{device.ip}</p>
-          <p className="font-mono text-xs text-slate-400">{device.mac}</p>
+          <p className="font-mono text-sm text-cyan-100">{device.ip}</p>
+          <p className="font-mono text-sm text-slate-300">{device.mac}</p>
         </td>
         <td className="px-4 py-3">
           <StatusBadge label={device.vendor || 'Unknown'} tone="info" />
@@ -247,7 +247,7 @@ const DeviceList: React.FC<DeviceListProps> = ({ devices }) => {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[880px] text-left">
             <thead>
-              <tr className="border-b border-slate-800 bg-slate-950/70 text-[11px] uppercase tracking-wider text-slate-400">
+              <tr className="border-b border-slate-800 bg-slate-950/70 text-xs uppercase tracking-wider text-slate-300">
                 <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('hostname')}>Device {sortIcon('hostname')}</th>
                 <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('ip')}>IP / MAC {sortIcon('ip')}</th>
                 <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('vendor')}>Vendor {sortIcon('vendor')}</th>

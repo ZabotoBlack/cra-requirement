@@ -16,7 +16,7 @@ const toneClasses: Record<NonNullable<StatusBadgeProps['tone']>, string> = {
 
 const StatusBadge: React.FC<StatusBadgeProps> = ({ label, tone = 'neutral', pulse = false }) => {
   return (
-    <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider ${toneClasses[tone]}`}>
+    <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-wide ${toneClasses[tone]}`}>
       <span className={`h-2 w-2 rounded-full ${pulse ? 'animate-pulse' : ''} ${tone === 'success' ? 'bg-emerald-400' : tone === 'warning' ? 'bg-amber-400' : tone === 'danger' ? 'bg-rose-400' : tone === 'info' ? 'bg-cyan-400' : 'bg-slate-400'}`} />
       {label}
     </span>

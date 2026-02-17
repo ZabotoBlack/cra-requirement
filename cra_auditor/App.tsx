@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, History, LayoutDashboard, List, Play, RotateCw, Settings, ShieldCheck, X, CheckSquare, Square } from 'lucide-react';
+import { Activity, AlertTriangle, ChevronsLeft, ChevronsRight, History, LayoutDashboard, List, Play, RotateCw, Settings, ShieldCheck, X, CheckSquare, Square } from 'lucide-react';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import Dashboard from './components/Dashboard';
 import DeviceList from './components/DeviceList';
@@ -24,6 +24,10 @@ const App: React.FC = () => {
     vendors: 'all'
   });
   const [showSettings, setShowSettings] = useState(false);
+  const [sidebarExpanded, setSidebarExpanded] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('cra-sidebar-expanded') === 'true';
+  });
 
   const pollInterval = useRef<NodeJS.Timeout | null>(null);
   const viewRef = useRef(view);
@@ -62,6 +66,12 @@ const App: React.FC = () => {
     };
   }, [fetchData]);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('cra-sidebar-expanded', String(sidebarExpanded));
+    }
+  }, [sidebarExpanded]);
+
   const handleScan = async () => {
     try {
       setScanning(true);
@@ -93,49 +103,60 @@ const App: React.FC = () => {
 
   return (
     <div className="relative flex min-h-screen bg-transparent font-sans text-slate-200">
-      <aside className="fixed inset-y-0 left-0 z-30 w-20 border-r border-slate-800/80 bg-slate-950/70 backdrop-blur-xl">
-        <div className="flex h-full flex-col items-center py-5">
-          <div className="mb-8 flex h-11 w-11 items-center justify-center rounded-xl border border-emerald-400/30 bg-emerald-500/10 text-emerald-300 shadow-[0_0_20px_rgba(52,211,153,0.2)]">
-            <ShieldCheck size={22} />
+      <aside className={`fixed inset-y-0 left-0 z-30 border-r border-slate-800/80 bg-slate-950/70 backdrop-blur-xl transition-all duration-300 ${sidebarExpanded ? 'w-64' : 'w-20'}`}>
+        <div className={`flex h-full flex-col py-5 ${sidebarExpanded ? 'px-3' : 'items-center'}`}>
+          <div className={`mb-6 flex items-center ${sidebarExpanded ? 'justify-between px-1' : 'flex-col gap-3'}`}>
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-emerald-400/30 bg-emerald-500/10 text-emerald-300 shadow-[0_0_20px_rgba(52,211,153,0.2)]">
+              <ShieldCheck size={22} />
+            </div>
+            {sidebarExpanded && (
+              <div className="mr-auto ml-3 min-w-0">
+                <p className="truncate text-sm font-semibold text-white">CRA Auditor</p>
+                <p className="text-[11px] text-slate-400">Command UI</p>
+              </div>
+            )}
+            <button
+              onClick={() => setSidebarExpanded((prev) => !prev)}
+              title={sidebarExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
+              className={`flex h-9 items-center rounded-lg border border-slate-700/70 bg-slate-900/60 text-slate-300 transition hover:border-slate-500 hover:text-white ${sidebarExpanded ? 'w-9 justify-center' : 'w-11 justify-center'}`}
+            >
+              {sidebarExpanded ? <ChevronsLeft size={16} /> : <ChevronsRight size={16} />}
+            </button>
           </div>
 
-          <nav className="flex flex-1 flex-col items-center gap-3">
+          <nav className={`flex flex-1 flex-col gap-3 ${sidebarExpanded ? '' : 'items-center'}`}>
             {navItems.map(({ id, icon: Icon, label }) => (
               <button
                 key={id}
                 onClick={() => setView(id)}
                 title={label}
-                className={`group relative flex h-11 w-11 items-center justify-center rounded-xl border transition-all ${view === id
+                className={`group relative flex h-11 items-center rounded-xl border transition-all ${sidebarExpanded ? 'w-full justify-start gap-3 px-3' : 'w-11 justify-center'} ${view === id
                   ? 'border-cyan-400/40 bg-cyan-500/15 text-cyan-200 shadow-[0_0_18px_rgba(34,211,238,0.18)]'
                   : 'border-slate-700/70 bg-slate-900/60 text-slate-400 hover:border-slate-500 hover:text-white'
                   }`}
               >
                 <Icon size={18} />
-                <span className="pointer-events-none absolute left-14 hidden rounded-md border border-slate-600/60 bg-slate-900/95 px-2 py-1 text-xs text-slate-200 group-hover:block">
-                  {label}
-                </span>
+                {sidebarExpanded ? (
+                  <span className="text-sm font-medium">{label}</span>
+                ) : (
+                  <span className="pointer-events-none absolute left-14 hidden rounded-md border border-slate-600/60 bg-slate-900/95 px-2 py-1 text-xs text-slate-200 group-hover:block">
+                    {label}
+                  </span>
+                )}
               </button>
             ))}
           </nav>
-
-          <button
-            onClick={() => setShowSettings(true)}
-            title="Scan Settings"
-            className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-700/70 bg-slate-900/60 text-slate-300 transition hover:border-slate-500 hover:text-white"
-          >
-            <Settings size={18} />
-          </button>
         </div>
       </aside>
 
-      <main className="ml-20 flex-1 p-5 md:p-7">
+      <main className={`flex-1 p-5 transition-all duration-300 md:p-7 ${sidebarExpanded ? 'ml-64' : 'ml-20'}`}>
         <div className="space-y-6">
-          <GlassCard className="sticky top-5 z-20 rounded-2xl px-4 py-3 md:px-6">
+          <GlassCard className="sticky top-5 z-20 rounded-2xl px-5 py-4 md:px-6">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div className="flex min-w-0 items-center gap-3 md:gap-4">
                 <div>
                   <h1 className="text-lg font-bold tracking-tight text-white md:text-xl">CRA Auditor Command</h1>
-                  <p className="text-xs text-slate-400">Live compliance intelligence for Home Assistant environments</p>
+                  <p className="text-sm text-slate-300">Live compliance intelligence for Home Assistant environments</p>
                 </div>
                 <StatusBadge label={scanning ? 'Scan Active' : 'Idle'} tone={scanning ? 'info' : 'success'} pulse={scanning} />
               </div>
@@ -162,7 +183,7 @@ const App: React.FC = () => {
             </div>
 
             {!isValidSubnet && subnet.length > 0 && (
-              <p className="mt-2 text-xs text-rose-300">Invalid CIDR format (example: 192.168.1.0/24).</p>
+              <p className="mt-2 text-sm text-rose-300">Invalid CIDR format (example: 192.168.1.0/24).</p>
             )}
 
             {report && view !== 'history' && (
@@ -180,7 +201,7 @@ const App: React.FC = () => {
               <div className="flex items-start gap-3">
                 <AlertTriangle size={20} className="mt-0.5 shrink-0 text-rose-300" />
                 <div>
-                  <h4 className="text-sm font-semibold text-rose-200">Scan Failed</h4>
+                  <h4 className="text-base font-semibold text-rose-200">Scan Failed</h4>
                   <p className="text-sm text-slate-300">{scanError}</p>
                 </div>
                 <button onClick={() => setScanError(null)} className="ml-auto text-slate-400 hover:text-white">
@@ -221,7 +242,7 @@ const App: React.FC = () => {
                 {scanning && (
                   <div className="absolute inset-0 z-20 rounded-2xl border border-cyan-500/20 bg-slate-950/75 p-6 backdrop-blur-sm">
                     <div className="scan-grid absolute inset-0 rounded-2xl opacity-40" />
-                    <div className="relative h-full overflow-hidden rounded-xl border border-cyan-400/25 bg-slate-950/90 p-4 font-mono text-xs text-cyan-200 md:text-sm">
+                    <div className="relative h-full overflow-hidden rounded-xl border border-cyan-400/25 bg-slate-950/90 p-4 font-mono text-sm text-cyan-200">
                       <div className="mb-3 flex items-center gap-2 border-b border-slate-700/70 pb-2">
                         <Activity size={15} className="text-cyan-300" />
                         <span className="uppercase tracking-widest text-cyan-200">Command Terminal</span>
@@ -233,7 +254,7 @@ const App: React.FC = () => {
                         <p>&gt; cve_correlation --source nvd</p>
                         <p className="typing-cursor">&gt; compliance_ruleset --annex-i --streaming</p>
                       </div>
-                      <div className="mt-4 flex items-center gap-3 text-[11px] uppercase tracking-widest text-slate-300">
+                      <div className="mt-4 flex items-center gap-3 text-xs uppercase tracking-widest text-slate-200">
                         <span className="inline-flex items-center gap-1"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />Scanner Active</span>
                         <span className="inline-flex items-center gap-1"><span className="h-2 w-2 animate-pulse rounded-full bg-cyan-400" />Streaming logs</span>
                       </div>
@@ -258,9 +279,9 @@ const App: React.FC = () => {
               </button>
             </div>
 
-            <div className="space-y-5 p-5">
+            <div className="space-y-5 p-6">
               <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-400">Scan Depth</label>
+                <label className="mb-2 block text-sm font-semibold uppercase tracking-wider text-slate-300">Scan Depth</label>
                 <div className="grid grid-cols-3 gap-2">
                   {(['discovery', 'standard', 'deep'] as const).map((type) => (
                     <button
@@ -278,11 +299,11 @@ const App: React.FC = () => {
               </div>
 
               <div className={scanOptions.scan_type === 'discovery' ? 'pointer-events-none opacity-50' : ''}>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-400">Vendor Detection</label>
+                <label className="mb-2 block text-sm font-semibold uppercase tracking-wider text-slate-300">Vendor Detection</label>
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => setScanOptions({ ...scanOptions, vendors: 'all' })}
-                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition ${scanOptions.vendors === 'all'
+                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-semibold transition ${scanOptions.vendors === 'all'
                       ? 'border-emerald-400/40 bg-emerald-500/20 text-emerald-200'
                       : 'border-slate-700 bg-slate-800/70 text-slate-300'
                       }`}
@@ -292,7 +313,7 @@ const App: React.FC = () => {
                   </button>
                   <button
                     onClick={() => setScanOptions({ ...scanOptions, vendors: [] })}
-                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition ${Array.isArray(scanOptions.vendors) && scanOptions.vendors.length === 0
+                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-semibold transition ${Array.isArray(scanOptions.vendors) && scanOptions.vendors.length === 0
                       ? 'border-emerald-400/40 bg-emerald-500/20 text-emerald-200'
                       : 'border-slate-700 bg-slate-800/70 text-slate-300'
                       }`}
@@ -319,7 +340,7 @@ const App: React.FC = () => {
                           }
                           setScanOptions({ ...scanOptions, vendors: current });
                         }}
-                        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold capitalize transition ${isSelected
+                        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-semibold capitalize transition ${isSelected
                           ? 'border-violet-400/40 bg-violet-500/20 text-violet-200'
                           : 'border-slate-700 bg-slate-800/70 text-slate-300'
                           }`}
@@ -342,7 +363,7 @@ const App: React.FC = () => {
                   />
                   <div>
                     <div className="text-sm font-medium text-slate-100">Active Vulnerability Probing</div>
-                    <div className="text-xs text-slate-400">Attempt safe default credential logins and unauth API checks.</div>
+                    <div className="text-sm text-slate-300">Attempt safe default credential logins and unauth API checks.</div>
                   </div>
                 </label>
               </div>

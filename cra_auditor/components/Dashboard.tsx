@@ -69,12 +69,12 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-5">
-        <GlassCard className="rounded-2xl p-4 xl:col-span-2">
+        <GlassCard className="rounded-2xl p-5 xl:col-span-2">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs uppercase tracking-wider text-slate-400">Total Devices</p>
+              <p className="text-sm uppercase tracking-wider text-slate-300">Total Devices</p>
               <h3 className="mt-1 text-3xl font-bold text-white">{report.summary.total}</h3>
-              <p className="mt-1 text-xs text-slate-400">Target: {report.targetRange}</p>
+              <p className="mt-1 text-sm text-slate-300">Target: {report.targetRange}</p>
             </div>
             <div className="rounded-full border border-cyan-400/35 bg-cyan-500/10 p-3 text-cyan-200">
               <ShieldQuestion size={22} />
@@ -87,10 +87,10 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
           </div>
         </GlassCard>
 
-        <GlassCard className="rounded-2xl p-4">
+        <GlassCard className="rounded-2xl p-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs uppercase tracking-wider text-slate-400">AI Insight</p>
+              <p className="text-sm uppercase tracking-wider text-slate-300">AI Insight</p>
               <h3 className="mt-1 text-xl font-bold text-white">{geminiEnabled ? 'Operational' : 'Disabled'}</h3>
             </div>
             <Sparkles className={geminiEnabled ? 'text-violet-300 neon-text' : 'text-slate-500'} size={20} />
@@ -101,20 +101,20 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
           </div>
         </GlassCard>
 
-        <GlassCard className="rounded-2xl p-4">
+        <GlassCard className="rounded-2xl p-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs uppercase tracking-wider text-slate-400">Warning Devices</p>
+              <p className="text-sm uppercase tracking-wider text-slate-300">Warning Devices</p>
               <h3 className="mt-1 text-2xl font-bold text-amber-200">{report.summary.warning}</h3>
             </div>
             <AlertTriangle size={20} className="text-amber-300" />
           </div>
         </GlassCard>
 
-        <GlassCard className="rounded-2xl p-4">
+        <GlassCard className="rounded-2xl p-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs uppercase tracking-wider text-slate-400">Compliant Devices</p>
+              <p className="text-sm uppercase tracking-wider text-slate-300">Compliant Devices</p>
               <h3 className="mt-1 text-2xl font-bold text-emerald-200">{report.summary.compliant}</h3>
             </div>
             <ShieldCheck size={20} className="text-emerald-300" />
@@ -124,7 +124,7 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         <GlassCard className="rounded-2xl p-5 xl:col-span-1">
-          <p className="text-xs uppercase tracking-wider text-slate-400">Compliance Score</p>
+          <p className="text-sm uppercase tracking-wider text-slate-300">Compliance Score</p>
           <div className="mt-4 flex items-center justify-center">
             <div className="relative h-44 w-44">
               <svg viewBox="0 0 140 140" className="h-full w-full -rotate-90">
@@ -143,15 +143,15 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <p className="font-mono text-4xl font-bold text-white">{complianceScore}%</p>
-                <p className="text-xs uppercase tracking-widest text-slate-400">Compliance</p>
+                <p className="text-sm uppercase tracking-widest text-slate-300">Compliance</p>
               </div>
             </div>
           </div>
-          <p className="mt-2 text-center text-xs text-slate-400">Score is based on compliant devices versus scanned inventory.</p>
+          <p className="mt-2 text-center text-sm text-slate-300">Score is based on compliant devices versus scanned inventory.</p>
         </GlassCard>
 
         <GlassCard className="rounded-2xl p-5 xl:col-span-1">
-          <p className="text-xs uppercase tracking-wider text-slate-400">Risk Analysis</p>
+          <p className="text-sm uppercase tracking-wider text-slate-300">Risk Analysis</p>
           <div className="mt-4 space-y-3">
             {topVendors.length > 0 ? topVendors.map((item) => {
               const ratio = item.count / maxVendorCount;
@@ -159,7 +159,7 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
               const tone = item.count >= 3 ? 'danger' : item.count === 2 ? 'warning' : 'info';
               return (
                 <div key={item.name}>
-                  <div className="mb-1 flex items-center justify-between text-xs">
+                  <div className="mb-1 flex items-center justify-between text-sm">
                     <span className="truncate text-slate-300">{item.name}</span>
                     <StatusBadge label={`${item.count} risk`} tone={tone} />
                   </div>
@@ -181,7 +181,7 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
         </GlassCard>
 
         <GlassCard className="rounded-2xl p-5 xl:col-span-1">
-          <p className="text-xs uppercase tracking-wider text-slate-400">Message from Command</p>
+          <p className="text-sm uppercase tracking-wider text-slate-300">Message from Command</p>
           <div className="mt-3 rounded-xl border border-violet-400/25 bg-violet-500/10 p-4">
             <p className="typing-cursor min-h-[110px] text-sm leading-relaxed text-violet-100">
               {typedText}
