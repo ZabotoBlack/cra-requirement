@@ -936,6 +936,7 @@ class CRAScanner:
             "passed": True,
             "details": details,
             "checked_ports": checked_ports,
+            "redirected_ports": redirected_ports,
             "failed_ports": [],
             "inconclusive_ports": inconclusive_ports
         }
