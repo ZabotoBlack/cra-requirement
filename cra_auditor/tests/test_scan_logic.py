@@ -217,6 +217,52 @@ class TestCRAScanner(unittest.TestCase):
         result = self.scanner.check_confidentiality(open_ports)
         self.assertTrue(result['passed'])
 
+    def test_check_https_redirect_passes_on_301_to_https(self):
+        """HTTP management port should pass when it redirects to HTTPS."""
+        mock_response = MagicMock()
+        mock_response.status_code = 301
+        mock_response.headers = {"Location": "https://192.168.1.10/login"}
+        self.scanner.session.get = MagicMock(return_value=mock_response)
+
+        device = {
+            "ip": "192.168.1.10",
+            "openPorts": [{"port": 80, "service": "http", "protocol": "tcp"}]
+        }
+
+        result = self.scanner.check_https_redirect(device)
+        self.assertTrue(result['passed'])
+        self.assertEqual(result['failed_ports'], [])
+        self.assertIn(80, result['checked_ports'])
+
+    def test_check_https_redirect_fails_on_http_200(self):
+        """HTTP management port should fail when served in cleartext."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {}
+        self.scanner.session.get = MagicMock(return_value=mock_response)
+
+        device = {
+            "ip": "192.168.1.20",
+            "openPorts": [{"port": 8080, "service": "http", "protocol": "tcp"}]
+        }
+
+        result = self.scanner.check_https_redirect(device)
+        self.assertFalse(result['passed'])
+        self.assertIn(8080, result['failed_ports'])
+        self.assertIn("without HTTPS redirect", result['details'])
+
+    def test_check_https_redirect_skips_without_http_ports(self):
+        """No HTTP management ports should be treated as skipped/passed."""
+        device = {
+            "ip": "192.168.1.30",
+            "openPorts": [{"port": 22, "service": "ssh", "protocol": "tcp"}]
+        }
+
+        result = self.scanner.check_https_redirect(device)
+        self.assertTrue(result['passed'])
+        self.assertEqual(result['checked_ports'], [])
+        self.assertIn("No HTTP management ports", result['details'])
+
     def test_check_vulnerabilities_critical_cve(self):
         """Test that critical CVEs are detected."""
         mock_response = MagicMock()
@@ -272,6 +318,79 @@ class TestCRAScanner(unittest.TestCase):
         }
         warnings = self.scanner._check_vendor_specifics(device, ['sonoff'])
         self.assertTrue(any("Sonoff" in w for w in warnings))
+
+    @patch('scan_logic.CRAScanner.check_security_txt')
+    @patch('scan_logic.CRAScanner.check_firmware_tracking')
+    @patch('scan_logic.CRAScanner.check_sbom_compliance')
+    @patch('scan_logic.CRAScanner.check_vulnerabilities')
+    @patch('scan_logic.CRAScanner.check_https_redirect')
+    @patch('scan_logic.CRAScanner.check_confidentiality')
+    @patch('scan_logic.CRAScanner.check_secure_by_default')
+    @patch('scan_logic.CRAScanner._get_ha_devices')
+    def test_https_check_integrated_and_can_set_non_compliant(
+        self,
+        mock_get_ha,
+        mock_sbd,
+        mock_conf,
+        mock_https,
+        mock_vuln,
+        mock_sbom,
+        mock_fw,
+        mock_sec_txt,
+    ):
+        """HTTPS redirect check is included and drives strict non-compliance on failure."""
+        mock_get_ha.return_value = []
+        mock_sbd.return_value = {"passed": True, "details": "ok"}
+        mock_conf.return_value = {"passed": True, "details": "ok"}
+        mock_https.return_value = {
+            "passed": False,
+            "details": "HTTP management exposed without HTTPS redirect on ports: 80.",
+            "checked_ports": [80],
+            "failed_ports": [80],
+            "inconclusive_ports": []
+        }
+        mock_vuln.return_value = {"passed": True, "details": "ok", "cves": []}
+        mock_sbom.return_value = {"passed": True, "details": "ok", "sbom_found": False, "sbom_format": None}
+        mock_fw.return_value = {
+            "passed": True,
+            "details": "ok",
+            "firmware_version": None,
+            "firmware_source": None,
+            "update_available": None,
+            "update_url": None,
+            "version_cves": []
+        }
+        mock_sec_txt.return_value = {
+            "passed": True,
+            "details": "ok",
+            "security_txt_found": False,
+            "fields": None,
+            "vendor_url": None
+        }
+
+        host_ip = "192.168.1.50"
+        self.scanner.nm.all_hosts.return_value = [host_ip]
+        mock_host_data = MagicMock()
+        mock_host_data.hostname.return_value = "test-host"
+        mock_host_data.__getitem__.side_effect = lambda key: {
+            'addresses': {'ipv4': host_ip, 'mac': 'AA:BB:CC:DD:EE:FF'},
+            'vendor': {'AA:BB:CC:DD:EE:FF': 'TestVendor'},
+            'osmatch': [],
+        }.get(key, {})
+        mock_host_data.__contains__.side_effect = lambda key: key in ['addresses', 'vendor', 'osmatch']
+        mock_host_data.all_protocols.return_value = []
+        self.scanner.nm.__getitem__.return_value = mock_host_data
+
+        results = self.scanner.scan_subnet("192.168.1.0/24", {
+            "scan_type": "discovery",
+            "auth_checks": True
+        })
+
+        self.assertTrue(len(results) > 0)
+        device = results[0]
+        self.assertIn('httpsOnlyManagement', device['checks'])
+        self.assertFalse(device['checks']['httpsOnlyManagement']['passed'])
+        self.assertEqual(device['status'], 'Non-Compliant')
 
     @patch('scan_logic.CRAScanner._get_ha_devices')
     def test_merge_no_ip_device(self, mock_get_ha):

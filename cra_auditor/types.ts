@@ -40,6 +40,13 @@ export interface Device {
       passed: boolean;
       details: string;
     };
+    httpsOnlyManagement: {
+      passed: boolean;
+      details: string;
+      checked_ports: number[];
+      failed_ports: number[];
+      inconclusive_ports: number[];
+    };
     vulnerabilities: {
       passed: boolean;
       cves: Vulnerability[];

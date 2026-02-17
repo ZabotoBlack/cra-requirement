@@ -358,6 +358,7 @@ class CRAScanner:
                 sbd_result = self.check_secure_by_default(dev)
             
             conf_result = self.check_confidentiality(dev.get('openPorts', []))
+            https_result = self.check_https_redirect(dev)
             vuln_result = self.check_vulnerabilities(check_vendor, dev.get('openPorts', []))
             sbom_result = self.check_sbom_compliance(dev)
             fw_result = self.check_firmware_tracking(dev)
@@ -373,7 +374,7 @@ class CRAScanner:
                 sbd_result['passed'] = False
                 
             status = "Compliant"
-            if not sbd_result['passed'] or not vuln_result['passed'] or (not fw_result['passed'] and fw_result.get('version_cves')):
+            if not sbd_result['passed'] or not https_result['passed'] or not vuln_result['passed'] or (not fw_result['passed'] and fw_result.get('version_cves')):
                 status = "Non-Compliant"
             elif not conf_result['passed'] or not sbom_result['passed'] or not fw_result['passed'] or not sec_txt_result['passed']:
                 status = "Warning"
@@ -382,7 +383,8 @@ class CRAScanner:
             _p = lambda r: "pass" if r['passed'] else "FAIL"
             logger.info(
                 f"[SCAN]     Secure={_p(sbd_result)}  Confid={_p(conf_result)}  "
-                f"CVE={_p(vuln_result)}  SBOM={_p(sbom_result)}  FW={_p(fw_result)}  SecTxt={_p(sec_txt_result)}  => {status}"
+                f"HTTPS={_p(https_result)}  CVE={_p(vuln_result)}  SBOM={_p(sbom_result)}  "
+                f"FW={_p(fw_result)}  SecTxt={_p(sec_txt_result)}  => {status}"
             )
 
             dev.update({
@@ -390,6 +392,7 @@ class CRAScanner:
                 "checks": {
                     "secureByDefault": sbd_result,
                     "dataConfidentiality": conf_result,
+                    "httpsOnlyManagement": https_result,
                     "vulnerabilities": vuln_result,
                     "sbomCompliance": sbom_result,
                     "firmwareTracking": fw_result,
@@ -839,6 +842,103 @@ class CRAScanner:
             return {"passed": False, "details": f"Unencrypted ports found: {', '.join(found_unencrypted)}"}
         
         return {"passed": True, "details": "No common unencrypted management ports found."}
+
+    def check_https_redirect(self, device):
+        """Verify HTTP management interfaces redirect to HTTPS.
+
+        CRA relevance: Annex I §1(3)(c), §1(3)(d).
+        """
+        ip = device.get('ip')
+        open_ports = device.get('openPorts', [])
+
+        if not ip or ip == "N/A":
+            return {
+                "passed": True,
+                "details": "Skipped HTTPS redirect check (no routable IP address).",
+                "checked_ports": [],
+                "failed_ports": [],
+                "inconclusive_ports": []
+            }
+
+        http_ports = set()
+        for port_info in open_ports:
+            port = port_info.get('port')
+            service = str(port_info.get('service', '')).lower()
+
+            if port in (80, 8080):
+                http_ports.add(int(port))
+                continue
+
+            if 'http' in service and 'https' not in service:
+                try:
+                    http_ports.add(int(port))
+                except (TypeError, ValueError):
+                    continue
+
+        if not http_ports:
+            return {
+                "passed": True,
+                "details": "No HTTP management ports detected for HTTPS redirect verification.",
+                "checked_ports": [],
+                "failed_ports": [],
+                "inconclusive_ports": []
+            }
+
+        checked_ports = sorted(http_ports)
+        failed_ports = []
+        inconclusive_ports = []
+        redirected_ports = []
+
+        for port in checked_ports:
+            url = f"http://{ip}:{port}/"
+            try:
+                response = self.session.get(url, timeout=2, allow_redirects=False)
+                status_code = response.status_code
+                location = (response.headers.get('Location') or '').strip()
+
+                if 300 <= status_code < 400 and location.lower().startswith('https://'):
+                    redirected_ports.append(port)
+                elif status_code == 200:
+                    failed_ports.append(port)
+                elif 300 <= status_code < 400:
+                    failed_ports.append(port)
+                else:
+                    inconclusive_ports.append(port)
+            except requests.RequestException:
+                inconclusive_ports.append(port)
+            except Exception:
+                inconclusive_ports.append(port)
+
+        if failed_ports:
+            details = (
+                f"HTTP management exposed without HTTPS redirect on ports: {', '.join(str(p) for p in failed_ports)}."
+            )
+            if inconclusive_ports:
+                details += f" Inconclusive probes on ports: {', '.join(str(p) for p in inconclusive_ports)}."
+            return {
+                "passed": False,
+                "details": details,
+                "checked_ports": checked_ports,
+                "failed_ports": failed_ports,
+                "inconclusive_ports": inconclusive_ports
+            }
+
+        details = "All detected HTTP management ports redirect to HTTPS."
+        if inconclusive_ports:
+            details = (
+                f"No insecure HTTP responses detected. Inconclusive probes on ports: "
+                f"{', '.join(str(p) for p in inconclusive_ports)}."
+            )
+        elif redirected_ports:
+            details = f"HTTP management redirects to HTTPS on ports: {', '.join(str(p) for p in redirected_ports)}."
+
+        return {
+            "passed": True,
+            "details": details,
+            "checked_ports": checked_ports,
+            "failed_ports": [],
+            "inconclusive_ports": inconclusive_ports
+        }
 
     def check_vulnerabilities(self, vendor, open_ports):
         """Query external CVE API."""
