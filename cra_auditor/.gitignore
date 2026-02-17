@@ -25,3 +25,4 @@ dist-ssr
 
 __pycache__
 GEMINI.md
+data/nvd_cache.json

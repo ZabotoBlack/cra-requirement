@@ -58,6 +58,13 @@ The backend now supports modular scanning profiles and explicit feature flags vi
 
 Legacy `scan_type` and `auth_checks` are still accepted and mapped to the new model server-side.
 
+## NVD Cache Policy
+
+- The NVD API cache file is runtime-generated at `data/nvd_cache.json` and is intentionally not committed to Git.
+- Cache entries are file-based with TTL invalidation (default: `86400` seconds / 24h in `NVDClient`).
+- Refresh/invalidate cache manually by deleting `data/nvd_cache.json`; it will be recreated on next NVD lookup.
+- Tests do not require a committed cache fixture; `tests/test_vulnerability_data.py` uses temporary cache files.
+
 ## Permissions & Security
 This add-on requires elevated permissions to function correctly:
 - **`privileged`**: Configured as a list of Linux capabilities (e.g., `NET_ADMIN`, `NET_RAW`) in `config.yaml`. These are granted instead of full privileged mode to enable low-level network operations like ARP scanning and raw socket access.
