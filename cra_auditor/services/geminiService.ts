@@ -21,6 +21,7 @@ export const getRemediationAdvice = async (device: Device): Promise<string> => {
       2. Data Confidentiality (Encryption): ${device.checks.dataConfidentiality.passed ? 'PASSED' : 'FAILED - ' + device.checks.dataConfidentiality.details}
       3. Known Vulnerabilities: ${device.checks.vulnerabilities.passed ? 'PASSED' : 'FAILED - ' + device.checks.vulnerabilities.cves.map(c => c.id).join(', ')}
       4. Security.txt Disclosure Policy (CRA §2(5), §2(6)): ${device.checks.securityTxt?.passed ? 'PASSED' : 'FAILED - ' + (device.checks.securityTxt?.details || 'No security.txt found')}
+      5. Security Logging Capability (CRA Annex I §1(3)(j)): ${device.checks.securityLogging?.passed ? 'PASSED' : 'WARNING - ' + (device.checks.securityLogging?.details || 'No logging capability verified')}
 
       Provide the response in Markdown format. Focus on actionable CLI commands (like ssh config changes), network segmentation advice, or firmware update procedures relevant to this vendor.
     `;

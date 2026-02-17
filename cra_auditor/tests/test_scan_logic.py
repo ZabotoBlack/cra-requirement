@@ -217,6 +217,55 @@ class TestCRAScanner(unittest.TestCase):
         result = self.scanner.check_confidentiality(open_ports)
         self.assertTrue(result['passed'])
 
+    @patch('scan_logic.CRAScanner._probe_udp_syslog', return_value=(True, 'open|filtered'))
+    def test_check_security_logging_passes_on_udp_514(self, mock_udp_probe):
+        """Security logging passes when UDP/514 appears reachable."""
+        device = {
+            "ip": "192.168.1.10",
+            "openPorts": []
+        }
+
+        result = self.scanner.check_security_logging(device)
+        self.assertTrue(result['passed'])
+        self.assertTrue(result['syslog_udp_514'])
+        self.assertIn('UDP/514', result['details'])
+        mock_udp_probe.assert_called_once_with("192.168.1.10")
+
+    @patch('scan_logic.CRAScanner._probe_udp_syslog', return_value=(False, 'closed'))
+    def test_check_security_logging_passes_on_http_log_endpoint(self, mock_udp_probe):
+        """Security logging passes when a log API endpoint exists."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        self.scanner.session.get = MagicMock(return_value=mock_response)
+
+        device = {
+            "ip": "192.168.1.20",
+            "openPorts": [{"port": 80, "service": "http", "protocol": "tcp"}]
+        }
+
+        result = self.scanner.check_security_logging(device)
+        self.assertTrue(result['passed'])
+        self.assertFalse(result['syslog_udp_514'])
+        self.assertTrue(len(result['logging_endpoints']) > 0)
+        self.assertIn('/api/logs', result['logging_endpoints'][0])
+        mock_udp_probe.assert_called_once_with("192.168.1.20")
+
+    @patch('scan_logic.CRAScanner._probe_udp_syslog', return_value=(False, 'closed'))
+    def test_check_security_logging_warns_when_not_detected(self, mock_udp_probe):
+        """Security logging returns warning signal when no mechanism is externally detected."""
+        self.scanner.session.get = MagicMock(side_effect=Exception("Connection refused"))
+        device = {
+            "ip": "192.168.1.30",
+            "openPorts": [{"port": 80, "service": "http", "protocol": "tcp"}]
+        }
+
+        result = self.scanner.check_security_logging(device)
+        self.assertFalse(result['passed'])
+        self.assertFalse(result['syslog_udp_514'])
+        self.assertEqual(result['logging_endpoints'], [])
+        self.assertIn('Warning', result['details'])
+        mock_udp_probe.assert_called_once_with("192.168.1.30")
+
     def test_calculate_attack_surface_score_low(self):
         """0-1 ports should be rated Low."""
         result = self.scanner.calculate_attack_surface_score([])
@@ -314,6 +363,7 @@ class TestCRAScanner(unittest.TestCase):
         self.assertIn("network error", result['details'])
 
     @patch('scan_logic.CRAScanner.check_security_txt')
+    @patch('scan_logic.CRAScanner.check_security_logging')
     @patch('scan_logic.CRAScanner.check_firmware_tracking')
     @patch('scan_logic.CRAScanner.check_sbom_compliance')
     @patch('scan_logic.CRAScanner.check_vulnerabilities')
@@ -330,6 +380,7 @@ class TestCRAScanner(unittest.TestCase):
         mock_vuln,
         mock_sbom,
         mock_fw,
+        mock_sec_log,
         mock_sec_txt,
     ):
         """High attack surface should downgrade otherwise compliant device to Warning."""
@@ -360,6 +411,13 @@ class TestCRAScanner(unittest.TestCase):
             "security_txt_found": False,
             "fields": None,
             "vendor_url": None
+        }
+        mock_sec_log.return_value = {
+            "passed": True,
+            "details": "ok",
+            "syslog_udp_514": False,
+            "syslog_probe_state": "closed",
+            "logging_endpoints": []
         }
 
         host_ip = "192.168.1.51"
@@ -422,6 +480,7 @@ class TestCRAScanner(unittest.TestCase):
         self.assertTrue(any("Sonoff" in w for w in warnings))
 
     @patch('scan_logic.CRAScanner.check_security_txt')
+    @patch('scan_logic.CRAScanner.check_security_logging')
     @patch('scan_logic.CRAScanner.check_firmware_tracking')
     @patch('scan_logic.CRAScanner.check_sbom_compliance')
     @patch('scan_logic.CRAScanner.check_vulnerabilities')
@@ -438,6 +497,7 @@ class TestCRAScanner(unittest.TestCase):
         mock_vuln,
         mock_sbom,
         mock_fw,
+        mock_sec_log,
         mock_sec_txt,
     ):
         """HTTPS redirect check is included and drives strict non-compliance on failure."""
@@ -468,6 +528,13 @@ class TestCRAScanner(unittest.TestCase):
             "security_txt_found": False,
             "fields": None,
             "vendor_url": None
+        }
+        mock_sec_log.return_value = {
+            "passed": True,
+            "details": "ok",
+            "syslog_udp_514": False,
+            "syslog_probe_state": "closed",
+            "logging_endpoints": []
         }
 
         host_ip = "192.168.1.50"
@@ -730,6 +797,8 @@ class TestSBOMCheck(unittest.TestCase):
         self.assertIn('sbomCompliance', device['checks'])
         self.assertIn('passed', device['checks']['sbomCompliance'])
         self.assertIn('sbom_found', device['checks']['sbomCompliance'])
+        self.assertIn('securityLogging', device['checks'])
+        self.assertIn('passed', device['checks']['securityLogging'])
 
 class TestFirmwareTracking(unittest.TestCase):
     """Tests for firmware version tracking (CRA Annex I §2(2))."""
@@ -867,6 +936,7 @@ class TestFirmwareTracking(unittest.TestCase):
         self.assertIn('passed', device['checks']['firmwareTracking'])
         self.assertIn('firmware_version', device['checks']['firmwareTracking'])
         self.assertIn('version_cves', device['checks']['firmwareTracking'])
+        self.assertIn('securityLogging', device['checks'])
 
 
 class TestHADeviceRegistry(unittest.TestCase):

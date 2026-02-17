@@ -364,6 +364,7 @@ class CRAScanner:
             sbom_result = self.check_sbom_compliance(dev)
             fw_result = self.check_firmware_tracking(dev)
             sec_txt_result = self.check_security_txt(dev)
+            sec_log_result = self.check_security_logging(dev)
             
             # Vendor Specific Checks - Conditional
             vendor_warnings = self._check_vendor_specifics(dev, selected_vendors)
@@ -377,7 +378,7 @@ class CRAScanner:
             status = "Compliant"
             if not sbd_result['passed'] or not https_result['passed'] or not vuln_result['passed'] or (not fw_result['passed'] and fw_result.get('version_cves')):
                 status = "Non-Compliant"
-            elif not conf_result['passed'] or not sbom_result['passed'] or not fw_result['passed'] or not sec_txt_result['passed']:
+            elif not conf_result['passed'] or not sbom_result['passed'] or not fw_result['passed'] or not sec_txt_result['passed'] or not sec_log_result['passed']:
                 status = "Warning"
             elif attack_surface['rating'] == "High":
                 status = "Warning"
@@ -388,7 +389,7 @@ class CRAScanner:
                 f"[SCAN]     Secure={_p(sbd_result)}  Confid={_p(conf_result)}  "
                 f"AttackSurface={attack_surface['rating']}({attack_surface['openPortsCount']})  "
                 f"HTTPS={_p(https_result)}  CVE={_p(vuln_result)}  SBOM={_p(sbom_result)}  "
-                f"FW={_p(fw_result)}  SecTxt={_p(sec_txt_result)}  => {status}"
+                f"FW={_p(fw_result)}  SecTxt={_p(sec_txt_result)}  SecLog={_p(sec_log_result)}  => {status}"
             )
 
             dev.update({
@@ -401,7 +402,8 @@ class CRAScanner:
                     "vulnerabilities": vuln_result,
                     "sbomCompliance": sbom_result,
                     "firmwareTracking": fw_result,
-                    "securityTxt": sec_txt_result
+                    "securityTxt": sec_txt_result,
+                    "securityLogging": sec_log_result
                 },
                 "lastScanned": "Just now"
             })
@@ -995,13 +997,13 @@ class CRAScanner:
 
         # Clean vendor string for search
         search_term = vendor.split('(')[0].strip() # Remove extra info like (Running Linux...)
-        
+
         cves = []
         try:
             # Using cve.circl.lu API
             url = f"https://cve.circl.lu/api/search/{search_term}"
             response = self.session.get(url, timeout=5)
-            
+
             if response.status_code == 200:
                 data = response.json()
                 for item in data.get('data', [])[:5]: # Check first 5 matches
@@ -1011,7 +1013,7 @@ class CRAScanner:
                             "severity": "CRITICAL",
                             "description": item.get('summary', 'No description')[:100] + "..."
                         })
-            
+
         except Exception as e:
             logger.error(f"CVE lookup failed: {e}")
             return {"passed": True, "details": "CVE lookup failed (network error).", "cves": []}
@@ -1020,6 +1022,126 @@ class CRAScanner:
              return {"passed": False, "details": f"Found {len(cves)} critical CVEs associated with '{search_term}'.", "cves": cves}
 
         return {"passed": True, "details": f"No critical CVEs found for '{search_term}'.", "cves": []}
+
+    def check_security_logging(self, device):
+        """Check for security logging capability (CRA Annex I §1(3)(j)).
+
+        Detection paths:
+        1) Syslog listener availability on UDP/514 (best-effort probe)
+        2) Common HTTP log endpoint exposure
+        """
+        ip = device.get('ip')
+        open_ports = device.get('openPorts', []) or []
+
+        details = []
+        logging_endpoints = []
+
+        # Signal 1: Syslog UDP/514 advertised by scan results
+        syslog_by_scan = any(
+            int(p.get('port', -1)) == 514 and str(p.get('protocol', '')).lower() == 'udp'
+            for p in open_ports if isinstance(p, dict)
+        )
+
+        syslog_reachable = syslog_by_scan
+        syslog_probe_state = "not_probed"
+
+        # Best-effort active UDP probe for devices with routable IPs
+        if ip and ip != "N/A" and not syslog_reachable:
+            syslog_reachable, syslog_probe_state = self._probe_udp_syslog(ip)
+
+        if syslog_reachable:
+            if syslog_by_scan:
+                details.append("Syslog service detected on UDP/514.")
+            else:
+                details.append(f"UDP/514 appears reachable ({syslog_probe_state}).")
+        else:
+            if syslog_probe_state == "not_probed":
+                details.append("No Syslog service detected on UDP/514.")
+            else:
+                details.append(f"No Syslog listener confirmed on UDP/514 ({syslog_probe_state}).")
+
+        # Signal 2: HTTP log endpoints
+        http_ports = [
+            p for p in open_ports
+            if isinstance(p, dict) and (
+                p.get('service') in ('http', 'https')
+                or p.get('port') in (80, 443, 8080, 8443)
+            )
+        ]
+
+        log_paths = ['/api/logs', '/logs', '/admin/logs', '/syslog', '/journal', '/cgi-bin/log.cgi']
+
+        for port_info in http_ports:
+            port = port_info.get('port')
+            if not port or not ip or ip == "N/A":
+                continue
+
+            service = str(port_info.get('service', '')).lower()
+            scheme = 'https' if int(port) in (443, 8443) or 'https' in service else 'http'
+
+            for path in log_paths:
+                url = f"{scheme}://{ip}:{int(port)}{path}"
+                try:
+                    response = self.session.get(url, timeout=2, allow_redirects=False)
+                    if response.status_code in (200, 401, 403):
+                        logging_endpoints.append(url)
+                except Exception:
+                    continue
+
+        if logging_endpoints:
+            details.append(
+                f"Detected log-related HTTP endpoint(s): {', '.join(logging_endpoints[:3])}"
+            )
+            if len(logging_endpoints) > 3:
+                details.append(f"(+{len(logging_endpoints) - 3} additional endpoint hits)")
+        else:
+            details.append("No common HTTP log endpoints detected.")
+
+        passed = bool(syslog_reachable or logging_endpoints)
+        if not passed:
+            details.append(
+                "Logging capability not externally verified; reporting Warning to avoid false non-compliance."
+            )
+
+        return {
+            "passed": passed,
+            "details": "; ".join(details),
+            "syslog_udp_514": bool(syslog_reachable),
+            "syslog_probe_state": syslog_probe_state,
+            "logging_endpoints": logging_endpoints,
+        }
+
+    def _probe_udp_syslog(self, ip, timeout=0.5):
+        """Best-effort UDP/514 probe.
+
+        UDP is inherently inconclusive without reply. We classify:
+        - timeout/no error after send as open|filtered
+        - immediate connection-refused/reset as closed
+        - routing/socket errors as unreachable/error
+        """
+        sock = None
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.settimeout(timeout)
+            sock.connect((ip, 514))
+            sock.send(b"CRA-AUDITOR-SYSLOG-PROBE")
+            try:
+                sock.recv(1)
+                return True, "response"
+            except socket.timeout:
+                return True, "open|filtered"
+            except ConnectionRefusedError:
+                return False, "closed"
+            except OSError:
+                return False, "closed"
+        except OSError:
+            return False, "unreachable"
+        finally:
+            if sock is not None:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
 
     def check_sbom_compliance(self, device):
         """Check for SBOM availability per CRA Annex I §2(1).

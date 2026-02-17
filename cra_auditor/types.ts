@@ -85,6 +85,13 @@ export interface Device {
       } | null;
       vendor_url: string | null;
     };
+    securityLogging: {
+      passed: boolean;
+      details: string;
+      syslog_udp_514: boolean;
+      syslog_probe_state: string;
+      logging_endpoints: string[];
+    };
   };
   lastScanned: string;
   osMatch: string;
