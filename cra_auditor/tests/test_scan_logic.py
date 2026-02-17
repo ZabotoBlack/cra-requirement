@@ -335,14 +335,10 @@ class TestCRAScanner(unittest.TestCase):
 
     def test_check_vulnerabilities_critical_cve(self):
         """Test that critical CVEs are detected."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "data": [
-                {"id": "CVE-2024-1234", "cvss": "9.8", "summary": "Critical RCE vulnerability in vendor firmware"}
-            ]
-        }
-        self.scanner.session.get = MagicMock(return_value=mock_response)
+        self.scanner._resolve_device_cpe = MagicMock(return_value="cpe:2.3:o:testvendor:testproduct:1.0:*:*:*:*:*:*:*")
+        self.scanner.nvd_client.get_cves_for_cpe = MagicMock(return_value=[
+            {"id": "CVE-2024-1234", "severity": "CRITICAL", "score": 9.8, "description": "Critical RCE vulnerability"}
+        ])
 
         result = self.scanner.check_vulnerabilities("TestVendor", [])
         self.assertFalse(result['passed'])
@@ -357,7 +353,8 @@ class TestCRAScanner(unittest.TestCase):
 
     def test_check_vulnerabilities_network_error(self):
         """Test graceful failure on CVE API network error."""
-        self.scanner.session.get = MagicMock(side_effect=Exception("Network error"))
+        self.scanner._resolve_device_cpe = MagicMock(return_value="cpe:2.3:o:testvendor:testproduct:*:*:*:*:*:*:*:*")
+        self.scanner.nvd_client.get_cves_for_cpe = MagicMock(side_effect=Exception("Network error"))
         result = self.scanner.check_vulnerabilities("TestVendor", [])
         self.assertTrue(result['passed'])
         self.assertIn("network error", result['details'])
@@ -871,14 +868,10 @@ class TestFirmwareTracking(unittest.TestCase):
 
     def test_firmware_with_version_cves(self):
         """Version-specific CVE lookup returns matching CVEs."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "data": [
-                {"id": "CVE-2024-5678", "cvss": "8.5", "summary": "Buffer overflow in firmware v1.2.3"}
-            ]
-        }
-        self.scanner.session.get = MagicMock(return_value=mock_response)
+        self.scanner._resolve_device_cpe = MagicMock(return_value="cpe:2.3:o:testvendor:httpd:1.2.3:*:*:*:*:*:*:*")
+        self.scanner.nvd_client.get_cves_for_cpe = MagicMock(return_value=[
+            {"id": "CVE-2024-5678", "severity": "HIGH", "score": 8.5, "description": "Buffer overflow in firmware v1.2.3"}
+        ])
 
         device = {
             "ip": "192.168.1.50",

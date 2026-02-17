@@ -5,6 +5,7 @@ import socket
 import logging
 import os
 import time
+from vulnerability_data import NVDClient, VendorRules, build_cpe, match_cpe
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -18,192 +19,6 @@ _FW_VERSION_RE = re.compile(
     r'(?:firmware|fw|version|ver|software|sw)[:\s_=-]*v?(\d+\.\d+[\w./-]*)',
     re.IGNORECASE,
 )
-
-# Known vendor SBOM availability status (best-effort lookup)
-# Values: "available" = vendor publishes SBOMs, "unavailable" = known to NOT publish, "unknown" = no data
-VENDOR_SBOM_STATUS = {
-    "Philips": "available",
-    "Signify": "available",        # Philips Hue parent company
-    "Siemens": "available",
-    "Bosch": "available",
-    "Schneider Electric": "available",
-    "ABB": "available",
-    "Honeywell": "available",
-    "Cisco": "available",
-    "Intel": "available",
-    "Microsoft": "available",
-    "Google": "available",
-    "Apple": "available",
-    "Samsung": "available",
-    "Tuya": "unavailable",
-    "Sonoff": "unavailable",
-    "ITEAD": "unavailable",        # Sonoff parent
-    "Shelly": "unavailable",
-    "Allterco": "unavailable",     # Shelly parent
-    "TP-Link": "unavailable",
-    "Kasa": "unavailable",
-    "Tapo": "unavailable",
-    "IKEA": "unknown",
-    "AVM": "unknown",
-    "Espressif": "unknown",
-    "Xiaomi": "unavailable",
-    "Aqara": "unavailable",
-    "Meross": "unavailable",
-    "Govee": "unavailable",
-    "Wyze": "unavailable",
-    "Ring": "unknown",
-    "Amazon": "unknown",
-    "Yamaha": "unknown",
-    "Ubiquiti": "unknown",
-    "Synology": "unknown",
-    "QNAP": "unknown",
-    "Netgear": "unavailable",
-    "D-Link": "unavailable",
-    "Reolink": "unavailable",
-    "Hikvision": "unavailable",
-    "Dahua": "unavailable",
-    "ESPHome": "unavailable",
-    "Tasmota": "unavailable",
-    "Raspberry Pi": "unknown",
-}
-
-# Known vendor SBOM portal URLs (for direct linking in reports)
-VENDOR_SBOM_URLS = {
-    "Siemens": "https://sbom.siemens.com/",
-    "Philips": "https://www.philips.com/a-w/security/coordinated-vulnerability-disclosure",
-    "Signify": "https://www.signify.com/global/vulnerability-disclosure",
-    "Bosch": "https://psirt.bosch.com/",
-    "Cisco": "https://www.cisco.com/c/en/us/about/trust-center.html",
-}
-
-# Known vendor firmware update / changelog URLs
-VENDOR_FIRMWARE_UPDATE_URLS = {
-    "Shelly": "https://shelly-api-docs.shelly.cloud/gen2/changelog/",
-    "Allterco": "https://shelly-api-docs.shelly.cloud/gen2/changelog/",
-    "Philips": "https://www.philips-hue.com/en-us/support/release-notes",
-    "Signify": "https://www.philips-hue.com/en-us/support/release-notes",
-    "IKEA": "https://www.ikea.com/us/en/customer-service/product-support/smart-home/",
-    "TP-Link": "https://www.tp-link.com/us/support/download/",
-    "Kasa": "https://www.tp-link.com/us/support/download/",
-    "Tapo": "https://www.tp-link.com/us/support/download/",
-    "Tuya": "https://developer.tuya.com/en/docs/iot/firmware-update",
-    "Sonoff": "https://sonoff.tech/product-review/product-tutorials/",
-    "ITEAD": "https://sonoff.tech/product-review/product-tutorials/",
-    "AVM": "https://en.avm.de/service/current-security-notifications/",
-    "FRITZ": "https://en.avm.de/service/current-security-notifications/",
-    "Cisco": "https://www.cisco.com/c/en/us/support/all-products.html",
-    "Xiaomi": "https://home.mi.com/",
-    "Aqara": "https://www.aqara.com/en/support",
-    "Meross": "https://www.meross.com/support",
-    "Ring": "https://support.ring.com/",
-    "Yamaha": "https://download.yamaha.com/",
-    "Ubiquiti": "https://www.ui.com/download/",
-    "Synology": "https://www.synology.com/en-us/security/advisory",
-    "QNAP": "https://www.qnap.com/en/security-advisory",
-    "Netgear": "https://www.netgear.com/support/download/",
-    "D-Link": "https://support.dlink.com/",
-    "Reolink": "https://reolink.com/download-center/",
-    "ESPHome": "https://esphome.io/changelog/",
-    "Tasmota": "https://github.com/arendst/Tasmota/releases",
-    "Hikvision": "https://www.hikvision.com/en/support/download/firmware/",
-    "Dahua": "https://www.dahuasecurity.com/support/downloadCenter",
-}
-
-# Known vendor security.txt / vulnerability disclosure policy status
-# Verified 2025-02 by probing /.well-known/security.txt on vendor websites
-# Values: "available" = valid security.txt confirmed, "unavailable" = 404/403/no file, "unknown" = inconclusive
-VENDOR_SECURITY_TXT_STATUS = {
-    # === Verified AVAILABLE (valid security.txt confirmed) ===
-    "Philips": "available",         # Contact: productsecurity@philips.com
-    "Signify": "available",         # Contact: productsecurity@signify.com (Philips Hue parent)
-    "Bosch": "available",           # PGP-signed, Contact: psirt.bosch.com
-    "Schneider Electric": "available",  # Contact: cpcert@se.com, Expires: 2028
-    "Cisco": "available",           # Contact: psirt@cisco.com, PGP-signed
-    "Intel": "available",           # Contact: secure@intel.com
-    "Microsoft": "available",       # Contact: msrc.microsoft.com, CSAF
-    "Google": "available",          # Contact: security@google.com, Expires: 2030
-    "Apple": "available",           # Contact: security.apple.com
-    "Amazon": "available",          # Contact: hackerone.com/amazonvrp
-    "Ring": "available",            # Contact: hackerone.com/ring (Amazon subsidiary)
-    "Ubiquiti": "available",        # Contact: security@ui.com
-    "Synology": "available",        # Contact: security@synology.com, bounty program
-    "IKEA": "available",            # Contact: bugs.ikea.com, Expires: 2026
-    "Huawei": "available",          # PGP-signed, Contact: psirt@huawei.com
-    "Logitech": "available",        # Contact: logitech.com/security, HackerOne
-    "HP": "available",              # Contact: hp-security-alert@hp.com
-    "Dell": "available",            # Contact: bugcrowd.com/dell-com, Expires: 2026
-    "Fortinet": "available",        # Contact: fortiguard.com/faq/psirt-contact
-    "Honeywell": "unknown",          # Has PSIRT program but no RFC 9116 security.txt file
-    # === Verified UNAVAILABLE (404/403/no valid security.txt) ===
-    "Siemens": "unavailable",       # Returns 404 page (despite being security-mature)
-    "ABB": "unavailable",           # Connection timeout / no response
-    "Samsung": "unavailable",       # Returns 404
-    "QNAP": "unavailable",         # Returns 403
-    "AVM": "unavailable",          # Redirects to fritz.com → 404
-    "FRITZ": "unavailable",        # AVM brand, same result
-    "Tuya": "unavailable",         # Returns 404
-    "Sonoff": "unavailable",       # Returns 404
-    "ITEAD": "unavailable",        # Sonoff parent, returns 404
-    "Shelly": "unavailable",       # Returns 404
-    "Allterco": "unavailable",     # Shelly parent
-    "TP-Link": "unavailable",      # Returns HTML redirect (not security.txt)
-    "Kasa": "unavailable",         # TP-Link brand
-    "Tapo": "unavailable",         # TP-Link brand
-    "Xiaomi": "unavailable",       # Returns 403
-    "Aqara": "unavailable",        # Returns 404
-    "Meross": "unavailable",       # Returns 404
-    "Govee": "unavailable",        # Returns 404
-    "Wyze": "unavailable",         # Returns 404
-    "Netgear": "unavailable",      # Returns 403
-    "D-Link": "unavailable",       # Returns 404
-    "Reolink": "unavailable",      # Returns 404
-    "Hikvision": "unavailable",    # Returns 403
-    "Dahua": "unavailable",        # Returns 503
-    "ESPHome": "unavailable",      # Open-source project, no security.txt
-    "Tasmota": "unavailable",      # Open-source project, no security.txt
-    "LG": "unavailable",           # Returns 404
-    "Sony": "unavailable",         # Returns 403
-    "Linksys": "unavailable",      # Returns 404
-    "Belkin": "unavailable",       # Returns 404
-    "Yamaha": "unavailable",       # Returns 404
-    "Nanoleaf": "unavailable",     # Returns 404
-    "Eufy": "unavailable",         # Returns 404
-    "Anker": "unavailable",        # Returns 404 (Eufy parent)
-    "Juniper": "unavailable",      # Returns 404
-    "Palo Alto": "unavailable",    # Returns 404
-    "ZTE": "unavailable",          # Returns 403
-    "Eero": "unavailable",         # Returns 404 (Amazon subsidiary)
-    "Motorola": "unavailable",     # Returns 500
-    # === UNKNOWN (inconclusive / not directly verified) ===
-    "Espressif": "unknown",        # Returns 403, chip manufacturer
-    "Raspberry Pi": "unknown",     # Not directly verified
-    "Ecobee": "unknown",           # Has HackerOne program but no RFC 9116 file
-    "Nest": "unknown",             # Google subsidiary, redirects to store page
-    "Tenda": "unavailable",        # Returns HTML error page
-}
-
-# Known vendor security.txt / disclosure policy URLs (verified working)
-VENDOR_SECURITY_TXT_URLS = {
-    "Philips": "https://www.philips.com/.well-known/security.txt",
-    "Signify": "https://www.signify.com/.well-known/security.txt",
-    "Bosch": "https://www.bosch.com/.well-known/security.txt",
-    "Schneider Electric": "https://www.se.com/.well-known/security.txt",
-    "Cisco": "https://www.cisco.com/.well-known/security.txt",
-    "Intel": "https://www.intel.com/.well-known/security.txt",
-    "Microsoft": "https://www.microsoft.com/.well-known/security.txt",
-    "Google": "https://www.google.com/.well-known/security.txt",
-    "Apple": "https://www.apple.com/.well-known/security.txt",
-    "Amazon": "https://www.amazon.com/.well-known/security.txt",
-    "Ring": "https://ring.com/.well-known/security.txt",
-    "Ubiquiti": "https://www.ui.com/.well-known/security.txt",
-    "Synology": "https://www.synology.com/.well-known/security.txt",
-    "IKEA": "https://www.ikea.com/.well-known/security.txt",
-    "Huawei": "https://www.huawei.com/.well-known/security.txt",
-    "Logitech": "https://www.logitech.com/.well-known/security.txt",
-    "HP": "https://www.hp.com/.well-known/security.txt",
-    "Dell": "https://www.dell.com/.well-known/security.txt",
-    "Fortinet": "https://www.fortinet.com/.well-known/security.txt",
-}
 
 class CRAScanner:
     def __init__(self):
@@ -222,10 +37,21 @@ class CRAScanner:
             
         self.common_creds = [('admin', 'admin'), ('root', 'root'), ('user', '1234'), ('admin', '1234')]
         self.verify_ssl = False  # Configurable: set True to enforce SSL certificate verification during probes
+        self.nvd_client = NVDClient(api_key=os.environ.get('NVD_API_KEY'))
+        self.vendor_rules = VendorRules()
 
         # Reuse a single requests.Session for connection pooling (performance)
         self.session = requests.Session()
         self.session.verify = self.verify_ssl
+
+    def _resolve_device_cpe(self, vendor: str, product: str | None = None, version: str | None = None):
+        if not vendor or vendor == "Unknown":
+            return None
+
+        vendor_clean = vendor.split('(')[0].strip()
+        product_name = (product or vendor_clean).strip() or vendor_clean
+        cpe_candidate = build_cpe(vendor_clean, product_name, version or "*")
+        return match_cpe(cpe_candidate, self.nvd_client)
 
     def scan_subnet(self, subnet, options=None):
         """
@@ -991,37 +817,48 @@ class CRAScanner:
         }
 
     def check_vulnerabilities(self, vendor, open_ports):
-        """Query external CVE API."""
+        """Query NVD using CPE matching and return critical vulnerabilities."""
         if not vendor or vendor == "Unknown":
              return {"passed": True, "details": "Vendor unknown, skipping CVE check.", "cves": []}
 
-        # Clean vendor string for search
-        search_term = vendor.split('(')[0].strip() # Remove extra info like (Running Linux...)
+        search_term = vendor.split('(')[0].strip()
+        product_hint = None
+        version_hint = None
+        for port in open_ports or []:
+            product_hint = product_hint or port.get('product')
+            version_hint = version_hint or port.get('version')
 
-        cves = []
+        canonical_cpe = self._resolve_device_cpe(search_term, product_hint, version_hint)
+        if not canonical_cpe:
+            canonical_cpe = self._resolve_device_cpe(search_term, search_term, "*")
+
+        if not canonical_cpe:
+            return {
+                "passed": True,
+                "details": f"No canonical CPE found for '{search_term}', skipping NVD CVE check.",
+                "cves": [],
+            }
+
         try:
-            # Using cve.circl.lu API
-            url = f"https://cve.circl.lu/api/search/{search_term}"
-            response = self.session.get(url, timeout=5)
-
-            if response.status_code == 200:
-                data = response.json()
-                for item in data.get('data', [])[:5]: # Check first 5 matches
-                    if 'cvss' in item and item['cvss'] and float(item['cvss']) > 9.0:
-                        cves.append({
-                            "id": item.get('id', 'Unknown'),
-                            "severity": "CRITICAL",
-                            "description": item.get('summary', 'No description')[:100] + "..."
-                        })
-
+            cves = self.nvd_client.get_cves_for_cpe(canonical_cpe, min_cvss=9.0, limit=5)
         except Exception as e:
-            logger.error(f"CVE lookup failed: {e}")
+            logger.error(f"NVD CVE lookup failed: {e}")
             return {"passed": True, "details": "CVE lookup failed (network error).", "cves": []}
 
         if cves:
-             return {"passed": False, "details": f"Found {len(cves)} critical CVEs associated with '{search_term}'.", "cves": cves}
+             return {
+                 "passed": False,
+                 "details": f"CPE identified: {canonical_cpe}. Found {len(cves)} critical CVEs associated with '{search_term}'.",
+                 "cves": cves,
+                 "cpe": canonical_cpe,
+             }
 
-        return {"passed": True, "details": f"No critical CVEs found for '{search_term}'.", "cves": []}
+        return {
+            "passed": True,
+            "details": f"CPE identified: {canonical_cpe}. No critical CVEs found for '{search_term}'.",
+            "cves": [],
+            "cpe": canonical_cpe,
+        }
 
     def check_security_logging(self, device):
         """Check for security logging capability (CRA Annex I §1(3)(j)).
@@ -1170,12 +1007,11 @@ class CRAScanner:
         # Layer 2: Vendor-level SBOM status lookup
         vendor_status = self._lookup_vendor_sbom_status(vendor)
         
-        # Layer 3: Vendor SBOM portal URL lookup
-        sbom_url = None
-        for known_vendor, url in VENDOR_SBOM_URLS.items():
-            if known_vendor.lower() in vendor.lower() or vendor.lower() in known_vendor.lower():
-                sbom_url = url
-                break
+        # Layer 3: Vendor SBOM URL lookup (externalized rules + NVD CPE refs fallback)
+        sbom_url = self.vendor_rules.get_sbom_url(vendor)
+        cpe_name = self._resolve_device_cpe(vendor, device.get('model'), device.get('sw_version'))
+        if not sbom_url and cpe_name:
+            sbom_url = self.nvd_client.get_vendor_reference_url(cpe_name)
         
         if sbom_found:
             # Best case: device directly exposes SBOM
@@ -1291,20 +1127,7 @@ class CRAScanner:
         
         Returns 'available', 'unavailable', or 'unknown'.
         """
-        if not vendor or vendor == "Unknown":
-            return "unknown"
-        
-        # Check exact match first
-        if vendor in VENDOR_SBOM_STATUS:
-            return VENDOR_SBOM_STATUS[vendor]
-        
-        # Check partial match (e.g. "Philips Lighting" matches "Philips")
-        vendor_lower = vendor.lower()
-        for known_vendor, status in VENDOR_SBOM_STATUS.items():
-            if known_vendor.lower() in vendor_lower or vendor_lower in known_vendor.lower():
-                return status
-        
-        return "unknown"
+        return self.vendor_rules.get_sbom_status(vendor)
 
     def check_security_txt(self, device):
         """Check for security.txt disclosure policy per CRA §2(5) and §2(6).
@@ -1347,11 +1170,7 @@ class CRAScanner:
         vendor_status = self._lookup_vendor_security_txt_status(vendor)
 
         # Layer 3: Vendor disclosure URL lookup
-        vendor_url = None
-        for known_vendor, url in VENDOR_SECURITY_TXT_URLS.items():
-            if known_vendor.lower() in vendor.lower() or vendor.lower() in known_vendor.lower():
-                vendor_url = url
-                break
+        vendor_url = self.vendor_rules.get_security_txt_url(vendor)
 
         if security_txt_found:
             return {
@@ -1452,18 +1271,7 @@ class CRAScanner:
 
         Returns 'available', 'unavailable', or 'unknown'.
         """
-        if not vendor or vendor == "Unknown":
-            return "unknown"
-
-        if vendor in VENDOR_SECURITY_TXT_STATUS:
-            return VENDOR_SECURITY_TXT_STATUS[vendor]
-
-        vendor_lower = vendor.lower()
-        for known_vendor, status in VENDOR_SECURITY_TXT_STATUS.items():
-            if known_vendor.lower() in vendor_lower or vendor_lower in known_vendor.lower():
-                return status
-
-        return "unknown"
+        return self.vendor_rules.get_security_txt_status(vendor)
 
     def check_firmware_tracking(self, device):
         """Check firmware version tracking per CRA Annex I §2(2).
@@ -1513,35 +1321,24 @@ class CRAScanner:
             firmware_source = "Home Assistant"
             details.append(f"Firmware version from Home Assistant: {firmware_version}.")
 
-        # Version-specific CVE lookup
+        # Version-specific CVE lookup via NVD (CPE-based)
         if firmware_version and vendor and vendor != "Unknown":
-            search_term = f"{vendor.split('(')[0].strip()} {firmware_version}"
+            canonical_cpe = self._resolve_device_cpe(vendor, device.get('model'), firmware_version)
             try:
-                url = f"https://cve.circl.lu/api/search/{search_term}"
-                response = self.session.get(url, timeout=5)
-                if response.status_code == 200:
-                    data = response.json()
-                    for item in data.get('data', [])[:5]:
-                        if 'cvss' in item and item['cvss'] and float(item['cvss']) > 7.0:
-                            severity = "CRITICAL" if float(item['cvss']) > 9.0 else "HIGH"
-                            version_cves.append({
-                                "id": item.get('id', 'Unknown'),
-                                "severity": severity,
-                                "description": item.get('summary', 'No description')[:100] + "..."
-                            })
+                if canonical_cpe:
+                    version_cves = self.nvd_client.get_cves_for_cpe(canonical_cpe, min_cvss=7.0, limit=5)
+                    details.append(f"CPE identified for firmware tracking: {canonical_cpe}.")
+                else:
+                    details.append("No canonical CPE found for firmware version-specific CVE lookup.")
             except Exception as e:
-                logger.error(f"Version-specific CVE lookup failed: {e}")
+                logger.error(f"Version-specific NVD CVE lookup failed: {e}")
                 details.append("Version-specific CVE lookup failed (network error).")
 
         if version_cves:
             details.append(f"Found {len(version_cves)} CVEs affecting firmware version '{firmware_version}'.")
 
-        # Determine update URL
-        update_url = None
-        for known_vendor, url in VENDOR_FIRMWARE_UPDATE_URLS.items():
-            if known_vendor.lower() in vendor.lower() or vendor.lower() in known_vendor.lower():
-                update_url = url
-                break
+        # Determine update URL from externalized rules
+        update_url = self.vendor_rules.get_firmware_update_url(vendor)
 
         # Determine pass/fail
         if firmware_version:

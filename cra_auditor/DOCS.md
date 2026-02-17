@@ -17,3 +17,4 @@ To enable AI insights, you can provide a Gemini API Key in the configuration tab
 | :--- | :--- | :--- |
 | `target_subnet` | string | The CIDR range to scan (e.g., `192.168.1.0/24`). |
 | `gemini_api_key` | string | (Optional) Your Google Gemini API Key for enhanced analysis. |
+| `nvd_api_key` | string | (Optional, recommended) NVD API key for higher-rate CPE/CVE lookups. |

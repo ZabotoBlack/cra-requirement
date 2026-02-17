@@ -23,7 +23,8 @@ This add-on requires elevated permissions to function correctly:
 2. Install the **CRA Compliance Auditor**.
 3. Configure the `target_subnet` in the Configuration tab.
 4. (Optional) Add your `gemini_api_key` for AI features.
-5. Start the Add-on and open the Web UI.
+5. (Optional, recommended) Add your `nvd_api_key` for faster and more reliable NVD vulnerability lookups.
+6. Start the Add-on and open the Web UI.
 
 ## Development
 To run locally for development:

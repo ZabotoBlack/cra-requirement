@@ -153,8 +153,10 @@ def get_config():
     NEVER return the actual API key here.
     """
     has_gemini = bool(os.environ.get('GEMINI_API_KEY'))
+    has_nvd = bool(os.environ.get('NVD_API_KEY'))
     return jsonify({
         "gemini_enabled": has_gemini,
+        "nvd_enabled": has_nvd,
         "version": "1.0.9"
     })
 

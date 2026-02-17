@@ -29,6 +29,8 @@ map:
 options:
   target_subnet: "192.168.1.0/24"
   gemini_api_key: ""
+  nvd_api_key: ""
 schema:
   target_subnet: str
   gemini_api_key: password
+  nvd_api_key: password

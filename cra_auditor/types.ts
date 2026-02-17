@@ -23,6 +23,12 @@ export interface Vulnerability {
   description: string;
 }
 
+export interface FrontendConfig {
+  gemini_enabled: boolean;
+  nvd_enabled: boolean;
+  version: string;
+}
+
 export interface Device {
   mac: string;
   ip: string;
@@ -55,6 +61,8 @@ export interface Device {
     };
     vulnerabilities: {
       passed: boolean;
+      details?: string;
+      cpe?: string;
       cves: Vulnerability[];
     };
     sbomCompliance: {

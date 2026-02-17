@@ -4,7 +4,7 @@ import Dashboard from './components/Dashboard';
 import DeviceList from './components/DeviceList';
 import HistoryView from './components/HistoryView';
 import { startScan, getScanStatus, getReport, getConfig, getHistoryDetail } from './services/api';
-import { ScanReport, ViewState, ScanOptions } from './types';
+import { ScanReport, ViewState, ScanOptions, FrontendConfig } from './types';
 
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>('dashboard');
@@ -12,7 +12,7 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [report, setReport] = useState<ScanReport | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
-  const [config, setConfig] = useState<{ gemini_enabled: boolean; version: string } | null>(null);
+  const [config, setConfig] = useState<FrontendConfig | null>(null);
   const [subnet, setSubnet] = useState('');
 
   const [scanOptions, setScanOptions] = useState<ScanOptions>({
@@ -333,7 +333,7 @@ const App: React.FC = () => {
             </div>
           ) : (
             <>
-              {view === 'dashboard' && report && <Dashboard report={report} geminiEnabled={config?.gemini_enabled} />}
+              {view === 'dashboard' && report && <Dashboard report={report} geminiEnabled={config?.gemini_enabled} nvdEnabled={config?.nvd_enabled} />}
               {view === 'devices' && report && <DeviceList devices={report.devices} />}
               {view === 'history' && <HistoryView onViewReport={handleViewReport} />}
               {scanError && !scanning && (

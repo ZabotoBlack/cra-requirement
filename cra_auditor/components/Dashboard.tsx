@@ -6,6 +6,7 @@ import { ShieldAlert, ShieldCheck, ShieldQuestion, Sparkles } from 'lucide-react
 interface DashboardProps {
   report: ScanReport;
   geminiEnabled?: boolean;
+  nvdEnabled?: boolean;
 }
 
 const COLORS = {
@@ -14,7 +15,7 @@ const COLORS = {
   [ComplianceStatus.NON_COMPLIANT]: '#f43f5e' // rose-500
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled }) => {
+const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled }) => {
   const pieData = [
     { name: 'Compliant', value: report.summary.compliant },
     { name: 'Warning', value: report.summary.warning },
@@ -109,6 +110,11 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled }) => {
             <p className="text-xs text-slate-500 mt-2">
               {geminiEnabled ? 'Gemini Pro Connected' : 'Add Key in Config'}
             </p>
+            <div className="mt-2">
+              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${nvdEnabled ? 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10' : 'text-rose-400 border-rose-500/40 bg-rose-500/10'}`}>
+                NVD {nvdEnabled ? 'Active' : 'Disabled'}
+              </span>
+            </div>
           </div>
           <div className={`p-3 rounded-full bg-slate-700/50 ${geminiEnabled ? 'text-purple-400' : 'text-slate-500'}`}>
             <Sparkles size={24} />

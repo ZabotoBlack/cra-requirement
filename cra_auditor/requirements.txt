@@ -2,3 +2,4 @@ python-nmap
 requests
 flask
 gunicorn
+PyYAML

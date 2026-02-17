@@ -109,6 +109,12 @@ const DeviceRow: React.FC<{ device: Device }> = ({ device }) => {
                   </span>
                 </div>
                 <div className="text-xs text-slate-500">
+                  {device.checks.vulnerabilities.cpe && (
+                    <p className="text-indigo-400 mb-1 break-all">CPE: {device.checks.vulnerabilities.cpe}</p>
+                  )}
+                  {device.checks.vulnerabilities.details && (
+                    <p className="mb-1">{device.checks.vulnerabilities.details}</p>
+                  )}
                   {device.checks.vulnerabilities.cves.length > 0 ? (
                     <ul className="list-disc ml-4 space-y-1 mt-1">
                       {device.checks.vulnerabilities.cves.map(cve => (
