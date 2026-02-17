@@ -31,6 +31,12 @@ export interface Device {
   hostname: string;
   source?: string;
   status: ComplianceStatus;
+  attackSurface?: {
+    score: number;
+    rating: 'Low' | 'Medium' | 'High';
+    openPortsCount: number;
+    details: string;
+  };
   checks: {
     secureByDefault: {
       passed: boolean;

@@ -217,6 +217,27 @@ class TestCRAScanner(unittest.TestCase):
         result = self.scanner.check_confidentiality(open_ports)
         self.assertTrue(result['passed'])
 
+    def test_calculate_attack_surface_score_low(self):
+        """0-1 ports should be rated Low."""
+        result = self.scanner.calculate_attack_surface_score([])
+        self.assertEqual(result['rating'], 'Low')
+        self.assertEqual(result['score'], 0)
+        self.assertEqual(result['openPortsCount'], 0)
+
+    def test_calculate_attack_surface_score_medium(self):
+        """2-4 ports should be rated Medium."""
+        result = self.scanner.calculate_attack_surface_score([80, 443])
+        self.assertEqual(result['rating'], 'Medium')
+        self.assertEqual(result['score'], 2)
+        self.assertEqual(result['openPortsCount'], 2)
+
+    def test_calculate_attack_surface_score_high(self):
+        """5+ ports should be rated High."""
+        result = self.scanner.calculate_attack_surface_score([21, 22, 23, 80, 443, 1883, 8080, 8443, 53, 1900])
+        self.assertEqual(result['rating'], 'High')
+        self.assertEqual(result['score'], 10)
+        self.assertEqual(result['openPortsCount'], 10)
+
     def test_check_https_redirect_passes_on_301_to_https(self):
         """HTTP management port should pass when it redirects to HTTPS."""
         mock_response = MagicMock()
@@ -291,6 +312,87 @@ class TestCRAScanner(unittest.TestCase):
         result = self.scanner.check_vulnerabilities("TestVendor", [])
         self.assertTrue(result['passed'])
         self.assertIn("network error", result['details'])
+
+    @patch('scan_logic.CRAScanner.check_security_txt')
+    @patch('scan_logic.CRAScanner.check_firmware_tracking')
+    @patch('scan_logic.CRAScanner.check_sbom_compliance')
+    @patch('scan_logic.CRAScanner.check_vulnerabilities')
+    @patch('scan_logic.CRAScanner.check_https_redirect')
+    @patch('scan_logic.CRAScanner.check_confidentiality')
+    @patch('scan_logic.CRAScanner.check_secure_by_default')
+    @patch('scan_logic.CRAScanner._get_ha_devices')
+    def test_attack_surface_high_downgrades_compliant_to_warning(
+        self,
+        mock_get_ha,
+        mock_sbd,
+        mock_conf,
+        mock_https,
+        mock_vuln,
+        mock_sbom,
+        mock_fw,
+        mock_sec_txt,
+    ):
+        """High attack surface should downgrade otherwise compliant device to Warning."""
+        mock_get_ha.return_value = []
+        mock_sbd.return_value = {"passed": True, "details": "ok"}
+        mock_conf.return_value = {"passed": True, "details": "ok"}
+        mock_https.return_value = {
+            "passed": True,
+            "details": "ok",
+            "checked_ports": [80],
+            "failed_ports": [],
+            "inconclusive_ports": []
+        }
+        mock_vuln.return_value = {"passed": True, "details": "ok", "cves": []}
+        mock_sbom.return_value = {"passed": True, "details": "ok", "sbom_found": False, "sbom_format": None}
+        mock_fw.return_value = {
+            "passed": True,
+            "details": "ok",
+            "firmware_version": None,
+            "firmware_source": None,
+            "update_available": None,
+            "update_url": None,
+            "version_cves": []
+        }
+        mock_sec_txt.return_value = {
+            "passed": True,
+            "details": "ok",
+            "security_txt_found": False,
+            "fields": None,
+            "vendor_url": None
+        }
+
+        host_ip = "192.168.1.51"
+        self.scanner.nm.all_hosts.return_value = [host_ip]
+        mock_host_data = MagicMock()
+        mock_host_data.hostname.return_value = "exposed-host"
+        mock_host_data.__getitem__.side_effect = lambda key: {
+            'addresses': {'ipv4': host_ip, 'mac': 'AA:BB:CC:DD:EE:11'},
+            'vendor': {'AA:BB:CC:DD:EE:11': 'TestVendor'},
+            'osmatch': [],
+            'tcp': {
+                21: {'state': 'open', 'name': 'ftp'},
+                22: {'state': 'open', 'name': 'ssh'},
+                23: {'state': 'open', 'name': 'telnet'},
+                80: {'state': 'open', 'name': 'http'},
+                443: {'state': 'open', 'name': 'https'},
+            }
+        }.get(key, {})
+        mock_host_data.__contains__.side_effect = lambda key: key in ['addresses', 'vendor', 'osmatch', 'tcp']
+        mock_host_data.all_protocols.return_value = ['tcp']
+        self.scanner.nm.__getitem__.return_value = mock_host_data
+
+        results = self.scanner.scan_subnet("192.168.1.0/24", {
+            "scan_type": "discovery",
+            "auth_checks": True
+        })
+
+        self.assertTrue(len(results) > 0)
+        device = results[0]
+        self.assertIn('attackSurface', device)
+        self.assertEqual(device['attackSurface']['rating'], 'High')
+        self.assertEqual(device['attackSurface']['openPortsCount'], 5)
+        self.assertEqual(device['status'], 'Warning')
 
     def test_vendor_check_tuya(self):
         """Test Tuya vendor detection by port."""

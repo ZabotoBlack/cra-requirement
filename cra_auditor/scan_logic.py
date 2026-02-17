@@ -358,6 +358,7 @@ class CRAScanner:
                 sbd_result = self.check_secure_by_default(dev)
             
             conf_result = self.check_confidentiality(dev.get('openPorts', []))
+            attack_surface = self.calculate_attack_surface_score(dev.get('openPorts', []))
             https_result = self.check_https_redirect(dev)
             vuln_result = self.check_vulnerabilities(check_vendor, dev.get('openPorts', []))
             sbom_result = self.check_sbom_compliance(dev)
@@ -378,17 +379,21 @@ class CRAScanner:
                 status = "Non-Compliant"
             elif not conf_result['passed'] or not sbom_result['passed'] or not fw_result['passed'] or not sec_txt_result['passed']:
                 status = "Warning"
+            elif attack_surface['rating'] == "High":
+                status = "Warning"
 
             # Log per-device check results with pass/fail symbols
             _p = lambda r: "pass" if r['passed'] else "FAIL"
             logger.info(
                 f"[SCAN]     Secure={_p(sbd_result)}  Confid={_p(conf_result)}  "
+                f"AttackSurface={attack_surface['rating']}({attack_surface['openPortsCount']})  "
                 f"HTTPS={_p(https_result)}  CVE={_p(vuln_result)}  SBOM={_p(sbom_result)}  "
                 f"FW={_p(fw_result)}  SecTxt={_p(sec_txt_result)}  => {status}"
             )
 
             dev.update({
                 "status": status,
+                "attackSurface": attack_surface,
                 "checks": {
                     "secureByDefault": sbd_result,
                     "dataConfidentiality": conf_result,
@@ -842,6 +847,48 @@ class CRAScanner:
             return {"passed": False, "details": f"Unencrypted ports found: {', '.join(found_unencrypted)}"}
         
         return {"passed": True, "details": "No common unencrypted management ports found."}
+
+    def calculate_attack_surface_score(self, open_ports):
+        """Score device attack surface based on exposed open ports.
+
+        CRA relevance: Annex I §1(3)(h) minimization of attack surface.
+        """
+        open_ports = open_ports or []
+
+        if not isinstance(open_ports, list):
+            open_ports = []
+
+        normalized_ports = []
+        for port_info in open_ports:
+            if isinstance(port_info, dict):
+                port_value = port_info.get('port')
+            else:
+                port_value = port_info
+
+            try:
+                normalized_ports.append(int(port_value))
+            except (TypeError, ValueError):
+                continue
+
+        open_ports_count = len(normalized_ports)
+        score = open_ports_count
+
+        if score <= 1:
+            rating = "Low"
+            details = f"{open_ports_count} ports open. Attack surface is minimal."
+        elif score <= 4:
+            rating = "Medium"
+            details = f"{open_ports_count} ports open. Consider disabling unused services."
+        else:
+            rating = "High"
+            details = f"{open_ports_count} ports open. Potentially excessive exposure; minimize unnecessary services."
+
+        return {
+            "score": score,
+            "rating": rating,
+            "openPortsCount": open_ports_count,
+            "details": details
+        }
 
     def check_https_redirect(self, device):
         """Verify HTTP management interfaces redirect to HTTPS.
