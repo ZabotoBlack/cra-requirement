@@ -2,11 +2,13 @@ from flask import Flask, jsonify, request, send_from_directory
 import logging
 import os
 import re
+import shutil
 import threading
 import time
 import sqlite3
 import json
 from datetime import datetime
+from pathlib import Path
 from scan_logic import CRAScanner
 
 # Configure logging (replaces print() for structured HA output)
@@ -28,7 +30,30 @@ if not os.path.exists(FRONTEND_DIR):
 
 # Global State
 scanner = CRAScanner()
-DB_FILE = "scans.db"
+
+
+def _resolve_data_dir() -> Path | None:
+    """Resolve persistent data directory preference.
+
+    Priority:
+    1) CRA_DATA_DIR env var (for local testing/overrides)
+    2) /data when running in Home Assistant add-on container
+    """
+    env_dir = os.environ.get("CRA_DATA_DIR")
+    if env_dir:
+        return Path(env_dir)
+
+    container_data = Path("/data")
+    if container_data.exists() and container_data.is_dir():
+        return container_data
+
+    return None
+
+
+APP_DIR = Path(__file__).resolve().parent
+LEGACY_DB_FILE = APP_DIR / "scans.db"
+DATA_DIR = _resolve_data_dir()
+DB_FILE = str((DATA_DIR / "scans.db") if DATA_DIR else LEGACY_DB_FILE)
 
 FEATURE_FLAG_KEYS = {
     "network_discovery",
@@ -96,6 +121,39 @@ def normalize_scan_options(payload):
 
     return normalized
 
+
+def migrate_data():
+    """Migrate scans.db from legacy app directory into persistent data directory."""
+    if not DATA_DIR:
+        return
+
+    source_db = LEGACY_DB_FILE
+    target_db = Path(DB_FILE)
+
+    try:
+        if source_db.resolve() == target_db.resolve():
+            return
+    except Exception:
+        pass
+
+    if source_db.exists() and not target_db.exists():
+        target_db.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            try:
+                os.replace(str(source_db), str(target_db))
+            except OSError:
+                shutil.copy2(str(source_db), str(target_db))
+                try:
+                    source_db.unlink()
+                except Exception:
+                    logger.info(
+                        "Copied legacy scan database to persistent storage; legacy file remains and will be ignored: %s",
+                        source_db,
+                    )
+            logger.info("Migrated scan database to persistent storage: %s", target_db)
+        except Exception:
+            logger.warning("Failed to migrate scan database from %s to %s", source_db, target_db, exc_info=True)
+
 def init_db():
     """Initialize the SQLite database."""
     conn = sqlite3.connect(DB_FILE)
@@ -154,6 +212,7 @@ def set_scan_state(scanning: bool, error: str = None):
         conn.commit()
 
 # Initialize DB and reset zombie state on startup
+migrate_data()
 init_db()
 reset_scan_state()
 

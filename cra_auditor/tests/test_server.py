@@ -1,9 +1,11 @@
 import unittest
 import json
 import os
+import shutil
 import sys
 import tempfile
 import sqlite3
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 # Add parent directory to path to import server
@@ -255,6 +257,49 @@ class TestServer(unittest.TestCase):
 
         # Now claim should succeed again
         self.assertTrue(server.try_claim_scan())
+
+
+class TestServerPersistence(unittest.TestCase):
+    def test_resolve_data_dir_prefers_env_var(self):
+        with patch.dict('os.environ', {'CRA_DATA_DIR': '/tmp/cra-data'}, clear=False):
+            resolved = server._resolve_data_dir()
+        self.assertEqual(resolved, Path('/tmp/cra-data'))
+
+    def test_migrate_data_moves_legacy_db_to_target(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            base = Path(tmp)
+            legacy_db = base / 'scans.db'
+            target_db = base / 'data' / 'scans.db'
+
+            with sqlite3.connect(legacy_db) as conn:
+                conn.execute('CREATE TABLE scan_history (id INTEGER PRIMARY KEY, timestamp TEXT, target_range TEXT, summary TEXT, full_report TEXT)')
+                conn.execute(
+                    'INSERT INTO scan_history (timestamp, target_range, summary, full_report) VALUES (?, ?, ?, ?)',
+                    ('2026-02-17T00:00:00', '10.0.0.0/24', '{}', '{}')
+                )
+                conn.commit()
+
+            old_legacy = server.LEGACY_DB_FILE
+            old_data_dir = server.DATA_DIR
+            old_db_file = server.DB_FILE
+            try:
+                server.LEGACY_DB_FILE = legacy_db
+                server.DATA_DIR = base / 'data'
+                server.DB_FILE = str(target_db)
+
+                server.migrate_data()
+
+                self.assertTrue(target_db.exists())
+                with sqlite3.connect(target_db) as conn:
+                    row_count = conn.execute('SELECT COUNT(*) FROM scan_history').fetchone()[0]
+                self.assertEqual(row_count, 1)
+            finally:
+                server.LEGACY_DB_FILE = old_legacy
+                server.DATA_DIR = old_data_dir
+                server.DB_FILE = old_db_file
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 if __name__ == '__main__':
     unittest.main()

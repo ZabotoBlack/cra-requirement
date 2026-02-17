@@ -95,9 +95,12 @@ python scripts/mock_security_logging_device.py --http-port 8080 --disable-udp
 
 ## NVD Cache Policy
 
-- The NVD API cache file is runtime-generated at `data/nvd_cache.json` and is intentionally not committed to Git.
+- Runtime state uses a persistent data directory when available (`/data` in Home Assistant add-ons).
+- You can override runtime storage in local/dev runs with `CRA_DATA_DIR`.
+- The NVD API cache file is runtime-generated at `<data_dir>/nvd_cache.json` and is intentionally not committed to Git.
+- Scan history DB is stored at `<data_dir>/scans.db`.
 - Cache entries are file-based with TTL invalidation (default: `86400` seconds / 24h in `NVDClient`).
-- Refresh/invalidate cache manually by deleting `data/nvd_cache.json`; it will be recreated on next NVD lookup.
+- Refresh/invalidate cache manually by deleting `<data_dir>/nvd_cache.json`; it will be recreated on next NVD lookup.
 - Tests do not require a committed cache fixture; `tests/test_vulnerability_data.py` uses temporary cache files.
 
 ## Permissions & Security
