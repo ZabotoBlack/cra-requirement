@@ -250,6 +250,34 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
         </div>
       </div>
 
+      {/* Row 3: Scan Architecture */}
+      <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
+        <h3 className="text-lg font-semibold text-white mb-4">Scan Profiles & Feature Flags</h3>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 text-sm">
+          <div>
+            <h4 className="text-slate-200 font-semibold mb-2">Profile Defaults</h4>
+            <ul className="space-y-2 text-slate-300">
+              <li><span className="text-indigo-300 font-medium">Discovery:</span> Ping/ARP only, no compliance checks.</li>
+              <li><span className="text-indigo-300 font-medium">Standard:</span> Ports 1-100, service versioning, web checks on, auth brute-force off.</li>
+              <li><span className="text-indigo-300 font-medium">Deep:</span> Ports 1-1024, OS + service detection, full compliance checks.</li>
+            </ul>
+          </div>
+          <div>
+            <h4 className="text-slate-200 font-semibold mb-2">Toggleable Modules</h4>
+            <div className="grid grid-cols-2 gap-2 text-slate-300">
+              <span>network_discovery</span>
+              <span>port_scan</span>
+              <span>os_detection</span>
+              <span>service_version</span>
+              <span>netbios_info</span>
+              <span>compliance_checks</span>
+              <span>auth_brute_force</span>
+              <span>web_crawling</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
   );
 };

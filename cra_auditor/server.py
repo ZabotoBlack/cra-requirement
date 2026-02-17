@@ -30,6 +30,72 @@ if not os.path.exists(FRONTEND_DIR):
 scanner = CRAScanner()
 DB_FILE = "scans.db"
 
+FEATURE_FLAG_KEYS = {
+    "network_discovery",
+    "port_scan",
+    "os_detection",
+    "service_version",
+    "netbios_info",
+    "compliance_checks",
+    "auth_brute_force",
+    "web_crawling",
+}
+
+
+def normalize_scan_options(payload):
+    """Normalize legacy and new scan option styles into a single options object."""
+    payload = payload or {}
+    raw_options = payload.get('options', {})
+    if not isinstance(raw_options, dict):
+        raw_options = {}
+
+    normalized = dict(raw_options)
+
+    requested_profile = (
+        payload.get('scan_type')
+        or payload.get('type')
+        or raw_options.get('profile')
+        or raw_options.get('scan_type')
+        or raw_options.get('type')
+    )
+
+    # Legacy booleans from early frontend iterations.
+    if raw_options.get('discovery') is True:
+        requested_profile = 'discovery'
+    elif raw_options.get('standard') is True:
+        requested_profile = 'standard'
+    elif raw_options.get('deep') is True:
+        requested_profile = 'deep'
+
+    profile_name = str(requested_profile or 'deep').lower()
+    normalized['profile'] = profile_name
+    normalized['scan_type'] = profile_name
+
+    raw_feature_map = raw_options.get('features')
+    if not isinstance(raw_feature_map, dict):
+        raw_feature_map = {}
+
+    merged_features = dict(raw_feature_map)
+    for key in FEATURE_FLAG_KEYS:
+        value = None
+        if key in raw_options:
+            value = raw_options.get(key)
+        elif key in raw_feature_map:
+            value = raw_feature_map.get(key)
+
+        if isinstance(value, bool):
+            merged_features[key] = value
+
+    if 'port_range' in raw_options:
+        merged_features['port_range'] = raw_options.get('port_range')
+    elif 'port_range' in raw_feature_map:
+        merged_features['port_range'] = raw_feature_map.get('port_range')
+
+    if merged_features:
+        normalized['features'] = merged_features
+
+    return normalized
+
 def init_db():
     """Initialize the SQLite database."""
     conn = sqlite3.connect(DB_FILE)
@@ -121,7 +187,7 @@ def start_scan():
     if not data:
         return jsonify({"status": "error", "message": "Invalid JSON body"}), 400
     subnet = data.get('subnet')
-    options = data.get('options', {}) # Extract options
+    options = normalize_scan_options(data)
     
     if not subnet:
         return jsonify({"status": "error", "message": "Subnet required"}), 400
@@ -244,7 +310,7 @@ def delete_history_item(scan_id):
         return jsonify({"error": str(e)}), 500
 
 def run_scan_background(subnet, options=None):
-    scan_type = (options or {}).get('scan_type', 'deep')
+    scan_type = (options or {}).get('profile') or (options or {}).get('scan_type', 'deep')
     logger.info(f"[SCAN] Background scan starting: subnet={subnet}, type={scan_type}")
     bg_start = time.time()
     try:

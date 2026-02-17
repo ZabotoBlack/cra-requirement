@@ -1,13 +1,28 @@
 export enum ComplianceStatus {
+  DISCOVERED = 'Discovered',
   COMPLIANT = 'Compliant',
   WARNING = 'Warning',
   NON_COMPLIANT = 'Non-Compliant'
 }
 
+export interface ScanFeatureFlags {
+  network_discovery?: boolean;
+  port_scan?: boolean;
+  os_detection?: boolean;
+  service_version?: boolean;
+  netbios_info?: boolean;
+  compliance_checks?: boolean;
+  auth_brute_force?: boolean;
+  web_crawling?: boolean;
+  port_range?: string;
+}
+
 export interface ScanOptions {
   scan_type: 'discovery' | 'standard' | 'deep';
-  auth_checks: boolean;
-  vendors: string[] | 'all';
+  profile?: 'discovery' | 'standard' | 'deep';
+  auth_checks?: boolean;
+  vendors?: string[] | 'all';
+  features?: ScanFeatureFlags;
 }
 
 
@@ -36,14 +51,14 @@ export interface Device {
   model?: string;
   hostname: string;
   source?: string;
-  status: ComplianceStatus;
+  status: ComplianceStatus | string;
   attackSurface?: {
     score: number;
     rating: 'Low' | 'Medium' | 'High';
     openPortsCount: number;
     details: string;
   };
-  checks: {
+  checks: Partial<{
     secureByDefault: {
       passed: boolean;
       details: string; // e.g., "Default credentials admin/admin found"
@@ -100,7 +115,7 @@ export interface Device {
       syslog_probe_state: string;
       logging_endpoints: string[];
     };
-  };
+  }>;
   lastScanned: string;
   osMatch: string;
   openPorts: PortScan[];

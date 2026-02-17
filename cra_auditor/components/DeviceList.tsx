@@ -13,10 +13,15 @@ const DeviceRow: React.FC<{ device: Device }> = ({ device }) => {
   const [advice, setAdvice] = useState<string | null>(null);
 
   const statusColor = {
+    [ComplianceStatus.DISCOVERED]: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
     [ComplianceStatus.COMPLIANT]: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
     [ComplianceStatus.WARNING]: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
     [ComplianceStatus.NON_COMPLIANT]: 'text-rose-400 bg-rose-500/10 border-rose-500/20',
   };
+
+  const secureByDefault = device.checks?.secureByDefault;
+  const dataConfidentiality = device.checks?.dataConfidentiality;
+  const vulnerabilities = device.checks?.vulnerabilities;
 
   const handleGetAdvice = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -47,7 +52,7 @@ const DeviceRow: React.FC<{ device: Device }> = ({ device }) => {
         <td className="p-4 text-slate-300">{device.vendor}</td>
         <td className="p-4 font-mono text-sm text-slate-400">{device.mac}</td>
         <td className="p-4">
-          <span className={`px-3 py-1 rounded-full text-xs font-medium border ${statusColor[device.status]}`}>
+          <span className={`px-3 py-1 rounded-full text-xs font-medium border ${statusColor[device.status as ComplianceStatus] || 'text-slate-300 bg-slate-500/10 border-slate-500/20'}`}>
             {device.status}
           </span>
         </td>
@@ -67,14 +72,14 @@ const DeviceRow: React.FC<{ device: Device }> = ({ device }) => {
                   <h4 className="font-medium text-slate-200">Secure Defaults</h4>
                 </div>
                 <div className="flex items-center gap-2 mb-1">
-                  {device.checks.secureByDefault.passed
+                  {secureByDefault?.passed
                     ? <CheckCircle size={16} className="text-emerald-500" />
                     : <XCircle size={16} className="text-rose-500" />}
-                  <span className={`text-sm ${device.checks.secureByDefault.passed ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {device.checks.secureByDefault.passed ? 'Passed' : 'Failed'}
+                  <span className={`text-sm ${secureByDefault?.passed ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {secureByDefault?.passed ? 'Passed' : 'Failed'}
                   </span>
                 </div>
-                <p className="text-xs text-slate-500">{device.checks.secureByDefault.details}</p>
+                <p className="text-xs text-slate-500">{secureByDefault?.details || 'Not evaluated for this scan profile.'}</p>
               </div>
 
               {/* Check 2: Confidentiality */}
@@ -84,14 +89,14 @@ const DeviceRow: React.FC<{ device: Device }> = ({ device }) => {
                   <h4 className="font-medium text-slate-200">Encryption</h4>
                 </div>
                 <div className="flex items-center gap-2 mb-1">
-                  {device.checks.dataConfidentiality.passed
+                  {dataConfidentiality?.passed
                     ? <CheckCircle size={16} className="text-emerald-500" />
                     : <AlertTriangle size={16} className="text-amber-500" />}
-                  <span className={`text-sm ${device.checks.dataConfidentiality.passed ? 'text-emerald-400' : 'text-amber-400'}`}>
-                    {device.checks.dataConfidentiality.passed ? 'Passed' : 'Warning'}
+                  <span className={`text-sm ${dataConfidentiality?.passed ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {dataConfidentiality?.passed ? 'Passed' : 'Warning'}
                   </span>
                 </div>
-                <p className="text-xs text-slate-500">{device.checks.dataConfidentiality.details}</p>
+                <p className="text-xs text-slate-500">{dataConfidentiality?.details || 'Not evaluated for this scan profile.'}</p>
               </div>
 
               {/* Check 3: CVEs */}
@@ -101,27 +106,27 @@ const DeviceRow: React.FC<{ device: Device }> = ({ device }) => {
                   <h4 className="font-medium text-slate-200">Vulnerabilities</h4>
                 </div>
                 <div className="flex items-center gap-2 mb-1">
-                  {device.checks.vulnerabilities.passed
+                  {vulnerabilities?.passed
                     ? <CheckCircle size={16} className="text-emerald-500" />
                     : <XCircle size={16} className="text-rose-500" />}
-                  <span className={`text-sm ${device.checks.vulnerabilities.passed ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {device.checks.vulnerabilities.passed ? 'Passed' : 'Critical Found'}
+                  <span className={`text-sm ${vulnerabilities?.passed ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {vulnerabilities?.passed ? 'Passed' : 'Critical Found'}
                   </span>
                 </div>
                 <div className="text-xs text-slate-500">
-                  {device.checks.vulnerabilities.cpe && (
-                    <p className="text-indigo-400 mb-1 break-all">CPE: {device.checks.vulnerabilities.cpe}</p>
+                  {vulnerabilities?.cpe && (
+                    <p className="text-indigo-400 mb-1 break-all">CPE: {vulnerabilities.cpe}</p>
                   )}
-                  {device.checks.vulnerabilities.details && (
-                    <p className="mb-1">{device.checks.vulnerabilities.details}</p>
+                  {vulnerabilities?.details && (
+                    <p className="mb-1">{vulnerabilities.details}</p>
                   )}
-                  {device.checks.vulnerabilities.cves.length > 0 ? (
+                  {vulnerabilities?.cves && vulnerabilities.cves.length > 0 ? (
                     <ul className="list-disc ml-4 space-y-1 mt-1">
-                      {device.checks.vulnerabilities.cves.map(cve => (
+                      {vulnerabilities.cves.map(cve => (
                         <li key={cve.id} className="text-rose-400">{cve.id} ({cve.severity})</li>
                       ))}
                     </ul>
-                  ) : "No known vulnerabilities found."}
+                  ) : (vulnerabilities ? "No known vulnerabilities found." : "Not evaluated for this scan profile.")}
                 </div>
               </div>
 

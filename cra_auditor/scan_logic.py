@@ -20,6 +20,53 @@ _FW_VERSION_RE = re.compile(
     re.IGNORECASE,
 )
 
+_FEATURE_FLAG_KEYS = {
+    "network_discovery",
+    "port_scan",
+    "os_detection",
+    "service_version",
+    "netbios_info",
+    "compliance_checks",
+    "auth_brute_force",
+    "web_crawling",
+}
+
+_SCAN_PROFILES = {
+    "discovery": {
+        "network_discovery": True,
+        "port_scan": False,
+        "os_detection": False,
+        "service_version": False,
+        "netbios_info": False,
+        "compliance_checks": False,
+        "auth_brute_force": False,
+        "web_crawling": False,
+        "port_range": "1-100",
+    },
+    "standard": {
+        "network_discovery": True,
+        "port_scan": True,
+        "os_detection": False,
+        "service_version": True,
+        "netbios_info": True,
+        "compliance_checks": True,
+        "auth_brute_force": False,
+        "web_crawling": True,
+        "port_range": "1-100",
+    },
+    "deep": {
+        "network_discovery": True,
+        "port_scan": True,
+        "os_detection": True,
+        "service_version": True,
+        "netbios_info": True,
+        "compliance_checks": True,
+        "auth_brute_force": True,
+        "web_crawling": True,
+        "port_range": "1-1024",
+    },
+}
+
 class CRAScanner:
     def __init__(self):
         self.nm = None
@@ -53,95 +100,156 @@ class CRAScanner:
         cpe_candidate = build_cpe(vendor_clean, product_name, version or "*")
         return match_cpe(cpe_candidate, self.nvd_client)
 
+    def _resolve_scan_features(self, options):
+        options = options or {}
+
+        requested_profile = (
+            options.get('profile')
+            or options.get('scan_type')
+            or options.get('type')
+            or 'deep'
+        )
+        profile_name = str(requested_profile).strip().lower()
+        if profile_name not in _SCAN_PROFILES:
+            profile_name = 'deep'
+
+        features = dict(_SCAN_PROFILES[profile_name])
+
+        raw_features = options.get('features')
+        if not isinstance(raw_features, dict):
+            raw_features = {}
+
+        for key in _FEATURE_FLAG_KEYS:
+            if key in options and isinstance(options.get(key), bool):
+                features[key] = options.get(key)
+            if key in raw_features and isinstance(raw_features.get(key), bool):
+                features[key] = raw_features.get(key)
+
+        if 'port_range' in raw_features:
+            features['port_range'] = raw_features.get('port_range')
+        if 'port_range' in options:
+            features['port_range'] = options.get('port_range')
+
+        # Backward compatibility: old auth_checks maps to auth_brute_force feature
+        if 'auth_checks' in options and isinstance(options.get('auth_checks'), bool):
+            features['auth_brute_force'] = options.get('auth_checks')
+
+        # Discovery profile is strict discovery-only by design.
+        if profile_name == 'discovery':
+            features['port_scan'] = False
+            features['compliance_checks'] = False
+
+        # Discovery stage is mandatory for this scanner architecture.
+        if not features.get('network_discovery', True):
+            logger.warning("[SCAN] network_discovery cannot be disabled; forcing enabled.")
+            features['network_discovery'] = True
+
+        return profile_name, features
+
+    def _skipped_check_result(self, reason):
+        return {"passed": True, "details": f"Skipped: {reason}."}
+
+    def _build_vendor_ports(self, selected_vendors):
+        vendor_ports = []
+        if selected_vendors == 'all' or 'tuya' in selected_vendors:
+            vendor_ports.append('6668')
+        if selected_vendors == 'all' or 'sonoff' in selected_vendors:
+            vendor_ports.append('8081')
+        if selected_vendors == 'all' or 'kasa' in selected_vendors:
+            vendor_ports.append('9999')
+        return vendor_ports
+
     def scan_subnet(self, subnet, options=None):
         """
-        Scans the given subnet for devices using a hybrid approach (Nmap + HA API).
-        
-        options: {
-            "scan_type": "discovery" | "standard" | "deep",
-            "auth_checks": bool,
-            "vendors": ["tuya", "shelly", "hue", "kasa", "sonoff", "ikea"] | "all"
+        Scans the given subnet using profile-driven modular stages.
+
+        Supported option styles:
+        - Legacy: {"scan_type": "discovery|standard|deep", "auth_checks": bool, "vendors": ...}
+        - New: {
+            "profile": "discovery|standard|deep",
+            "features": {
+                "network_discovery": bool,
+                "port_scan": bool,
+                "os_detection": bool,
+                "service_version": bool,
+                "netbios_info": bool,
+                "compliance_checks": bool,
+                "auth_brute_force": bool,
+                "web_crawling": bool
+            }
         }
         """
-        if options is None: options = {}
-        scan_type = options.get('scan_type', 'deep')
-        auth_checks = options.get('auth_checks', True)
-        selected_vendors = options.get('vendors', 'all') # 'all' or list of strings
+        options = options or {}
+        scan_type, features = self._resolve_scan_features(options)
+        selected_vendors = options.get('vendors', 'all')  # 'all' or list of strings
 
         scan_start = time.time()
-        total_stages = 4 if scan_type != 'discovery' else 3
+        total_stages = 1  # discovery
+        if features.get('port_scan'):
+            total_stages += 1
+        total_stages += 1  # merge
+        if features.get('compliance_checks'):
+            total_stages += 1
+
         logger.info("[SCAN] " + "=" * 56)
-        logger.info(f"[SCAN] Starting scan on {subnet} (type={scan_type}, auth_checks={auth_checks}, vendors={selected_vendors})")
+        logger.info(
+            f"[SCAN] Starting scan on {subnet} "
+            f"(profile={scan_type}, features={features}, vendors={selected_vendors})"
+        )
         logger.info("[SCAN] " + "-" * 56)
 
-        ha_devices = self._get_ha_devices() 
-        
-        if not self.nm:
-            logger.error("[SCAN] Nmap not initialized. Relying solely on Home Assistant data.")
-            return self._merge_devices([], ha_devices)
+        ha_devices = self._get_ha_devices()
 
         # Scanned devices accumulator (IP -> Device Dict)
         scanned_devices = {}
 
         # Stage 1: Discovery Scan (Ping + ARP)
-        logger.info(f"[SCAN] Stage 1/{total_stages}: Discovery scan (-sn -PR)...")
-        stage_start = time.time()
-        try:
-            self.nm.scan(hosts=subnet, arguments='-sn -PR')
-            self._update_scanned_devices(scanned_devices, discovery_phase=True)
-        except Exception as e:
-            logger.error(f"[SCAN] Nmap discovery scan failed: {e}")
-            return self._merge_devices([], ha_devices)
+        current_stage = 1
+        if self.nm and features.get('network_discovery'):
+            logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Discovery scan (-sn -PR)...")
+            stage_start = time.time()
+            try:
+                self.nm.scan(hosts=subnet, arguments='-sn -PR')
+                self._update_scanned_devices(scanned_devices, discovery_phase=True)
+            except Exception as e:
+                logger.error(f"[SCAN] Nmap discovery scan failed: {e}")
+            stage_elapsed = time.time() - stage_start
+            logger.info(f"[SCAN]   Found {len(scanned_devices)} live hosts in {stage_elapsed:.1f}s")
+            for ip, dev in scanned_devices.items():
+                logger.info(f"[SCAN]   -> {ip} (MAC: {dev.get('mac', 'Unknown')}, vendor: {dev.get('vendor', 'Unknown')})")
+        elif not self.nm:
+            logger.error("[SCAN] Nmap not initialized. Falling back to Home Assistant-only merge.")
+            # Avoid expensive/low-value compliance probes when discovery cannot run.
+            features['port_scan'] = False
+            features['compliance_checks'] = False
+        else:
+            logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Discovery disabled by feature flags (skipped).")
 
         hosts_to_scan = list(scanned_devices.keys())
-        stage_elapsed = time.time() - stage_start
-        logger.info(f"[SCAN]   Found {len(hosts_to_scan)} live hosts in {stage_elapsed:.1f}s")
-        for ip, dev in scanned_devices.items():
-            logger.info(f"[SCAN]   -> {ip} (MAC: {dev.get('mac', 'Unknown')}, vendor: {dev.get('vendor', 'Unknown')})")
 
         nmap_devices = []
-        
-        # If discovery only, skip detailed scan
-        current_stage = 2
-        if hosts_to_scan and scan_type != 'discovery':
-            # Stage 2: Detailed Scan
+
+        # Optional Stage 2: Detailed Scan
+        current_stage += 1
+        if hosts_to_scan and features.get('port_scan') and self.nm:
             logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Detailed port scan on {len(hosts_to_scan)} hosts...")
             stage_start = time.time()
-            
+
             target_spec = " ".join(hosts_to_scan)
-            
-            # Build Nmap Arguments based on Options
-            # Base arguments
-            nmap_args = "-Pn" # Treat as online
 
-            # Vendor Specific Ports (collected first to build unified port list)
-            vendor_ports = []
-            if selected_vendors == 'all' or 'tuya' in selected_vendors:
-                vendor_ports.append('6668')
-            if selected_vendors == 'all' or 'sonoff' in selected_vendors:
-                vendor_ports.append('8081')
-            if selected_vendors == 'all' or 'kasa' in selected_vendors:
-                vendor_ports.append('9999')
+            nmap_args = "-Pn"  # Treat as online
+            if features.get('service_version'):
+                nmap_args += " -sV"
+            if features.get('os_detection'):
+                nmap_args += " -O"
+            if features.get('netbios_info'):
+                nmap_args += " --script=nbstat"
 
-            # Scan Type Depth
-            # Note: --top-ports and -p conflict (nmap ignores --top-ports when -p is set).
-            # So we build a single -p specification that covers both.
-            if scan_type == 'deep':
-                nmap_args += " -sV -O --script=nbstat"
-                # Top 1000 ports + vendor ports
-                port_spec = "1-1024"
-                if vendor_ports:
-                    port_spec += "," + ",".join(vendor_ports)
-                nmap_args += f" -p {port_spec}"
-            elif scan_type == 'standard':
-                nmap_args += " -sV --script=nbstat"
-                # Top 100 ports approximation + vendor ports
-                port_spec = "1-100"
-                if vendor_ports:
-                    port_spec += "," + ",".join(vendor_ports)
-                nmap_args += f" -p {port_spec}"
-            else:
-                nmap_args += " -F" # Fast scan (top 100 ports) if unnamed type
+            port_spec = str(features.get('port_range') or "1-100")
+            vendor_ports = self._build_vendor_ports(selected_vendors)
+            if vendor_ports:
+                port_spec += "," + ",".join(vendor_ports)
+            nmap_args += f" -p {port_spec}"
             
             try:
                 logger.info(f"[SCAN]   Nmap args: {nmap_args}")
@@ -151,101 +259,129 @@ class CRAScanner:
                 logger.info(f"[SCAN]   Completed in {stage_elapsed:.1f}s -- updated {len(scanned_devices)} devices")
             except Exception as e:
                 logger.error(f"[SCAN] Nmap detail scan failed: {e}. Falling back to discovery results ({len(scanned_devices)} devices).")
-            current_stage += 1
+        elif features.get('port_scan') and not hosts_to_scan:
+            logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Detailed scan skipped (no discovered hosts).")
+        elif not features.get('port_scan'):
+            logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Detailed scan disabled by profile/features.")
         
         nmap_devices = list(scanned_devices.values())
 
         # Stage: HA Merge
+        current_stage += 1
         logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Merging with Home Assistant devices...")
         merged_devices = self._merge_devices(nmap_devices, ha_devices)
+
+        # Optional Stage: Compliance checks
         current_stage += 1
-        
-        # Stage: Compliance checks
         total_devices = len(merged_devices)
-        logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Compliance checks on {total_devices} devices...")
-        stage_start = time.time()
         final_results = []
-        for idx, dev in enumerate(merged_devices, 1):
-            check_vendor = dev.get('model') if dev.get('model') and dev.get('model') != "Unknown" else dev.get('vendor', 'Unknown')
-            if dev.get('manufacturer') and dev.get('manufacturer') != "Unknown":
-                 check_vendor = f"{dev['manufacturer']} {check_vendor}"
-            if check_vendor == "Unknown " or check_vendor.strip() == "Unknown":
-                 check_vendor = dev.get('vendor', 'Unknown')
 
-            dev_label = dev.get('hostname') or dev.get('ip', 'Unknown')
-            logger.info(f"[SCAN]   [{idx}/{total_devices}] {dev.get('ip', 'N/A')} ({check_vendor}) - {dev_label}")
+        if not features.get('compliance_checks'):
+            logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Compliance checks disabled by profile/features.")
+            for dev in merged_devices:
+                dev.update({
+                    "status": "Discovered",
+                    "checks": {},
+                    "attackSurface": self.calculate_attack_surface_score(dev.get('openPorts', [])),
+                    "lastScanned": "Just now"
+                })
+                final_results.append(dev)
+        else:
+            logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Compliance checks on {total_devices} devices...")
+            stage_start = time.time()
 
-            # Set resolved vendor for SBOM/firmware checks to use enriched data
-            dev['resolved_vendor'] = check_vendor
+            for idx, dev in enumerate(merged_devices, 1):
+                check_vendor = dev.get('model') if dev.get('model') and dev.get('model') != "Unknown" else dev.get('vendor', 'Unknown')
+                if dev.get('manufacturer') and dev.get('manufacturer') != "Unknown":
+                    check_vendor = f"{dev['manufacturer']} {check_vendor}"
+                if check_vendor == "Unknown " or check_vendor.strip() == "Unknown":
+                    check_vendor = dev.get('vendor', 'Unknown')
 
-            # ENHANCED CHECKS - Conditional
-            sbd_result = {"passed": True, "details": "Skipped auth checks."}
-            if auth_checks:
-                sbd_result = self.check_secure_by_default(dev)
-            
-            conf_result = self.check_confidentiality(dev.get('openPorts', []))
-            attack_surface = self.calculate_attack_surface_score(dev.get('openPorts', []))
-            https_result = self.check_https_redirect(dev)
-            vuln_result = self.check_vulnerabilities(check_vendor, dev.get('openPorts', []))
-            sbom_result = self.check_sbom_compliance(dev)
-            fw_result = self.check_firmware_tracking(dev)
-            sec_txt_result = self.check_security_txt(dev)
-            sec_log_result = self.check_security_logging(dev)
-            
-            # Vendor Specific Checks - Conditional
-            vendor_warnings = self._check_vendor_specifics(dev, selected_vendors)
-            if vendor_warnings:
-                if sbd_result['details'] == "Skipped auth checks.":
-                     sbd_result['details'] = ""
-                     
-                sbd_result['details'] += " " + "; ".join(vendor_warnings)
-                sbd_result['passed'] = False
-                
-            status = "Compliant"
-            if not sbd_result['passed'] or not https_result['passed'] or not vuln_result['passed'] or (not fw_result['passed'] and fw_result.get('version_cves')):
-                status = "Non-Compliant"
-            elif not conf_result['passed'] or not sbom_result['passed'] or not fw_result['passed'] or not sec_txt_result['passed'] or not sec_log_result['passed']:
-                status = "Warning"
-            elif attack_surface['rating'] == "High":
-                status = "Warning"
+                dev_label = dev.get('hostname') or dev.get('ip', 'Unknown')
+                logger.info(f"[SCAN]   [{idx}/{total_devices}] {dev.get('ip', 'N/A')} ({check_vendor}) - {dev_label}")
 
-            # Log per-device check results with pass/fail symbols
-            _p = lambda r: "pass" if r['passed'] else "FAIL"
-            logger.info(
-                f"[SCAN]     Secure={_p(sbd_result)}  Confid={_p(conf_result)}  "
-                f"AttackSurface={attack_surface['rating']}({attack_surface['openPortsCount']})  "
-                f"HTTPS={_p(https_result)}  CVE={_p(vuln_result)}  SBOM={_p(sbom_result)}  "
-                f"FW={_p(fw_result)}  SecTxt={_p(sec_txt_result)}  SecLog={_p(sec_log_result)}  => {status}"
-            )
+                # Set resolved vendor for SBOM/firmware checks to use enriched data
+                dev['resolved_vendor'] = check_vendor
 
-            dev.update({
-                "status": status,
-                "attackSurface": attack_surface,
-                "checks": {
-                    "secureByDefault": sbd_result,
-                    "dataConfidentiality": conf_result,
-                    "httpsOnlyManagement": https_result,
-                    "vulnerabilities": vuln_result,
-                    "sbomCompliance": sbom_result,
-                    "firmwareTracking": fw_result,
-                    "securityTxt": sec_txt_result,
-                    "securityLogging": sec_log_result
-                },
-                "lastScanned": "Just now"
-            })
-            final_results.append(dev)
+                sbd_result = self._skipped_check_result("auth brute-force checks disabled")
+                if features.get('auth_brute_force'):
+                    sbd_result = self.check_secure_by_default(dev)
 
-        stage_elapsed = time.time() - stage_start
+                conf_result = self.check_confidentiality(dev.get('openPorts', []))
+                attack_surface = self.calculate_attack_surface_score(dev.get('openPorts', []))
+
+                if features.get('web_crawling'):
+                    https_result = self.check_https_redirect(dev)
+                    sbom_result = self.check_sbom_compliance(dev)
+                    fw_result = self.check_firmware_tracking(dev)
+                    sec_txt_result = self.check_security_txt(dev)
+                    sec_log_result = self.check_security_logging(dev)
+                else:
+                    https_result = self._skipped_check_result("web crawling disabled")
+                    sbom_result = self._skipped_check_result("web crawling disabled")
+                    fw_result = self._skipped_check_result("web crawling disabled")
+                    sec_txt_result = self._skipped_check_result("web crawling disabled")
+                    sec_log_result = self._skipped_check_result("web crawling disabled")
+
+                vuln_result = self.check_vulnerabilities(check_vendor, dev.get('openPorts', []))
+
+                # Vendor specific probes are considered part of active web/auth probing.
+                vendor_warnings = []
+                if features.get('web_crawling'):
+                    vendor_warnings = self._check_vendor_specifics(dev, selected_vendors)
+
+                if vendor_warnings:
+                    if sbd_result['details'].startswith("Skipped"):
+                        sbd_result['details'] = ""
+                    sbd_result['details'] += " " + "; ".join(vendor_warnings)
+                    sbd_result['passed'] = False
+
+                status = "Compliant"
+                if not sbd_result['passed'] or not https_result['passed'] or not vuln_result['passed'] or (not fw_result['passed'] and fw_result.get('version_cves')):
+                    status = "Non-Compliant"
+                elif not conf_result['passed'] or not sbom_result['passed'] or not fw_result['passed'] or not sec_txt_result['passed'] or not sec_log_result['passed']:
+                    status = "Warning"
+                elif attack_surface['rating'] == "High":
+                    status = "Warning"
+
+                _p = lambda r: "pass" if r.get('passed') else "FAIL"
+                logger.info(
+                    f"[SCAN]     Secure={_p(sbd_result)}  Confid={_p(conf_result)}  "
+                    f"AttackSurface={attack_surface['rating']}({attack_surface['openPortsCount']})  "
+                    f"HTTPS={_p(https_result)}  CVE={_p(vuln_result)}  SBOM={_p(sbom_result)}  "
+                    f"FW={_p(fw_result)}  SecTxt={_p(sec_txt_result)}  SecLog={_p(sec_log_result)}  => {status}"
+                )
+
+                dev.update({
+                    "status": status,
+                    "attackSurface": attack_surface,
+                    "checks": {
+                        "secureByDefault": sbd_result,
+                        "dataConfidentiality": conf_result,
+                        "httpsOnlyManagement": https_result,
+                        "vulnerabilities": vuln_result,
+                        "sbomCompliance": sbom_result,
+                        "firmwareTracking": fw_result,
+                        "securityTxt": sec_txt_result,
+                        "securityLogging": sec_log_result
+                    },
+                    "lastScanned": "Just now"
+                })
+                final_results.append(dev)
+
+            stage_elapsed = time.time() - stage_start
+
         total_elapsed = time.time() - scan_start
 
         # Final summary
-        compliant = sum(1 for d in final_results if d['status'] == 'Compliant')
-        warning = sum(1 for d in final_results if d['status'] == 'Warning')
-        non_compliant = sum(1 for d in final_results if d['status'] == 'Non-Compliant')
+        compliant = sum(1 for d in final_results if d.get('status') == 'Compliant')
+        warning = sum(1 for d in final_results if d.get('status') == 'Warning')
+        non_compliant = sum(1 for d in final_results if d.get('status') == 'Non-Compliant')
+        discovered = sum(1 for d in final_results if d.get('status') == 'Discovered')
         logger.info("[SCAN] " + "=" * 56)
         logger.info(
             f"[SCAN] Scan complete: {len(final_results)} devices "
-            f"({compliant} Compliant, {warning} Warning, {non_compliant} Non-Compliant) "
+            f"({compliant} Compliant, {warning} Warning, {non_compliant} Non-Compliant, {discovered} Discovered) "
             f"in {total_elapsed:.1f}s"
         )
         return final_results

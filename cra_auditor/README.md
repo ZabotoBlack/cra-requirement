@@ -10,6 +10,54 @@ A comprehensive Cyber Resilience Act (CRA) compliance scanner for your local net
 - **Compliance Reporting**: Categorizes devices based on EU Cyber Resilience Act standards.
 - **AI Integration**: Optional integration with Gemini AI for enhanced security advice.
 
+## Scan Profiles & Feature Flags
+
+The backend now supports modular scanning profiles and explicit feature flags via `/api/scan` options.
+
+### Profile Defaults
+- **discovery**
+	- Discovery only (`Ping/ARP`)
+	- `port_scan=false`, `compliance_checks=false`
+	- Returns device inventory (IP, MAC, vendor, hostname) without CRA check execution
+- **standard**
+	- `port_scan=true` (`1-100` + vendor-specific ports)
+	- `service_version=true`, `netbios_info=true`, `os_detection=false`
+	- `compliance_checks=true`, `auth_brute_force=false`, `web_crawling=true`
+- **deep**
+	- `port_scan=true` (`1-1024` + vendor-specific ports)
+	- `service_version=true`, `netbios_info=true`, `os_detection=true`
+	- `compliance_checks=true`, `auth_brute_force=true`, `web_crawling=true`
+
+### Supported Feature Flags
+- `network_discovery`
+- `port_scan`
+- `os_detection`
+- `service_version`
+- `netbios_info`
+- `compliance_checks`
+- `auth_brute_force`
+- `web_crawling`
+- `port_range` (optional override, e.g. `"1-512"`)
+
+### Example Payload
+
+```json
+{
+	"subnet": "192.168.1.0/24",
+	"options": {
+		"profile": "standard",
+		"vendors": "all",
+		"features": {
+			"auth_brute_force": false,
+			"web_crawling": true,
+			"port_range": "1-100"
+		}
+	}
+}
+```
+
+Legacy `scan_type` and `auth_checks` are still accepted and mapped to the new model server-side.
+
 ## Permissions & Security
 This add-on requires elevated permissions to function correctly:
 - **`privileged`**: Configured as a list of Linux capabilities (e.g., `NET_ADMIN`, `NET_RAW`) in `config.yaml`. These are granted instead of full privileged mode to enable low-level network operations like ARP scanning and raw socket access.

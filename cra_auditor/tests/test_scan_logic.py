@@ -438,7 +438,7 @@ class TestCRAScanner(unittest.TestCase):
         self.scanner.nm.__getitem__.return_value = mock_host_data
 
         results = self.scanner.scan_subnet("192.168.1.0/24", {
-            "scan_type": "discovery",
+            "scan_type": "standard",
             "auth_checks": True
         })
 
@@ -548,7 +548,7 @@ class TestCRAScanner(unittest.TestCase):
         self.scanner.nm.__getitem__.return_value = mock_host_data
 
         results = self.scanner.scan_subnet("192.168.1.0/24", {
-            "scan_type": "discovery",
+            "scan_type": "standard",
             "auth_checks": True
         })
 
@@ -785,7 +785,7 @@ class TestSBOMCheck(unittest.TestCase):
         self.scanner.nm.__getitem__.return_value = mock_host_data
 
         results = self.scanner.scan_subnet("192.168.1.0/24", {
-            "scan_type": "discovery",
+            "scan_type": "standard",
             "auth_checks": False
         })
 
@@ -919,7 +919,7 @@ class TestFirmwareTracking(unittest.TestCase):
         self.scanner.nm.__getitem__.return_value = mock_host_data
 
         results = self.scanner.scan_subnet("192.168.1.0/24", {
-            "scan_type": "discovery",
+            "scan_type": "standard",
             "auth_checks": False
         })
 
