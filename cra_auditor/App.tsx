@@ -9,6 +9,89 @@ import TechButton from './components/ui/TechButton';
 import { startScan, getScanStatus, getReport, getConfig, getHistoryDetail } from './services/api';
 import { ScanReport, ViewState, ScanOptions, FrontendConfig } from './types';
 
+const isValidIPv4Address = (address: string): boolean => {
+  const parts = address.split('.');
+  if (parts.length !== 4) return false;
+
+  return parts.every((part) => {
+    if (!/^\d+$/.test(part)) return false;
+    if (part.length > 1 && part.startsWith('0')) return false;
+    const value = Number(part);
+    return Number.isInteger(value) && value >= 0 && value <= 255;
+  });
+};
+
+const parseIPv6Section = (section: string, allowEmbeddedIPv4: boolean): { valid: boolean; count: number } => {
+  if (!section) return { valid: true, count: 0 };
+
+  const blocks = section.split(':');
+  let count = 0;
+
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (!block) return { valid: false, count: 0 };
+
+    const isLastBlock = index === blocks.length - 1;
+    if (allowEmbeddedIPv4 && isLastBlock && block.includes('.')) {
+      if (!isValidIPv4Address(block)) return { valid: false, count: 0 };
+      count += 2;
+      continue;
+    }
+
+    if (!/^[0-9A-Fa-f]{1,4}$/.test(block)) return { valid: false, count: 0 };
+    count += 1;
+  }
+
+  return { valid: true, count };
+};
+
+const isValidIPv6Address = (address: string): boolean => {
+  if (!address || address.includes(':::')) return false;
+
+  const doubleColonParts = address.split('::');
+  if (doubleColonParts.length > 2) return false;
+
+  if (doubleColonParts.length === 1) {
+    const parsed = parseIPv6Section(doubleColonParts[0], true);
+    return parsed.valid && parsed.count === 8;
+  }
+
+  const [leftSection, rightSection] = doubleColonParts;
+  if (leftSection.includes('.') && rightSection.length > 0) return false;
+
+  const leftParsed = parseIPv6Section(leftSection, rightSection.length === 0);
+  const rightParsed = parseIPv6Section(rightSection, true);
+
+  if (!leftParsed.valid || !rightParsed.valid) return false;
+
+  const totalBlocks = leftParsed.count + rightParsed.count;
+  return totalBlocks < 8;
+};
+
+const isValidCidrSubnet = (value: string): boolean => {
+  const trimmedValue = value.trim();
+  const slashPosition = trimmedValue.lastIndexOf('/');
+
+  if (slashPosition <= 0 || slashPosition === trimmedValue.length - 1) return false;
+
+  const address = trimmedValue.slice(0, slashPosition);
+  const prefixPart = trimmedValue.slice(slashPosition + 1);
+
+  if (!/^\d+$/.test(prefixPart)) return false;
+
+  const prefix = Number(prefixPart);
+
+  if (isValidIPv4Address(address)) {
+    return prefix >= 0 && prefix <= 32;
+  }
+
+  if (isValidIPv6Address(address)) {
+    return prefix >= 0 && prefix <= 128;
+  }
+
+  return false;
+};
+
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>('dashboard');
   const [scanning, setScanning] = useState(false);
@@ -17,6 +100,7 @@ const App: React.FC = () => {
   const [scanError, setScanError] = useState<string | null>(null);
   const [config, setConfig] = useState<FrontendConfig | null>(null);
   const [subnet, setSubnet] = useState('');
+  const [isSubnetFocused, setIsSubnetFocused] = useState(false);
 
   const [scanOptions, setScanOptions] = useState<ScanOptions>({
     scan_type: 'deep',
@@ -36,8 +120,10 @@ const App: React.FC = () => {
     viewRef.current = view;
   }, [view]);
 
-  const cidrRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(?:3[0-2]|[12]?[0-9])$/;
-  const isValidSubnet = cidrRegex.test(subnet);
+  const normalizedSubnet = subnet.trim();
+  const isValidSubnet = isValidCidrSubnet(normalizedSubnet);
+  const hasSubnetInput = normalizedSubnet.length > 0;
+  const showSubnetHelper = isSubnetFocused || hasSubnetInput;
 
   const fetchData = useCallback(async () => {
     const statusData = await getScanStatus();
@@ -73,11 +159,16 @@ const App: React.FC = () => {
   }, [sidebarExpanded]);
 
   const handleScan = async () => {
+    if (!isValidSubnet) {
+      setScanError('Invalid CIDR format. Use IPv4 (e.g. 192.168.1.0/24) or IPv6 (e.g. 2001:db8::/64).');
+      return;
+    }
+
     try {
       setScanning(true);
       setScanError(null);
       setView('dashboard');
-      await startScan(subnet, scanOptions);
+      await startScan(normalizedSubnet, scanOptions);
     } catch (e) {
       console.error(e);
       setScanning(false);
@@ -152,7 +243,7 @@ const App: React.FC = () => {
       <main className={`flex-1 p-5 transition-all duration-300 md:p-7 ${sidebarExpanded ? 'ml-64' : 'ml-20'}`}>
         <div className="space-y-6">
           <GlassCard className="sticky top-5 z-20 rounded-2xl px-5 py-4 md:px-6">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div className="flex min-w-0 items-center gap-3 md:gap-4">
                 <div>
                   <h1 className="text-lg font-bold tracking-tight text-white md:text-xl">CRA Auditor Command</h1>
@@ -161,14 +252,17 @@ const App: React.FC = () => {
                 <StatusBadge label={scanning ? 'Scan Active' : 'Idle'} tone={scanning ? 'info' : 'success'} pulse={scanning} />
               </div>
 
-              <div className="flex flex-col gap-3 md:flex-row md:items-center">
-                <div className="flex min-w-[260px] items-center rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 py-2">
+              <div className="flex flex-col gap-2 md:items-end">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                  <div className={`flex min-w-[260px] items-center rounded-xl border bg-slate-900/70 px-3 py-2 transition ${hasSubnetInput ? (isValidSubnet ? 'border-emerald-400/50' : 'border-rose-400/50') : (isSubnetFocused ? 'border-cyan-400/50' : 'border-slate-700/80')}`}>
                   <input
                     type="text"
                     value={subnet}
                     onChange={(e) => setSubnet(e.target.value)}
+                    onFocus={() => setIsSubnetFocused(true)}
+                    onBlur={() => setIsSubnetFocused(false)}
                     className="w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500"
-                    placeholder="Target CIDR (e.g. 192.168.1.0/24)"
+                    placeholder="Target CIDR (e.g. 192.168.1.0/24 or 2001:db8::/64)"
                   />
                 </div>
                 <TechButton onClick={() => setShowSettings(true)} disabled={scanning} variant="secondary">
@@ -179,12 +273,23 @@ const App: React.FC = () => {
                   {scanning ? <RotateCw className="animate-spin" size={15} /> : <Play size={15} />}
                   {scanning ? 'Scanning' : 'Start Scan'}
                 </TechButton>
+                </div>
+
+                {showSubnetHelper && (
+                  <div className={`w-full rounded-lg border px-3 py-2 text-xs md:max-w-[540px] ${hasSubnetInput ? (isValidSubnet ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200' : 'border-rose-400/30 bg-rose-500/10 text-rose-200') : 'border-slate-700/70 bg-slate-900/60 text-slate-300'}`}>
+                    {!hasSubnetInput && (
+                      <p>CIDR only. Enter a subnet, not a single host IP.</p>
+                    )}
+                    {hasSubnetInput && isValidSubnet && (
+                      <p>Valid subnet target. Ready to start scan.</p>
+                    )}
+                    {hasSubnetInput && !isValidSubnet && (
+                      <p>Invalid CIDR. Use IPv4 like 192.168.1.0/24 or IPv6 like 2001:db8::/64.</p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
-
-            {!isValidSubnet && subnet.length > 0 && (
-              <p className="mt-2 text-sm text-rose-300">Invalid CIDR format (example: 192.168.1.0/24).</p>
-            )}
 
             {report && view !== 'history' && (
               <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-700/70 pt-3">
@@ -220,7 +325,7 @@ const App: React.FC = () => {
                 </div>
               </GlassCard>
             ) : (
-              <div className="relative">
+              <div className={`relative ${scanning && !report && view !== 'history' ? 'min-h-[360px]' : ''}`}>
                 {view === 'dashboard' && report && <Dashboard report={report} geminiEnabled={config?.gemini_enabled} nvdEnabled={config?.nvd_enabled} />}
                 {view === 'devices' && report && <DeviceList devices={report.devices} />}
                 {view === 'history' && <HistoryView onViewReport={handleViewReport} />}

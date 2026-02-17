@@ -7,6 +7,7 @@ import threading
 import time
 import sqlite3
 import json
+import ipaddress
 from datetime import datetime
 from pathlib import Path
 from scan_logic import CRAScanner
@@ -247,12 +248,15 @@ def start_scan():
         return jsonify({"status": "error", "message": "Invalid JSON body"}), 400
     subnet = data.get('subnet')
     options = normalize_scan_options(data)
-    
-    if not subnet:
+
+    if not isinstance(subnet, str) or not subnet.strip():
         return jsonify({"status": "error", "message": "Subnet required"}), 400
-    
-    # Basic CIDR/IP validation
-    if not re.match(r'^[\d./\-]+$', subnet):
+
+    subnet = subnet.strip()
+
+    try:
+        ipaddress.ip_network(subnet, strict=False)
+    except ValueError:
         return jsonify({"status": "error", "message": "Invalid subnet format"}), 400
     
     # Atomic lock: only one scan at a time across all workers

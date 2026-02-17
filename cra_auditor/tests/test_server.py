@@ -78,6 +78,24 @@ class TestServer(unittest.TestCase):
         mock_thread.assert_called_once()
         mock_thread_instance.start.assert_called_once()
 
+    @patch('server.threading.Thread')
+    def test_scan_start_ipv6_subnet(self, mock_thread):
+        """Test starting a scan with an IPv6 CIDR subnet."""
+        mock_thread_instance = MagicMock()
+        mock_thread.return_value = mock_thread_instance
+
+        payload = {
+            'subnet': '2001:db8::/64',
+            'options': {'discovery': True}
+        }
+        response = self.app.post('/api/scan', json=payload)
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(data['status'], 'success')
+
+        mock_thread.assert_called_once()
+        mock_thread_instance.start.assert_called_once()
+
     def test_scan_start_missing_subnet(self):
         """Test starting a scan without subnet."""
         response = self.app.post('/api/scan', json={})
@@ -143,6 +161,13 @@ class TestServer(unittest.TestCase):
     def test_scan_invalid_subnet_format(self):
         """Test that invalid subnet formats are rejected."""
         response = self.app.post('/api/scan', json={'subnet': 'DROP TABLE; --'})
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertIn('Invalid subnet format', data['message'])
+
+    def test_scan_invalid_ipv6_prefix_rejected(self):
+        """Test that invalid IPv6 CIDR prefixes are rejected."""
+        response = self.app.post('/api/scan', json={'subnet': '2001:db8::/129'})
         self.assertEqual(response.status_code, 400)
         data = json.loads(response.data)
         self.assertIn('Invalid subnet format', data['message'])
