@@ -1,3 +1,8 @@
+.claude/
+.devcontainer/
+.venv/
+.vscode/
 cra_auditor/__pycache__/
+Claude.md
 GEMINI.md
 .agent/
