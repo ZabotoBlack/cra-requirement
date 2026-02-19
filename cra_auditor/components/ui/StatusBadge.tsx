@@ -7,11 +7,11 @@ interface StatusBadgeProps {
 }
 
 const toneClasses: Record<NonNullable<StatusBadgeProps['tone']>, string> = {
-  success: 'text-emerald-300 border-emerald-400/30 bg-emerald-500/10',
-  warning: 'text-amber-300 border-amber-400/30 bg-amber-500/10',
-  danger: 'text-rose-300 border-rose-400/30 bg-rose-500/10',
-  info: 'text-cyan-300 border-cyan-400/30 bg-cyan-500/10',
-  neutral: 'text-slate-300 border-slate-500/30 bg-slate-500/10',
+  success: 'text-[var(--badge-success-text)] border-[var(--badge-success-border)] bg-[var(--badge-success-bg)]',
+  warning: 'text-[var(--badge-warning-text)] border-[var(--badge-warning-border)] bg-[var(--badge-warning-bg)]',
+  danger: 'text-[var(--badge-danger-text)] border-[var(--badge-danger-border)] bg-[var(--badge-danger-bg)]',
+  info: 'text-[var(--badge-info-text)] border-[var(--badge-info-border)] bg-[var(--badge-info-bg)]',
+  neutral: 'text-[var(--badge-neutral-text)] border-[var(--badge-neutral-border)] bg-[var(--badge-neutral-bg)]',
 };
 
 const StatusBadge: React.FC<StatusBadgeProps> = ({ label, tone = 'neutral', pulse = false }) => {

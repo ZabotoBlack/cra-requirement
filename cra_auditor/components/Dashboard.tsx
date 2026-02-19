@@ -72,11 +72,11 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
         <GlassCard className="rounded-2xl p-5 xl:col-span-2">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm uppercase tracking-wider text-slate-300">Total Devices</p>
-              <h3 className="mt-1 text-3xl font-bold text-white">{report.summary.total}</h3>
-              <p className="mt-1 text-sm text-slate-300">Target: {report.targetRange}</p>
+              <p className="text-muted text-sm uppercase tracking-wider">Total Devices</p>
+              <h3 className="text-main mt-1 text-3xl font-bold">{report.summary.total}</h3>
+              <p className="text-muted mt-1 text-sm">Target: {report.targetRange}</p>
             </div>
-            <div className="rounded-full border border-cyan-400/35 bg-cyan-500/10 p-3 text-cyan-200">
+            <div className="accent-ring rounded-full border p-3">
               <ShieldQuestion size={22} />
             </div>
           </div>
@@ -90,10 +90,10 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
         <GlassCard className="rounded-2xl p-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm uppercase tracking-wider text-slate-300">AI Insight</p>
-              <h3 className="mt-1 text-xl font-bold text-white">{geminiEnabled ? 'Operational' : 'Disabled'}</h3>
+              <p className="text-muted text-sm uppercase tracking-wider">AI Insight</p>
+              <h3 className="text-main mt-1 text-xl font-bold">{geminiEnabled ? 'Operational' : 'Disabled'}</h3>
             </div>
-            <Sparkles className={geminiEnabled ? 'text-violet-300 neon-text' : 'text-slate-500'} size={20} />
+            <Sparkles className={geminiEnabled ? 'accent-text neon-text' : 'text-soft'} size={20} />
           </div>
           <div className="mt-3 flex gap-2">
             <StatusBadge label={geminiEnabled ? 'Gemini Online' : 'No API key'} tone={geminiEnabled ? 'success' : 'warning'} />
@@ -104,31 +104,31 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
         <GlassCard className="rounded-2xl p-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm uppercase tracking-wider text-slate-300">Warning Devices</p>
-              <h3 className="mt-1 text-2xl font-bold text-amber-200">{report.summary.warning}</h3>
+              <p className="text-muted text-sm uppercase tracking-wider">Warning Devices</p>
+              <h3 className="mt-1 text-2xl font-bold text-[var(--badge-warning-text)]">{report.summary.warning}</h3>
             </div>
-            <AlertTriangle size={20} className="text-amber-300" />
+            <AlertTriangle size={20} className="text-[var(--badge-warning-text)]" />
           </div>
         </GlassCard>
 
         <GlassCard className="rounded-2xl p-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm uppercase tracking-wider text-slate-300">Compliant Devices</p>
-              <h3 className="mt-1 text-2xl font-bold text-emerald-200">{report.summary.compliant}</h3>
+              <p className="text-muted text-sm uppercase tracking-wider">Compliant Devices</p>
+              <h3 className="mt-1 text-2xl font-bold text-[var(--badge-success-text)]">{report.summary.compliant}</h3>
             </div>
-            <ShieldCheck size={20} className="text-emerald-300" />
+            <ShieldCheck size={20} className="text-[var(--badge-success-text)]" />
           </div>
         </GlassCard>
       </div>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         <GlassCard className="rounded-2xl p-5 xl:col-span-1">
-          <p className="text-sm uppercase tracking-wider text-slate-300">Compliance Score</p>
+          <p className="text-muted text-sm uppercase tracking-wider">Compliance Score</p>
           <div className="mt-4 flex items-center justify-center">
             <div className="relative h-44 w-44">
               <svg viewBox="0 0 140 140" className="h-full w-full -rotate-90">
-                <circle cx="70" cy="70" r="52" fill="transparent" stroke="rgba(148,163,184,0.15)" strokeWidth="12" />
+                <circle cx="70" cy="70" r="52" fill="transparent" stroke="var(--border-subtle)" strokeWidth="12" />
                 <circle
                   cx="70"
                   cy="70"
@@ -142,16 +142,16 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <p className="font-mono text-4xl font-bold text-white">{complianceScore}%</p>
-                <p className="text-sm uppercase tracking-widest text-slate-300">Compliance</p>
+                <p className="text-main font-mono text-4xl font-bold">{complianceScore}%</p>
+                <p className="text-muted text-sm uppercase tracking-widest">Compliance</p>
               </div>
             </div>
           </div>
-          <p className="mt-2 text-center text-sm text-slate-300">Score is based on compliant devices versus scanned inventory.</p>
+          <p className="text-muted mt-2 text-center text-sm">Score is based on compliant devices versus scanned inventory.</p>
         </GlassCard>
 
         <GlassCard className="rounded-2xl p-5 xl:col-span-1">
-          <p className="text-sm uppercase tracking-wider text-slate-300">Risk Analysis</p>
+          <p className="text-muted text-sm uppercase tracking-wider">Risk Analysis</p>
           <div className="mt-4 space-y-3">
             {topVendors.length > 0 ? topVendors.map((item) => {
               const ratio = item.count / maxVendorCount;
@@ -160,10 +160,10 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
               return (
                 <div key={item.name}>
                   <div className="mb-1 flex items-center justify-between text-sm">
-                    <span className="truncate text-slate-300">{item.name}</span>
+                    <span className="text-muted truncate">{item.name}</span>
                     <StatusBadge label={`${item.count} risk`} tone={tone} />
                   </div>
-                  <div className="h-2 rounded-full bg-slate-800">
+                  <div className="h-2 rounded-full bg-[var(--border-subtle)]">
                     <div
                       className="h-2 rounded-full"
                       style={{
@@ -175,15 +175,15 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
                 </div>
               );
             }) : (
-              <p className="pt-8 text-center text-sm text-slate-500">No elevated vendor risk detected.</p>
+              <p className="text-soft pt-8 text-center text-sm">No elevated vendor risk detected.</p>
             )}
           </div>
         </GlassCard>
 
         <GlassCard className="rounded-2xl p-5 xl:col-span-1">
-          <p className="text-sm uppercase tracking-wider text-slate-300">Message from Command</p>
-          <div className="mt-3 rounded-xl border border-violet-400/25 bg-violet-500/10 p-4">
-            <p className="typing-cursor min-h-[110px] text-sm leading-relaxed text-violet-100">
+          <p className="text-muted text-sm uppercase tracking-wider">Message from Command</p>
+          <div className="accent-ring mt-3 rounded-xl border p-4">
+            <p className="typing-cursor min-h-[110px] text-main text-sm leading-relaxed">
               {typedText}
             </p>
           </div>

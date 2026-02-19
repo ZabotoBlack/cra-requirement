@@ -46,16 +46,16 @@ const BasicDashboard: React.FC<BasicDashboardProps> = ({ report }) => {
 
   return (
     <div className="space-y-5">
-      <GlassCard className="rounded-2xl border border-emerald-400/25 bg-emerald-500/5 p-6">
-        <p className="mb-4 text-xs font-semibold uppercase tracking-widest text-emerald-200">End User Overview</p>
+      <GlassCard className="rounded-2xl border border-[var(--color-accent-border)] p-6">
+        <p className="accent-text mb-4 text-xs font-semibold uppercase tracking-widest">End User Overview</p>
         <div className="flex flex-col items-center gap-3 text-center">
-          <div className={`inline-flex h-16 w-16 items-center justify-center rounded-full border ${hasAttentionRequired ? 'border-rose-400/40 bg-rose-500/15 text-rose-200' : 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200'}`}>
+          <div className={`inline-flex h-16 w-16 items-center justify-center rounded-full border ${hasAttentionRequired ? 'text-[var(--badge-danger-text)] border-[var(--badge-danger-border)] bg-[var(--badge-danger-bg)]' : 'text-[var(--badge-success-text)] border-[var(--badge-success-border)] bg-[var(--badge-success-bg)]'}`}>
             {hasAttentionRequired ? <AlertTriangle size={30} /> : <ShieldCheck size={30} />}
           </div>
-          <h2 className={`text-3xl font-bold ${hasAttentionRequired ? 'text-rose-200' : 'text-emerald-200'}`}>
+          <h2 className={`text-3xl font-bold ${hasAttentionRequired ? 'text-[var(--badge-danger-text)]' : 'text-[var(--badge-success-text)]'}`}>
             {hasAttentionRequired ? 'Attention Required' : 'System Secure'}
           </h2>
-          <p className="text-slate-300">{report.summary.total} devices scanned</p>
+          <p className="text-muted">{report.summary.total} devices scanned</p>
           <div className="flex flex-wrap justify-center gap-2">
             <StatusBadge label={`${report.summary.compliant} Compliant`} tone="success" />
             <StatusBadge label={`${report.summary.warning} Warning`} tone="warning" />
@@ -65,13 +65,13 @@ const BasicDashboard: React.FC<BasicDashboardProps> = ({ report }) => {
       </GlassCard>
 
       <GlassCard className="rounded-2xl p-5">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-300">Simple Issues</h3>
+        <h3 className="text-muted text-sm font-semibold uppercase tracking-wider">Simple Issues</h3>
         {issueSummary.length === 0 ? (
-          <p className="mt-3 text-sm text-emerald-200">No major issues detected in this scan.</p>
+          <p className="mt-3 text-sm text-[var(--badge-success-text)]">No major issues detected in this scan.</p>
         ) : (
-          <ul className="mt-3 space-y-2 text-sm text-slate-200">
+          <ul className="text-main mt-3 space-y-2 text-sm">
             {issueSummary.map((issue) => (
-              <li key={issue} className="rounded-lg border border-slate-700/70 bg-slate-900/70 px-3 py-2">{issue}</li>
+              <li key={issue} className="surface-card rounded-lg border px-3 py-2">{issue}</li>
             ))}
           </ul>
         )}

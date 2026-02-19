@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, ChevronsLeft, ChevronsRight, History, LayoutDashboard, List, Play, RotateCw, Settings, ShieldCheck, X } from 'lucide-react';
+import { Activity, AlertTriangle, ChevronsLeft, ChevronsRight, History, LayoutDashboard, List, Moon, Play, RotateCw, Settings, ShieldCheck, Sun, X } from 'lucide-react';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import DeviceList from './components/DeviceList';
 import HistoryView from './components/HistoryView';
@@ -96,26 +96,26 @@ const isValidCidrSubnet = (value: string): boolean => {
 };
 
 const USER_MODE_STORAGE_KEY = 'cra-user-mode';
+const THEME_STORAGE_KEY = 'cra-theme';
 
-const MODE_DISPLAY: Record<UserMode, { label: string; activeClass: string; inactiveClass: string; chipClass: string }> = {
+type ThemeMode = 'light' | 'dark';
+
+const MODE_DISPLAY: Record<UserMode, { label: string }> = {
   basic: {
-    label: 'End User',
-    activeClass: 'border-emerald-400/50 bg-emerald-500/20 text-emerald-100',
-    inactiveClass: 'border-slate-700 bg-slate-900/70 text-slate-300 hover:text-white',
-    chipClass: 'border-emerald-400/35 bg-emerald-500/10 text-emerald-200'
+    label: 'End User'
   },
   intermediate: {
-    label: 'Intermediate',
-    activeClass: 'border-cyan-400/50 bg-cyan-500/20 text-cyan-100',
-    inactiveClass: 'border-slate-700 bg-slate-900/70 text-slate-300 hover:text-white',
-    chipClass: 'border-cyan-400/35 bg-cyan-500/10 text-cyan-200'
+    label: 'Intermediate'
   },
   expert: {
-    label: 'Expert',
-    activeClass: 'border-violet-400/50 bg-violet-500/20 text-violet-100',
-    inactiveClass: 'border-slate-700 bg-slate-900/70 text-slate-300 hover:text-white',
-    chipClass: 'border-violet-400/35 bg-violet-500/10 text-violet-200'
+    label: 'Expert'
   }
+};
+
+const MODE_ACCENT: Record<UserMode, string> = {
+  basic: 'var(--color-emerald)',
+  intermediate: 'var(--color-cyan)',
+  expert: 'var(--color-violet)'
 };
 
 const App: React.FC = () => {
@@ -134,6 +134,14 @@ const App: React.FC = () => {
       return storedMode;
     }
     return 'intermediate';
+  });
+  const [theme, setTheme] = useState<ThemeMode>(() => {
+    if (typeof window === 'undefined') return 'dark';
+    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (storedTheme === 'light' || storedTheme === 'dark') {
+      return storedTheme;
+    }
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
   const [logs, setLogs] = useState<string[]>([]);
 
@@ -161,6 +169,7 @@ const App: React.FC = () => {
   const showSubnetHelper = isSubnetFocused || hasSubnetInput;
   const subnetLocked = userMode === 'basic';
   const canStartScan = !scanning && (userMode === 'basic' || isValidSubnet);
+  const accentColor = MODE_ACCENT[userMode];
 
   const fetchData = useCallback(async () => {
     const statusData = await getScanStatus();
@@ -207,6 +216,19 @@ const App: React.FC = () => {
       window.localStorage.setItem(USER_MODE_STORAGE_KEY, userMode);
     }
   }, [userMode]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    const root = document.documentElement;
+    root.classList.toggle('dark', theme === 'dark');
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    }
+  }, [theme]);
 
   useEffect(() => {
     if (userMode !== 'basic') {
@@ -295,23 +317,23 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="relative flex min-h-screen bg-transparent font-sans text-slate-200">
-      <aside className={`fixed inset-y-0 left-0 z-30 border-r border-slate-800/80 bg-slate-950/70 backdrop-blur-xl transition-all duration-300 ${sidebarExpanded ? 'w-64' : 'w-20'}`}>
+    <div className="app-shell relative flex min-h-screen font-sans" style={{ '--color-accent': accentColor } as React.CSSProperties}>
+      <aside className={`surface-panel fixed inset-y-0 left-0 z-30 border-r backdrop-blur-xl transition-all duration-300 ${sidebarExpanded ? 'w-64' : 'w-20'}`}>
         <div className={`flex h-full flex-col py-5 ${sidebarExpanded ? 'px-3' : 'items-center'}`}>
           <div className={`mb-6 flex items-center ${sidebarExpanded ? 'justify-between px-1' : 'flex-col gap-3'}`}>
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-emerald-400/30 bg-emerald-500/10 text-emerald-300 shadow-[0_0_20px_rgba(52,211,153,0.2)]">
+            <div className="accent-ring flex h-11 w-11 items-center justify-center rounded-xl border shadow-[0_0_20px_color-mix(in_srgb,var(--color-accent)_28%,transparent)]">
               <ShieldCheck size={22} />
             </div>
             {sidebarExpanded && (
               <div className="mr-auto ml-3 min-w-0">
-                <p className="truncate text-sm font-semibold text-white">CRA Auditor</p>
-                <p className="text-[11px] text-slate-400">Command UI</p>
+                <p className="text-main truncate text-sm font-semibold">CRA Auditor</p>
+                <p className="text-soft text-[11px]">Command UI</p>
               </div>
             )}
             <button
               onClick={() => setSidebarExpanded((prev) => !prev)}
               title={sidebarExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
-              className={`flex h-9 items-center rounded-lg border border-slate-700/70 bg-slate-900/60 text-slate-300 transition hover:border-slate-500 hover:text-white ${sidebarExpanded ? 'w-9 justify-center' : 'w-11 justify-center'}`}
+              className={`surface-card text-muted hover:text-main flex h-9 items-center rounded-lg border transition ${sidebarExpanded ? 'w-9 justify-center' : 'w-11 justify-center'}`}
             >
               {sidebarExpanded ? <ChevronsLeft size={16} /> : <ChevronsRight size={16} />}
             </button>
@@ -324,15 +346,15 @@ const App: React.FC = () => {
                 onClick={() => setView(id)}
                 title={label}
                 className={`group relative flex h-11 items-center rounded-xl border transition-all ${sidebarExpanded ? 'w-full justify-start gap-3 px-3' : 'w-11 justify-center'} ${view === id
-                  ? 'border-cyan-400/40 bg-cyan-500/15 text-cyan-200 shadow-[0_0_18px_rgba(34,211,238,0.18)]'
-                  : 'border-slate-700/70 bg-slate-900/60 text-slate-400 hover:border-slate-500 hover:text-white'
+                  ? 'accent-ring shadow-[0_0_18px_color-mix(in_srgb,var(--color-accent)_22%,transparent)]'
+                  : 'surface-card text-muted hover:text-main'
                   }`}
               >
                 <Icon size={18} />
                 {sidebarExpanded ? (
                   <span className="text-sm font-medium">{label}</span>
                 ) : (
-                  <span className="pointer-events-none absolute left-14 hidden rounded-md border border-slate-600/60 bg-slate-900/95 px-2 py-1 text-xs text-slate-200 group-hover:block">
+                  <span className="surface-elevated text-main pointer-events-none absolute left-14 hidden rounded-md border px-2 py-1 text-xs group-hover:block">
                     {label}
                   </span>
                 )}
@@ -340,33 +362,44 @@ const App: React.FC = () => {
             ))}
 
             {sidebarExpanded && (
-              <div className="mt-2 rounded-xl border border-slate-700/70 bg-slate-900/60 p-3">
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-widest text-slate-400">UI Mode</label>
+              <div className="surface-card mt-2 rounded-xl border p-3">
+                <label className="text-soft mb-2 block text-[11px] font-semibold uppercase tracking-widest">UI Mode</label>
                 <select
                   value={userMode}
                   disabled={scanning}
                   onChange={(event) => handleModeChange(event.target.value as UserMode)}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950/80 px-2 py-2 text-sm text-slate-100 outline-none transition hover:border-slate-500 focus:border-cyan-400/50 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="surface-elevated text-main w-full rounded-lg border px-2 py-2 text-sm outline-none transition focus:border-[var(--color-accent-border)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <option value="basic">End User</option>
                   <option value="intermediate">Intermediate</option>
                   <option value="expert">Expert</option>
                 </select>
-                <p className="mt-2 text-xs text-slate-400">Switch experience level from here at any time.</p>
+                <p className="text-soft mt-2 text-xs">Switch experience level from here at any time.</p>
               </div>
             )}
           </nav>
+
+          <div className={`mt-auto ${sidebarExpanded ? '' : 'w-full px-1'}`}>
+            <button
+              onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
+              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              className={`surface-card text-muted hover:text-main flex h-11 items-center rounded-xl border transition ${sidebarExpanded ? 'w-full justify-start gap-3 px-3' : 'mx-auto w-11 justify-center'}`}
+            >
+              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+              {sidebarExpanded && <span className="text-sm font-medium">{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>}
+            </button>
+          </div>
         </div>
       </aside>
 
       <main className={`flex-1 p-5 transition-all duration-300 md:p-7 ${sidebarExpanded ? 'ml-64' : 'ml-20'}`}>
         <div className="space-y-6">
-          <GlassCard className={`sticky top-5 z-20 rounded-2xl px-5 py-4 md:px-6 ${MODE_DISPLAY[userMode].chipClass}`}>
+          <GlassCard className="sticky top-5 z-20 rounded-2xl border border-[var(--color-accent-border)] px-5 py-4 md:px-6">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div className="flex min-w-0 items-center gap-3 md:gap-4">
                 <div>
-                  <h1 className="text-lg font-bold tracking-tight text-white md:text-xl">CRA Auditor Command</h1>
-                  <p className="text-sm text-slate-300">Live compliance intelligence for Home Assistant environments</p>
+                  <h1 className="text-main text-lg font-bold tracking-tight md:text-xl">CRA Auditor Command</h1>
+                  <p className="text-muted text-sm">Live compliance intelligence for Home Assistant environments</p>
                 </div>
                 <StatusBadge label={scanning ? 'Scan Active' : 'Idle'} tone={scanning ? 'info' : 'success'} pulse={scanning} />
                 <StatusBadge label={`Mode ${MODE_DISPLAY[userMode].label}`} tone="neutral" />
@@ -375,18 +408,18 @@ const App: React.FC = () => {
               <div className="flex flex-col gap-2 md:items-end">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center">
                   {subnetLocked ? (
-                    <div className="min-w-[260px] rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 py-2 text-sm text-slate-200">
+                    <div className="surface-elevated text-main min-w-[260px] rounded-xl border px-3 py-2 text-sm">
                       Auto Subnet: {subnet || 'Detecting...'}
                     </div>
                   ) : (
-                    <div className={`flex min-w-[260px] items-center rounded-xl border bg-slate-900/70 px-3 py-2 transition ${hasSubnetInput ? (isValidSubnet ? 'border-emerald-400/50' : 'border-rose-400/50') : (isSubnetFocused ? 'border-cyan-400/50' : 'border-slate-700/80')}`}>
+                    <div className={`surface-elevated flex min-w-[260px] items-center rounded-xl border px-3 py-2 transition ${hasSubnetInput ? (isValidSubnet ? 'border-emerald-500/50' : 'border-rose-500/55') : (isSubnetFocused ? 'border-[var(--color-accent-border)]' : '')}`}>
                       <input
                         type="text"
                         value={subnet}
                         onChange={(e) => setSubnet(e.target.value)}
                         onFocus={() => setIsSubnetFocused(true)}
                         onBlur={() => setIsSubnetFocused(false)}
-                        className="w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500"
+                        className="text-main w-full bg-transparent text-sm outline-none placeholder:text-[var(--text-soft)]"
                         placeholder="Target CIDR (e.g. 192.168.1.0/24 or 2001:db8::/64)"
                       />
                     </div>
@@ -402,7 +435,7 @@ const App: React.FC = () => {
                 </div>
 
                 {!subnetLocked && showSubnetHelper && (
-                  <div className={`w-full rounded-lg border px-3 py-2 text-xs md:max-w-[540px] ${hasSubnetInput ? (isValidSubnet ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200' : 'border-rose-400/30 bg-rose-500/10 text-rose-200') : 'border-slate-700/70 bg-slate-900/60 text-slate-300'}`}>
+                  <div className={`w-full rounded-lg border px-3 py-2 text-xs md:max-w-[540px] ${hasSubnetInput ? (isValidSubnet ? 'text-[var(--badge-success-text)] border-[var(--badge-success-border)] bg-[var(--badge-success-bg)]' : 'text-[var(--badge-danger-text)] border-[var(--badge-danger-border)] bg-[var(--badge-danger-bg)]') : 'surface-card text-muted'}`}>
                     {!hasSubnetInput && (
                       <p>CIDR only. Enter a subnet, not a single host IP.</p>
                     )}
@@ -418,7 +451,7 @@ const App: React.FC = () => {
             </div>
 
             {report && view !== 'history' && (
-              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-700/70 pt-3">
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--border-subtle)] pt-3">
                 <StatusBadge label={`Last Scan ${new Date(report.timestamp).toLocaleTimeString()}`} tone="neutral" />
                 {report.scanProfile && <StatusBadge label={`Profile ${report.scanProfile}`} tone="info" />}
                 <StatusBadge label={config?.gemini_enabled ? 'Gemini Online' : 'Gemini Disabled'} tone={config?.gemini_enabled ? 'success' : 'warning'} />
@@ -430,12 +463,12 @@ const App: React.FC = () => {
           {scanError && !scanning && (
             <GlassCard className="rounded-2xl p-4">
               <div className="flex items-start gap-3">
-                <AlertTriangle size={20} className="mt-0.5 shrink-0 text-rose-300" />
+                <AlertTriangle size={20} className="mt-0.5 shrink-0 text-[var(--badge-danger-text)]" />
                 <div>
-                  <h4 className="text-base font-semibold text-rose-200">Scan Failed</h4>
-                  <p className="text-sm text-slate-300">{scanError}</p>
+                  <h4 className="text-base font-semibold text-[var(--badge-danger-text)]">Scan Failed</h4>
+                  <p className="text-muted text-sm">{scanError}</p>
                 </div>
-                <button onClick={() => setScanError(null)} className="ml-auto text-slate-400 hover:text-white">
+                <button onClick={() => setScanError(null)} className="text-muted hover:text-main ml-auto">
                   <X size={16} />
                 </button>
               </div>
@@ -446,8 +479,8 @@ const App: React.FC = () => {
             {loading ? (
               <GlassCard className="rounded-2xl p-10">
                 <div className="flex h-[50vh] flex-col items-center justify-center gap-4">
-                  <RotateCw className="animate-spin text-cyan-300" size={40} />
-                  <p className="text-slate-300">Establishing command channel...</p>
+                  <RotateCw className="accent-text animate-spin" size={40} />
+                  <p className="text-muted">Establishing command channel...</p>
                 </div>
               </GlassCard>
             ) : (
@@ -461,11 +494,11 @@ const App: React.FC = () => {
                 {!report && view !== 'history' && !scanning && (
                   <GlassCard className="rounded-2xl p-10">
                     <div className="py-14 text-center">
-                      <div className="mx-auto mb-5 inline-flex h-14 w-14 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-500/10 text-cyan-200">
+                      <div className="accent-ring mx-auto mb-5 inline-flex h-14 w-14 items-center justify-center rounded-full border">
                         <ShieldCheck size={28} />
                       </div>
-                      <h3 className="text-xl font-bold text-white">Ready for Network Audit</h3>
-                      <p className="mx-auto mt-2 max-w-md text-sm text-slate-400">
+                      <h3 className="text-main text-xl font-bold">Ready for Network Audit</h3>
+                      <p className="text-soft mx-auto mt-2 max-w-md text-sm">
                         Enter a target subnet in the command bar and launch a scan to generate your CRA compliance report.
                       </p>
                     </div>
@@ -473,14 +506,14 @@ const App: React.FC = () => {
                 )}
 
                 {scanning && (
-                  <div className="absolute inset-0 z-20 rounded-2xl border border-cyan-500/20 bg-slate-950/75 p-6 backdrop-blur-sm">
+                  <div className="scan-overlay absolute inset-0 z-20 rounded-2xl border p-6 backdrop-blur-sm">
                     <div className="scan-grid absolute inset-0 rounded-2xl opacity-40" />
-                    <div className="relative h-full overflow-hidden rounded-xl border border-cyan-400/25 bg-slate-950/90 p-4 font-mono text-sm text-cyan-200">
-                      <div className="mb-3 flex items-center gap-2 border-b border-slate-700/70 pb-2">
-                        <Activity size={15} className="text-cyan-300" />
-                        <span className="uppercase tracking-widest text-cyan-200">Command Terminal</span>
+                    <div className="terminal-panel relative h-full overflow-hidden rounded-xl border p-4 font-mono text-sm text-[var(--color-accent)]">
+                      <div className="mb-3 flex items-center gap-2 border-b border-[var(--border-subtle)] pb-2">
+                        <Activity size={15} className="accent-text" />
+                        <span className="accent-text uppercase tracking-widest">Command Terminal</span>
                       </div>
-                      <div className="space-y-2 text-cyan-100/90">
+                      <div className="space-y-2 text-[color-mix(in_srgb,var(--color-accent)_86%,var(--text-main))]">
                         {userMode === 'basic' ? (
                           <>
                             <p>Scanning your network for connected devices...</p>
@@ -497,9 +530,9 @@ const App: React.FC = () => {
                           </>
                         )}
                       </div>
-                      <div className="mt-4 flex items-center gap-3 text-xs uppercase tracking-widest text-slate-200">
+                      <div className="text-muted mt-4 flex items-center gap-3 text-xs uppercase tracking-widest">
                         <span className="inline-flex items-center gap-1"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />Scanner Active</span>
-                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 animate-pulse rounded-full bg-cyan-400" />Streaming logs</span>
+                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 animate-pulse rounded-full bg-[var(--color-accent)]" />Streaming logs</span>
                       </div>
                     </div>
                   </div>

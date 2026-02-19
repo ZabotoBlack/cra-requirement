@@ -25,10 +25,10 @@ const ExpertDashboard: React.FC<ExpertDashboardProps> = ({ report, config, logs 
 
   return (
     <div className="space-y-5">
-      <GlassCard className="rounded-2xl border border-violet-400/25 bg-violet-500/5 p-4">
+      <GlassCard className="rounded-2xl border border-[var(--color-accent-border)] p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs font-semibold uppercase tracking-widest text-violet-200">Expert Overview</p>
-          <p className="text-xs text-slate-300">Full controls, raw data, and logs</p>
+          <p className="accent-text text-xs font-semibold uppercase tracking-widest">Expert Overview</p>
+          <p className="text-muted text-xs">Full controls, raw data, and logs</p>
         </div>
       </GlassCard>
 
@@ -43,10 +43,10 @@ const ExpertDashboard: React.FC<ExpertDashboardProps> = ({ report, config, logs 
       <DeviceList devices={report.devices} />
 
       <GlassCard className="rounded-2xl p-5">
-        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-300">Logs Console</h3>
-        <div className="max-h-[280px] overflow-auto rounded-xl border border-slate-700/80 bg-slate-950/90 p-3 font-mono text-xs text-cyan-100">
+        <h3 className="text-muted mb-3 text-sm font-semibold uppercase tracking-wider">Logs Console</h3>
+        <div className="terminal-panel max-h-[280px] overflow-auto rounded-xl border p-3 font-mono text-xs text-[var(--color-accent)]">
           {logs.length === 0 ? (
-            <p className="text-slate-400">No logs captured yet.</p>
+            <p className="text-soft">No logs captured yet.</p>
           ) : (
             logs.map((line, index) => (
               <div key={`${line}-${index}`} className="whitespace-pre-wrap break-words py-0.5">
