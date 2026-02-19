@@ -151,6 +151,7 @@ python scripts/mock_security_logging_device.py --http-port 8080 --disable-udp
 ## NVD Cache Policy
 
 - Runtime state uses a persistent data directory when available (`/data` in Home Assistant add-ons).
+- In add-on runtime, startup now explicitly pins `CRA_DATA_DIR=/data` so DB/cache/log files persist across add-on updates.
 - You can override runtime storage in local/dev runs with `CRA_DATA_DIR`.
 - The NVD API cache file is runtime-generated at `<data_dir>/nvd_cache.json` and is intentionally not committed to Git.
 - Scan history DB is stored at `<data_dir>/scans.db`.
@@ -162,6 +163,7 @@ python scripts/mock_security_logging_device.py --http-port 8080 --disable-udp
 This add-on requires elevated permissions to function correctly:
 - **`privileged`**: Configured as a list of Linux capabilities (e.g., `NET_ADMIN`, `NET_RAW`) in `config.yaml`. These are granted instead of full privileged mode to enable low-level network operations like ARP scanning and raw socket access.
 - **`host_network: true`**: Required to share the host's network stack for accurate device discovery.
+- **`apparmor: cra_auditor`**: Uses a custom AppArmor profile (`apparmor.txt`) tailored for Python + Nmap scanning while keeping writable paths focused on `/data`, `/tmp`, and runtime state.
 
 > [!WARNING]
 > These settings grant the container significant access to the host network. Ensure you trust this add-on and the device running it. Restricting or removing these specific capabilities (not necessarily full privileged) may break scanning functionality.

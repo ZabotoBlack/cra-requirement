@@ -9,6 +9,14 @@ else
     echo "Found /app/dist"
 fi
 
+# Persist runtime state (scan DB, logs, NVD cache) under HA add-on data directory.
+if [ -d "/data" ]; then
+    export CRA_DATA_DIR="/data"
+else
+    export CRA_DATA_DIR="/app"
+fi
+bashio::log.info "Runtime data directory: $CRA_DATA_DIR"
+
 
 # 2. Export Gemini API key if configured
 GEMINI_API_KEY=$(bashio::config 'gemini_api_key')

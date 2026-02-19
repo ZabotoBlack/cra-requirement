@@ -20,8 +20,11 @@ panel_icon: mdi:security
 # webui: "http://[HOST]:[PORT:8099]"
 homeassistant_api: true
 hassio_api: true
-full_access: true # Disables protection mode, required for raw sockets/ARP
+apparmor: cra_auditor # Use custom AppArmor profile from apparmor.txt
 host_network: true # Required for ARP/raw sockets; grants elevated host access
+privileged:
+  - NET_ADMIN
+  - NET_RAW
 
 map:
   - share:rw

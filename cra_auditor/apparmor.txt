@@ -1,0 +1,65 @@
+#include <tunables/global>
+
+profile cra_auditor flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  #include <abstractions/python>
+
+  file,
+  network,
+  capability net_admin,
+  capability net_raw,
+  capability setuid,
+  capability setgid,
+  signal (send) set=(kill,term,int,hup,cont),
+
+  # Base init / shell / bashio runtime
+  /init ix,
+  /bin/** ix,
+  /usr/bin/** ix,
+  /usr/sbin/** ix,
+  /usr/lib/bashio/** ix,
+  /run/{s6,s6-rc*,service}/** ix,
+  /package/** ix,
+  /command/** ix,
+  /etc/services.d/** rwix,
+  /etc/cont-init.d/** rwix,
+  /etc/cont-finish.d/** rwix,
+
+  # Add-on code and static assets
+  /app/** r,
+
+  # Persistent runtime data (DB, caches, logs, options)
+  /data/** rwk,
+
+  # Runtime temp/state
+  /tmp/** rwk,
+  /run/{,**} rwk,
+  /var/run/{,**} rwk,
+
+  # Networking/system files needed by requests, nmap, and libc DNS
+  /etc/hosts r,
+  /etc/hostname r,
+  /etc/resolv.conf r,
+  /etc/nsswitch.conf r,
+  /etc/ssl/** r,
+  /usr/share/ca-certificates/** r,
+
+  # Nmap binaries, scripts, service fingerprints, and helpers
+  /usr/bin/nmap ix,
+  /usr/bin/ping ix,
+  /usr/share/nmap/** r,
+  /usr/lib/nmap/** r,
+  /usr/libexec/nmap/** r,
+
+  # Python + gunicorn runtime
+  /usr/bin/python3 ix,
+  /usr/bin/gunicorn ix,
+  /usr/lib/python3.*/** r,
+  /usr/local/lib/python3.*/** r,
+
+  # Device access frequently required by low-level network tooling
+  /dev/null rw,
+  /dev/random r,
+  /dev/urandom r,
+  /dev/tty rw,
+}

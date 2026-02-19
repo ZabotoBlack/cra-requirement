@@ -231,7 +231,7 @@ class CRAScanner:
             logger.error("Unexpected error initializing nmap", exc_info=True)
             
         if hasattr(os, 'geteuid') and os.geteuid() != 0:
-            logger.warning("Agent is NOT running as root. ARP scanning and MAC address detection will likely fail. Ensure 'privileged: true' is set in config.yaml.")
+            logger.warning("Agent is NOT running as root. ARP scanning and MAC address detection will likely fail. Ensure NET_RAW/NET_ADMIN capabilities are configured in config.yaml.")
         else:
             logger.info("Agent is running as root/privileged. ARP scanning and MAC address detection enabled.")
             
