@@ -9,7 +9,6 @@ interface SettingsModalProps {
   mode: UserMode;
   scanOptions: ScanOptions;
   onClose: () => void;
-  onModeChange: (mode: UserMode) => void;
   onScanOptionsChange: (nextOptions: ScanOptions) => void;
 }
 
@@ -19,7 +18,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   mode,
   scanOptions,
   onClose,
-  onModeChange,
   onScanOptionsChange
 }) => {
   if (!show) {
@@ -45,20 +43,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="space-y-5 p-6">
           <div>
             <label className="mb-2 block text-sm font-semibold uppercase tracking-wider text-slate-300">Experience Level</label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['basic', 'intermediate', 'expert'] as const).map((item) => (
-                <button
-                  key={item}
-                  disabled={scanning}
-                  onClick={() => onModeChange(item)}
-                  className={`rounded-lg border px-3 py-2 text-sm font-semibold capitalize transition ${mode === item
-                    ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-200'
-                    : 'border-slate-700 bg-slate-800/70 text-slate-300 hover:text-white'
-                    } ${scanning ? 'opacity-60 cursor-not-allowed' : ''}`}
-                >
-                  {item}
-                </button>
-              ))}
+            <div className="rounded-xl border border-slate-700 bg-slate-800/70 px-3 py-2 text-sm text-slate-200">
+              <span className="font-semibold capitalize">{mode}</span>
+              <span className="ml-2 text-xs text-slate-400">(Set from sidebar UI Mode)</span>
             </div>
           </div>
 

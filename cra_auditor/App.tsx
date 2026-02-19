@@ -368,7 +368,7 @@ const App: React.FC = () => {
                   value={userMode}
                   disabled={scanning}
                   onChange={(event) => handleModeChange(event.target.value as UserMode)}
-                  className="surface-elevated text-main w-full rounded-lg border px-2 py-2 text-sm outline-none transition focus:border-[var(--color-accent-border)] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="surface-elevated text-main w-full rounded-xl border px-2 py-2 text-sm outline-none transition focus:border-[var(--color-accent-border)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <option value="basic">End User</option>
                   <option value="intermediate">Intermediate</option>
@@ -454,8 +454,8 @@ const App: React.FC = () => {
               <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--border-subtle)] pt-3">
                 <StatusBadge label={`Last Scan ${new Date(report.timestamp).toLocaleTimeString()}`} tone="neutral" />
                 {report.scanProfile && <StatusBadge label={`Profile ${report.scanProfile}`} tone="info" />}
-                <StatusBadge label={config?.gemini_enabled ? 'Gemini Online' : 'Gemini Disabled'} tone={config?.gemini_enabled ? 'success' : 'warning'} />
-                <StatusBadge label={config?.nvd_enabled ? 'NVD Online' : 'NVD Disabled'} tone={config?.nvd_enabled ? 'success' : 'danger'} />
+                <StatusBadge label={config?.gemini_enabled ? 'Gemini Online' : 'Gemini Disabled'} tone="neutral" />
+                <StatusBadge label={config?.nvd_enabled ? 'NVD Online' : 'NVD Disabled'} tone="neutral" />
               </div>
             )}
           </GlassCard>
@@ -549,7 +549,6 @@ const App: React.FC = () => {
         mode={userMode}
         scanOptions={scanOptions}
         onClose={() => setShowSettings(false)}
-        onModeChange={handleModeChange}
         onScanOptionsChange={setScanOptions}
       />
     </div>
