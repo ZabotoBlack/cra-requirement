@@ -8,6 +8,7 @@ import time
 import threading
 from datetime import datetime
 import yaml
+import urllib3
 from vulnerability_data import NVDClient, VendorRules, build_cpe, match_cpe
 
 try:
@@ -59,17 +60,6 @@ _DEFAULT_SECURITY_LOG_PATHS = [
     '/journal',
     '/cgi-bin/log.cgi',
 ]
-
-_FEATURE_FLAG_KEYS = {
-    "network_discovery",
-    "port_scan",
-    "os_detection",
-    "service_version",
-    "netbios_info",
-    "compliance_checks",
-    "auth_brute_force",
-    "web_crawling",
-}
 
 _SCAN_PROFILES = {
     "discovery": {
@@ -246,15 +236,48 @@ class CRAScanner:
             logger.info("Agent is running as root/privileged. ARP scanning and MAC address detection enabled.")
             
         self.common_creds = [('admin', 'admin'), ('root', 'root'), ('user', '1234'), ('admin', '1234')]
-        self.verify_ssl = False  # Configurable: set True to enforce SSL certificate verification during probes
+        self.verify_ssl = self._resolve_verify_ssl()
         self.nvd_client = NVDClient(api_key=os.environ.get('NVD_API_KEY'))
         self.vendor_rules = VendorRules()
         self.security_log_paths = self._load_security_log_paths()
         self.mdns_resolver = MDNSResolver()
 
+        if not self.verify_ssl:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            logger.info("SSL certificate verification disabled for HTTP probes (verify_ssl=False).")
+        else:
+            logger.info("SSL certificate verification enabled for HTTP probes (verify_ssl=True).")
+
         # Reuse a single requests.Session for connection pooling (performance)
         self.session = requests.Session()
         self.session.verify = self.verify_ssl
+
+    def _resolve_verify_ssl(self):
+        """Resolve SSL verification behavior from env/config with safe fallback.
+
+        Priority:
+        1) CRA_VERIFY_SSL / VERIFY_SSL environment variable (set via add-on options)
+        2) config.yaml option: options.verify_ssl
+        3) default False (backward-compatible behavior)
+        """
+        env_value = os.environ.get('CRA_VERIFY_SSL')
+        if env_value is None:
+            env_value = os.environ.get('VERIFY_SSL')
+
+        if env_value is not None:
+            return str(env_value).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+        config_path = os.path.join(os.path.dirname(__file__), 'config.yaml')
+        try:
+            with open(config_path, 'r', encoding='utf-8') as handle:
+                parsed = yaml.safe_load(handle) or {}
+            options = parsed.get('options', {}) if isinstance(parsed, dict) else {}
+            if isinstance(options, dict) and 'verify_ssl' in options:
+                return bool(options.get('verify_ssl'))
+        except Exception:
+            logger.debug("Unable to read verify_ssl from config.yaml; using default False.", exc_info=True)
+
+        return False
 
     def _load_security_log_paths(self):
         """Load HTTP logging probe paths from YAML config with safe defaults.
@@ -329,7 +352,8 @@ class CRAScanner:
         if not isinstance(raw_features, dict):
             raw_features = {}
 
-        for key in _FEATURE_FLAG_KEYS:
+        feature_flag_keys = {key for key in _SCAN_PROFILES['deep'].keys() if key != 'port_range'}
+        for key in feature_flag_keys:
             if key in options and isinstance(options.get(key), bool):
                 features[key] = options.get(key)
             if key in raw_features and isinstance(raw_features.get(key), bool):
@@ -1563,10 +1587,6 @@ class CRAScanner:
             'spdxVersion': 'SPDX',        # SPDX JSON key (alt casing)
         }
         
-        # Log SSL warning once per device check if disabled
-        if not self.verify_ssl and http_ports:
-             logger.warning(f"SBOM probe: SSL verification disabled for device {ip} (verify_ssl=False)")
-
         for port in http_ports:
             scheme = 'https' if port in (443, 8443) else 'http'
             for path in sbom_paths:
@@ -1845,10 +1865,23 @@ class CRAScanner:
         Returns (version: str|None, source: str|None)
         """
         vendor_lower = vendor.lower() if vendor else ""
+        root_response_cache = {}
+
+        def _get_root_response(base_url, cache_key):
+            if cache_key in root_response_cache:
+                return root_response_cache[cache_key]
+            try:
+                response = self.session.get(f"{base_url}/", timeout=2)
+                root_response_cache[cache_key] = response
+                return response
+            except Exception:
+                root_response_cache[cache_key] = None
+                return None
         
         for port in http_ports:
             scheme = 'https' if port in (443, 8443) else 'http'
             base_url = f"{scheme}://{ip}:{port}"
+            cache_key = (scheme, int(port))
             
             try:
                 # Shelly devices expose firmware version at /settings or /shelly
@@ -1887,8 +1920,8 @@ class CRAScanner:
                 
                 # ESPHome devices expose version at /api or via headers
                 if 'esp' in vendor_lower or 'esphome' in vendor_lower:
-                    r = self.session.get(f"{base_url}/", timeout=2)
-                    if r.status_code == 200:
+                    r = _get_root_response(base_url, cache_key)
+                    if r and r.status_code == 200:
                         # ESPHome sets X-Esphome-Version header
                         esphome_ver = r.headers.get('X-Esphome-Version')
                         if esphome_ver:
@@ -1910,8 +1943,8 @@ class CRAScanner:
                         except (ValueError, AttributeError):
                             pass
                     # Fallback: root page often shows version
-                    r = self.session.get(f"{base_url}/", timeout=2)
-                    if r.status_code == 200:
+                    r = _get_root_response(base_url, cache_key)
+                    if r and r.status_code == 200:
                         ver_match = re.search(r'Tasmota[\s_-]*v?(\d+\.\d+[\w.]*)', r.text, re.IGNORECASE)
                         if ver_match:
                             return ver_match.group(1), "Tasmota web interface"
@@ -1934,8 +1967,8 @@ class CRAScanner:
                 
                 # IKEA Tradfri Gateway
                 if 'ikea' in vendor_lower or 'tradfri' in vendor_lower:
-                    r = self.session.get(f"{base_url}/", timeout=2)
-                    if r.status_code == 200:
+                    r = _get_root_response(base_url, cache_key)
+                    if r and r.status_code == 200:
                         ver_match = re.search(r'(?:firmware|version)[:\s]*(\d+\.\d+[\w.]*)', r.text, re.IGNORECASE)
                         if ver_match:
                             return ver_match.group(1), "IKEA Gateway web interface"
@@ -1986,8 +2019,8 @@ class CRAScanner:
                 
                 # Last resort: regex scan HTTP root page for version patterns
                 try:
-                    r = self.session.get(f"{base_url}/", timeout=2)
-                    if r.status_code == 200 and len(r.text) > 20:
+                    r = _get_root_response(base_url, cache_key)
+                    if r and r.status_code == 200 and len(r.text) > 20:
                         content = r.text[:5000]  # Only check first 5KB
                         match = _FW_VERSION_RE.search(content)
                         if match:
@@ -1996,7 +2029,7 @@ class CRAScanner:
                     pass
                 
             except Exception as e:
-                logger.debug(f"Firmware endpoint probe failed for {base_url}: {e}")
+                logger.debug("Firmware endpoint probe failed for %s: %s", base_url, e)
         
         return None, None
 

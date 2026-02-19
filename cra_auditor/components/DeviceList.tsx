@@ -3,6 +3,7 @@ import { Bot, ChevronDown, ChevronUp, Cpu, FileText, Lock, Network, Router, Shie
 import { ComplianceStatus, Device } from '../types';
 import { useLanguage } from '../LanguageContext';
 import { getRemediationAdvice } from '../services/geminiService';
+import { localizeStatus } from '../utils/status';
 import GlassCard from './ui/GlassCard';
 import StatusBadge from './ui/StatusBadge';
 import TechButton from './ui/TechButton';
@@ -12,14 +13,6 @@ type DossierTab = 'checks' | 'raw' | 'ai';
 interface DeviceListProps {
   devices: Device[];
 }
-
-const localizeStatus = (status: string, t: (key: 'status.compliant' | 'status.warningLabel' | 'status.nonCompliantLabel' | 'status.discovered') => string): string => {
-  if (status === ComplianceStatus.COMPLIANT) return t('status.compliant');
-  if (status === ComplianceStatus.WARNING) return t('status.warningLabel');
-  if (status === ComplianceStatus.NON_COMPLIANT) return t('status.nonCompliantLabel');
-  if (status === ComplianceStatus.DISCOVERED) return t('status.discovered');
-  return status;
-};
 
 const statusTone = (status: string): 'success' | 'warning' | 'danger' | 'info' | 'neutral' => {
   if (status === ComplianceStatus.COMPLIANT) return 'success';

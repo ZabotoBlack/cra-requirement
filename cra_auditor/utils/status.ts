@@ -1,0 +1,18 @@
+import { ComplianceStatus } from '../types';
+
+export type StatusTranslationKey =
+  | 'status.compliant'
+  | 'status.warningLabel'
+  | 'status.nonCompliantLabel'
+  | 'status.discovered';
+
+export const localizeStatus = (
+  status: string,
+  t: (key: StatusTranslationKey) => string,
+): string => {
+  if (status === ComplianceStatus.COMPLIANT) return t('status.compliant');
+  if (status === ComplianceStatus.WARNING) return t('status.warningLabel');
+  if (status === ComplianceStatus.NON_COMPLIANT) return t('status.nonCompliantLabel');
+  if (status === ComplianceStatus.DISCOVERED) return t('status.discovered');
+  return status;
+};

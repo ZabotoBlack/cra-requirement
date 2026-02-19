@@ -45,6 +45,14 @@ case "$LOG_LEVEL" in
 esac
 export LOG_LEVEL
 
+VERIFY_SSL=$(bashio::config 'verify_ssl')
+verify_ssl_config_status=$?
+if [ $verify_ssl_config_status -ne 0 ]; then
+    bashio::log.error "Failed to read verify_ssl from add-on config (exit: $verify_ssl_config_status)."
+    exit $verify_ssl_config_status
+fi
+export CRA_VERIFY_SSL="$VERIFY_SSL"
+
 # 2b. Configure Gunicorn logging based on add-on log level.
 # Access logs are the noisy per-request GET/POST lines.
 GUNICORN_LOG_LEVEL="info"
@@ -94,6 +102,7 @@ else
 fi
 
 bashio::log.info "Backend log level set to: $LOG_LEVEL"
+bashio::log.info "SSL certificate verification for probes: $VERIFY_SSL"
 if [ "$ACCESS_LOGFILE" = "-" ]; then
     bashio::log.info "Gunicorn access logs enabled (debug/trace mode)."
 else

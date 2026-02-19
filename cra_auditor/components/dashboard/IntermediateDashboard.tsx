@@ -5,19 +5,12 @@ import GlassCard from '../ui/GlassCard';
 import StatusBadge from '../ui/StatusBadge';
 import TechButton from '../ui/TechButton';
 import { ScanReport, FrontendConfig, ComplianceStatus } from '../../types';
+import { localizeStatus } from '../../utils/status';
 
 interface IntermediateDashboardProps {
   report: ScanReport;
   config: FrontendConfig | null;
 }
-
-const localizeStatus = (status: string, t: (key: 'status.compliant' | 'status.warningLabel' | 'status.nonCompliantLabel' | 'status.discovered') => string): string => {
-  if (status === ComplianceStatus.COMPLIANT) return t('status.compliant');
-  if (status === ComplianceStatus.WARNING) return t('status.warningLabel');
-  if (status === ComplianceStatus.NON_COMPLIANT) return t('status.nonCompliantLabel');
-  if (status === ComplianceStatus.DISCOVERED) return t('status.discovered');
-  return status;
-};
 
 const IntermediateDashboard: React.FC<IntermediateDashboardProps> = ({ report, config }) => {
   const { t } = useLanguage();

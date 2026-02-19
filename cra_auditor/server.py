@@ -45,16 +45,39 @@ logger = logging.getLogger(__name__)
 LOG_BUFFER: deque[str] = deque(maxlen=300)
 
 
-def _resolve_runtime_log_file() -> Path:
+def _resolve_persistent_base_dir(default_dir: Path | None = None) -> Path:
     env_dir = os.environ.get("CRA_DATA_DIR")
     if env_dir:
-        return Path(env_dir) / "cra_auditor.log"
+        return Path(env_dir)
 
     container_data = Path("/data")
     if container_data.exists() and container_data.is_dir():
-        return container_data / "cra_auditor.log"
+        return container_data
 
-    return Path(__file__).resolve().parent / "cra_auditor.log"
+    return default_dir if default_dir is not None else Path(__file__).resolve().parent
+
+
+def _resolve_runtime_log_file() -> Path:
+    return _resolve_persistent_base_dir(Path(__file__).resolve().parent) / "cra_auditor.log"
+
+
+def _resolve_cache_base_dir() -> Path:
+    return _resolve_persistent_base_dir(Path(__file__).resolve().parent)
+
+
+def _resolve_data_dir() -> Path | None:
+    """Resolve persistent data directory preference.
+
+    Priority:
+    1) CRA_DATA_DIR env var (for local testing/overrides)
+    2) /data when running in Home Assistant add-on container
+    """
+    env_dir = os.environ.get("CRA_DATA_DIR")
+    container_data = Path("/data")
+    if env_dir or (container_data.exists() and container_data.is_dir()):
+        return _resolve_persistent_base_dir()
+
+    return None
 
 
 RUNTIME_LOG_FILE = _resolve_runtime_log_file()
@@ -344,24 +367,6 @@ if not os.path.exists(FRONTEND_DIR):
 scanner = CRAScanner()
 
 
-def _resolve_data_dir() -> Path | None:
-    """Resolve persistent data directory preference.
-
-    Priority:
-    1) CRA_DATA_DIR env var (for local testing/overrides)
-    2) /data when running in Home Assistant add-on container
-    """
-    env_dir = os.environ.get("CRA_DATA_DIR")
-    if env_dir:
-        return Path(env_dir)
-
-    container_data = Path("/data")
-    if container_data.exists() and container_data.is_dir():
-        return container_data
-
-    return None
-
-
 def _tail_shared_log_lines(limit: int) -> list[str]:
     try:
         if not RUNTIME_LOG_FILE.exists():
@@ -562,6 +567,7 @@ def set_security_headers(response):
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     response.headers['Cache-Control'] = 'no-store'
+    response.headers['Content-Security-Policy'] = "default-src 'self'"
     return response
 
 @app.route('/api/scan', methods=['POST'])
@@ -653,7 +659,7 @@ def get_latest_report():
             return jsonify(json.loads(row[0]))
         return jsonify(None)
     except sqlite3.Error as e:
-        logger.error(f"Error fetching latest report: {e}")
+        logger.error("Error fetching latest report: %s", e)
         logger.debug("Latest report DB traceback", exc_info=True)
         return jsonify({"error": "Database error"}), 500
 @app.route('/api/history', methods=['GET'])
@@ -691,9 +697,9 @@ def get_history():
             })
         return jsonify(history)
     except Exception as e:
-        logger.error(f"Error fetching history: {e}")
+        logger.error("Error fetching history: %s", e)
         logger.debug("History query traceback", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Failed to fetch scan history"}), 500
 
 @app.route('/api/history/<int:scan_id>', methods=['GET'])
 def get_history_detail(scan_id):
@@ -707,8 +713,9 @@ def get_history_detail(scan_id):
         if row:
             return jsonify(json.loads(row[0]))
         return jsonify({"error": "Scan not found"}), 404
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.error("Error fetching scan history detail", exc_info=True)
+        return jsonify({"error": "Failed to fetch scan details"}), 500
 
 @app.route('/api/history/<int:scan_id>', methods=['DELETE'])
 def delete_history_item(scan_id):
@@ -723,13 +730,14 @@ def delete_history_item(scan_id):
         if deleted:
             return jsonify({"status": "success"})
         return jsonify({"error": "Scan not found"}), 404
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.error("Error deleting scan history item", exc_info=True)
+        return jsonify({"error": "Failed to delete scan history item"}), 500
 
 def run_scan_background(subnet, options=None):
     scan_options = options or {}
     scan_type = scan_options.get('profile') or scan_options.get('scan_type', 'deep')
-    logger.info(f"[SCAN] Background scan starting: subnet={subnet}, type={scan_type}")
+    logger.info("[SCAN] Background scan starting: subnet=%s, type=%s", subnet, scan_type)
     bg_start = time.time()
     try:
         devices = scanner.scan_subnet(subnet, options)
@@ -768,15 +776,20 @@ def run_scan_background(subnet, options=None):
                 last_id = c.lastrowid
             elapsed = time.time() - bg_start
             logger.info(
-                f"[SCAN] Scan saved to DB (ID: {last_id}). "
-                f"Total: {total} devices ({compliant}C/{warning}W/{non_compliant}NC) in {elapsed:.1f}s"
+                "[SCAN] Scan saved to DB (ID: %s). Total: %s devices (%sC/%sW/%sNC) in %.1fs",
+                last_id,
+                total,
+                compliant,
+                warning,
+                non_compliant,
+                elapsed,
             )
         except Exception as db_err:
-            logger.error(f"[SCAN] Failed to save scan to DB: {db_err}")
+            logger.error("[SCAN] Failed to save scan to DB: %s", db_err)
             logger.debug("[SCAN] Save-to-DB traceback", exc_info=True)
 
     except Exception as e:
-        logger.error(f"[SCAN] Scan failed: {e}")
+        logger.error("[SCAN] Scan failed: %s", e)
         logger.debug("[SCAN] Background scan traceback", exc_info=True)
         set_scan_state(False, error=str(e))
     else:
