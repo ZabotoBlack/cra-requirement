@@ -33,6 +33,18 @@ const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
   const [loadingAdvice, setLoadingAdvice] = useState(false);
   const [advice, setAdvice] = useState<string | null>(null);
 
+  const rawDataPreview = useMemo(() => {
+    const parsedTimestamp = new Date(device.lastScanned);
+    if (Number.isNaN(parsedTimestamp.getTime())) {
+      return device;
+    }
+
+    return {
+      ...device,
+      lastScanned: parsedTimestamp.toLocaleString()
+    };
+  }, [device]);
+
   const checks = [
     { key: 'Secure Defaults', passed: device.checks?.secureByDefault?.passed, details: device.checks?.secureByDefault?.details, icon: <Lock size={14} /> },
     { key: 'Encryption', passed: device.checks?.dataConfidentiality?.passed, details: device.checks?.dataConfidentiality?.details, icon: <Shield size={14} /> },
@@ -105,7 +117,7 @@ const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
 
       {tab === 'raw' && (
         <pre className="max-h-[340px] overflow-auto rounded-xl border border-slate-700/80 bg-slate-900/80 p-4 font-mono text-sm leading-relaxed text-cyan-100">
-          {JSON.stringify(device, null, 2)}
+          {JSON.stringify(rawDataPreview, null, 2)}
         </pre>
       )}
 

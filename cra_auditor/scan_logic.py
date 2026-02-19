@@ -6,6 +6,7 @@ import logging
 import os
 import time
 import threading
+from datetime import datetime
 import yaml
 from vulnerability_data import NVDClient, VendorRules, build_cpe, match_cpe
 
@@ -481,6 +482,7 @@ class CRAScanner:
         current_stage += 1
         logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Merging with Home Assistant devices...")
         merged_devices = self._merge_devices(nmap_devices, ha_devices)
+        scan_timestamp = datetime.now().isoformat()
 
         # Optional Stage: Compliance checks
         current_stage += 1
@@ -494,7 +496,7 @@ class CRAScanner:
                     "status": "Discovered",
                     "checks": {},
                     "attackSurface": self.calculate_attack_surface_score(dev.get('openPorts', [])),
-                    "lastScanned": "Just now"
+                    "lastScanned": scan_timestamp
                 })
                 final_results.append(dev)
         else:
@@ -577,7 +579,7 @@ class CRAScanner:
                         "securityTxt": sec_txt_result,
                         "securityLogging": sec_log_result
                     },
-                    "lastScanned": "Just now"
+                    "lastScanned": scan_timestamp
                 })
                 final_results.append(dev)
 

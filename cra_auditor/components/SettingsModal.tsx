@@ -28,6 +28,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     onScanOptionsChange({ ...scanOptions, scan_type });
   };
 
+  const endUserDepthOptions: Array<{ label: string; value: ScanOptions['scan_type'] }> = [
+    { label: 'Basic', value: 'standard' },
+    { label: 'Deep', value: 'deep' }
+  ];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
       <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900/95 shadow-2xl">
@@ -48,6 +53,27 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               <span className="ml-2 text-xs text-slate-400">(Set from sidebar UI Mode)</span>
             </div>
           </div>
+
+          {mode === 'basic' && (
+            <div>
+              <label className="mb-2 block text-sm font-semibold uppercase tracking-wider text-slate-300">Scan Depth</label>
+              <div className="grid grid-cols-2 gap-2">
+                {endUserDepthOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    disabled={scanning}
+                    onClick={() => applyScanType(option.value)}
+                    className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${scanOptions.scan_type === option.value
+                      ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-200'
+                      : 'border-slate-700 bg-slate-800/70 text-slate-300 hover:text-white'
+                      } ${scanning ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {mode !== 'basic' && (
             <div>
@@ -70,8 +96,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           )}
 
-          {mode !== 'basic' && (
-            <div className={scanOptions.scan_type === 'discovery' ? 'pointer-events-none opacity-50' : ''}>
+          {((mode === 'basic' && scanOptions.scan_type === 'deep') || mode !== 'basic') && (
+            <div className={mode !== 'basic' && scanOptions.scan_type === 'discovery' ? 'pointer-events-none opacity-50' : ''}>
               <label className="mb-2 block text-sm font-semibold uppercase tracking-wider text-slate-300">Vendor Detection</label>
               <div className="flex flex-wrap gap-2">
                 <button
@@ -104,6 +130,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         if (current === 'all') {
                           current = [vendor];
                         } else {
+                          if (!Array.isArray(current)) {
+                            current = [];
+                          }
                           if (current.includes(vendor)) {
                             current = current.filter((value) => value !== vendor);
                             if (current.length === 0) current = [];

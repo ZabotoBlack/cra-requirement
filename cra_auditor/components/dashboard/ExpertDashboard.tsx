@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Download } from 'lucide-react';
 import Dashboard from '../Dashboard';
 import DeviceList from '../DeviceList';
@@ -13,6 +13,9 @@ interface ExpertDashboardProps {
 }
 
 const ExpertDashboard: React.FC<ExpertDashboardProps> = ({ report, config, logs }) => {
+  const [showDevices, setShowDevices] = useState(true);
+  const [expandedLogs, setExpandedLogs] = useState(false);
+
   const handleExportJson = () => {
     const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -40,11 +43,25 @@ const ExpertDashboard: React.FC<ExpertDashboardProps> = ({ report, config, logs 
       </div>
 
       <Dashboard report={report} geminiEnabled={config?.gemini_enabled} nvdEnabled={config?.nvd_enabled} />
-      <DeviceList devices={report.devices} />
 
       <GlassCard className="rounded-2xl p-5">
-        <h3 className="text-muted mb-3 text-sm font-semibold uppercase tracking-wider">Logs Console</h3>
-        <div className="terminal-panel max-h-[280px] overflow-auto rounded-xl border p-3 font-mono text-xs text-[var(--color-accent)]">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-muted text-sm font-semibold uppercase tracking-wider">Devices</h3>
+          <TechButton variant="secondary" onClick={() => setShowDevices((previous) => !previous)}>
+            {showDevices ? 'Collapse Devices' : 'Expand Devices'}
+          </TechButton>
+        </div>
+        {showDevices && <div className="mt-4"><DeviceList devices={report.devices} /></div>}
+      </GlassCard>
+
+      <GlassCard className="rounded-2xl p-5">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-muted text-sm font-semibold uppercase tracking-wider">Logs Console</h3>
+          <TechButton variant="secondary" onClick={() => setExpandedLogs((previous) => !previous)}>
+            {expandedLogs ? 'Collapse Logs' : 'Expand Logs'}
+          </TechButton>
+        </div>
+        <div className={`terminal-panel overflow-auto rounded-xl border p-3 font-mono text-xs text-[var(--color-accent)] ${expandedLogs ? 'max-h-[840px]' : 'max-h-[280px]'}`}>
           {logs.length === 0 ? (
             <p className="text-soft">No logs captured yet.</p>
           ) : (

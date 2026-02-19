@@ -151,6 +151,7 @@ const App: React.FC = () => {
     vendors: 'all'
   });
   const [showSettings, setShowSettings] = useState(false);
+  const [isModeMenuOpen, setIsModeMenuOpen] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('cra-sidebar-expanded') === 'true';
@@ -158,6 +159,7 @@ const App: React.FC = () => {
 
   const pollInterval = useRef<NodeJS.Timeout | null>(null);
   const viewRef = useRef(view);
+  const modeMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     viewRef.current = view;
@@ -209,7 +211,37 @@ const App: React.FC = () => {
     if (typeof window !== 'undefined') {
       window.localStorage.setItem('cra-sidebar-expanded', String(sidebarExpanded));
     }
+
+    if (!sidebarExpanded) {
+      setIsModeMenuOpen(false);
+    }
   }, [sidebarExpanded]);
+
+  useEffect(() => {
+    if (!isModeMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!modeMenuRef.current?.contains(event.target as Node)) {
+        setIsModeMenuOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsModeMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isModeMenuOpen]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -244,9 +276,9 @@ const App: React.FC = () => {
 
     setScanOptions((previous) => ({
       ...previous,
-      scan_type: 'standard',
-      auth_checks: false,
-      vendors: 'all'
+      scan_type: previous.scan_type === 'deep' ? 'deep' : 'standard',
+      auth_checks: previous.scan_type === 'deep' ? true : false,
+      vendors: previous.vendors ?? 'all'
     }));
   }, [userMode]);
 
@@ -275,7 +307,16 @@ const App: React.FC = () => {
     }
 
     const effectiveOptions: ScanOptions = userMode === 'basic'
-      ? { ...scanOptions, scan_type: 'standard', auth_checks: false, vendors: 'all' }
+      ? (() => {
+        const selectedDepth: ScanOptions['scan_type'] = scanOptions.scan_type === 'deep' ? 'deep' : 'standard';
+        return {
+          ...scanOptions,
+          profile: selectedDepth,
+          scan_type: selectedDepth,
+          auth_checks: selectedDepth === 'deep',
+          vendors: selectedDepth === 'deep' ? (scanOptions.vendors ?? 'all') : 'all'
+        };
+      })()
       : scanOptions;
 
     try {
@@ -302,6 +343,7 @@ const App: React.FC = () => {
 
   const handleModeChange = (mode: UserMode) => {
     setUserMode(mode);
+    setIsModeMenuOpen(false);
     if (mode === 'basic' && view === 'devices') {
       setView('dashboard');
     }
@@ -364,16 +406,35 @@ const App: React.FC = () => {
             {sidebarExpanded && (
               <div className="surface-card mt-2 rounded-xl border p-3">
                 <label className="text-soft mb-2 block text-[11px] font-semibold uppercase tracking-widest">UI Mode</label>
-                <select
-                  value={userMode}
-                  disabled={scanning}
-                  onChange={(event) => handleModeChange(event.target.value as UserMode)}
-                  className="surface-elevated text-main w-full rounded-xl border px-2 py-2 text-sm outline-none transition focus:border-[var(--color-accent-border)] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <option value="basic">End User</option>
-                  <option value="intermediate">Intermediate</option>
-                  <option value="expert">Expert</option>
-                </select>
+                <div ref={modeMenuRef} className="relative">
+                  <button
+                    type="button"
+                    disabled={scanning}
+                    aria-haspopup="listbox"
+                    aria-expanded={isModeMenuOpen}
+                    onClick={() => setIsModeMenuOpen((prev) => !prev)}
+                    className="surface-elevated text-main flex w-full items-center justify-between rounded-xl border px-2 py-2 text-sm outline-none transition focus:border-[var(--color-accent-border)] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <span>{MODE_DISPLAY[userMode].label}</span>
+                    <span className="text-soft text-xs">▾</span>
+                  </button>
+                  {isModeMenuOpen && (
+                    <div className="surface-elevated absolute z-20 mt-2 w-full overflow-hidden rounded-xl border" role="listbox" aria-label="UI Mode options">
+                      {(['basic', 'intermediate', 'expert'] as UserMode[]).map((modeOption) => (
+                        <button
+                          key={modeOption}
+                          type="button"
+                          role="option"
+                          aria-selected={userMode === modeOption}
+                          onClick={() => handleModeChange(modeOption)}
+                          className={`text-main hover:bg-[var(--panel-hover)] w-full px-3 py-2 text-left text-sm transition ${userMode === modeOption ? 'bg-[var(--panel-selected)] font-semibold' : ''}`}
+                        >
+                          {MODE_DISPLAY[modeOption].label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <p className="text-soft mt-2 text-xs">Switch experience level from here at any time.</p>
               </div>
             )}
