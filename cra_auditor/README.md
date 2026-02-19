@@ -98,6 +98,23 @@ log_paths:
 	- /cgi-bin/log.cgi
 ```
 
+## Logging Levels
+
+The add-on now supports configurable backend log verbosity via `log_level` in add-on configuration.
+
+- Supported values: `trace`, `debug`, `scan_info`, `info`, `warning`, `error`, `fatal`
+- Default: `info`
+- Invalid values are safely normalized to `info` at startup
+
+Behavior summary:
+
+- `info`: high-level scan lifecycle and stage summaries
+- `scan_info`: includes detailed scan-progress output (per-device lines and detailed Nmap arguments)
+- `debug`: includes internal health diagnostics (lock/thread state and handled exception tracebacks)
+
+> [!IMPORTANT]
+> Default output is intentionally less verbose than before. If you rely on detailed per-device scan progress in logs, set `log_level: scan_info` (or `debug`).
+
 ## Additional API Endpoints
 
 - `GET /api/network/default`

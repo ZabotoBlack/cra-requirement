@@ -5,6 +5,7 @@ import shutil
 import sys
 import tempfile
 import sqlite3
+import logging
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -312,6 +313,15 @@ class TestServer(unittest.TestCase):
 
 
 class TestServerPersistence(unittest.TestCase):
+    def test_scan_info_level_registered(self):
+        self.assertEqual(logging.getLevelName(server.SCAN_INFO), 'SCAN_INFO')
+
+    def test_resolve_log_level_mapping(self):
+        self.assertEqual(server._resolve_log_level('scan_info'), server.SCAN_INFO)
+        self.assertEqual(server._resolve_log_level('TRACE'), server.TRACE)
+        self.assertEqual(server._resolve_log_level('fatal'), logging.FATAL)
+        self.assertEqual(server._resolve_log_level('not-a-level'), logging.INFO)
+
     def test_resolve_data_dir_prefers_env_var(self):
         with patch.dict('os.environ', {'CRA_DATA_DIR': '/tmp/cra-data'}, clear=False):
             resolved = server._resolve_data_dir()

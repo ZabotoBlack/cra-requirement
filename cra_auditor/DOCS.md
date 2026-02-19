@@ -36,6 +36,18 @@ To enable AI insights, you can provide a Gemini API Key in the configuration tab
 | `target_subnet` | string | The CIDR range to scan (e.g., `192.168.1.0/24`). |
 | `gemini_api_key` | string | (Optional) Your Google Gemini API Key for enhanced analysis. |
 | `nvd_api_key` | string | (Optional, recommended) NVD API key for higher-rate CPE/CVE lookups. |
+| `log_level` | string | Backend logging verbosity (`trace`, `debug`, `scan_info`, `info`, `warning`, `error`, `fatal`). Default: `info`. |
+
+## Logging Levels
+
+Use `log_level` in add-on configuration to control runtime log detail.
+
+- `info`: scan start/complete and stage summaries
+- `scan_info`: detailed scan progress (discovered devices, per-device checks, detailed Nmap args)
+- `debug`: internal diagnostics (DB lock/thread state and handled error tracebacks)
+
+> [!IMPORTANT]
+> Log output is now intentionally less verbose by default. Set `log_level: scan_info` (or `debug`) if you need detailed per-device progress in logs.
 
 ## API Scan Options (Modular)
 

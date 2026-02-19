@@ -3,10 +3,12 @@ from unittest.mock import MagicMock, patch
 import sys
 import os
 import tempfile
+import logging
 
 # Ensure we can import scan_logic from parent directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import scan_logic
 from scan_logic import CRAScanner, MDNSResolver
 
 class TestCRAScanner(unittest.TestCase):
@@ -688,6 +690,68 @@ class TestCRAScanner(unittest.TestCase):
         results = scanner.scan_subnet("192.168.1.0/24")
         self.assertTrue(len(results) > 0)
         self.assertTrue(all(d.get('source') == 'Home Assistant' for d in results))
+
+    @patch('scan_logic.CRAScanner._get_ha_devices', return_value=[])
+    def test_scan_info_logs_emitted_at_scan_info_level(self, _mock_get_ha):
+        host_ip = "192.168.1.50"
+        self.scanner.nm.all_hosts.return_value = [host_ip]
+
+        mock_host_data = MagicMock()
+        mock_host_data.hostname.return_value = "test-host"
+        mock_host_data.__getitem__.side_effect = lambda key: {
+            'addresses': {'ipv4': host_ip, 'mac': 'AA:BB:CC:DD:EE:FF'},
+            'vendor': {'AA:BB:CC:DD:EE:FF': 'TestVendor'},
+            'osmatch': [],
+        }.get(key, {})
+        mock_host_data.__contains__.side_effect = lambda key: key in ['addresses', 'vendor', 'osmatch']
+        mock_host_data.all_protocols.return_value = []
+        self.scanner.nm.__getitem__.return_value = mock_host_data
+
+        original_level = scan_logic.logger.level
+        try:
+            scan_logic.logger.setLevel(scan_logic.SCAN_INFO)
+            with self.assertLogs('scan_logic', level=scan_logic.SCAN_INFO) as captured:
+                self.scanner.scan_subnet("192.168.1.0/24", {"scan_type": "discovery"})
+
+            self.assertTrue(any("SCAN_INFO" in entry for entry in captured.output))
+            self.assertTrue(any(f"-> {host_ip}" in entry for entry in captured.output))
+        finally:
+            scan_logic.logger.setLevel(original_level)
+
+    @patch('scan_logic.CRAScanner._get_ha_devices', return_value=[])
+    def test_scan_info_logs_suppressed_at_info_level(self, _mock_get_ha):
+        host_ip = "192.168.1.51"
+        self.scanner.nm.all_hosts.return_value = [host_ip]
+
+        mock_host_data = MagicMock()
+        mock_host_data.hostname.return_value = "test-host"
+        mock_host_data.__getitem__.side_effect = lambda key: {
+            'addresses': {'ipv4': host_ip, 'mac': 'AA:BB:CC:DD:EE:11'},
+            'vendor': {'AA:BB:CC:DD:EE:11': 'TestVendor'},
+            'osmatch': [],
+        }.get(key, {})
+        mock_host_data.__contains__.side_effect = lambda key: key in ['addresses', 'vendor', 'osmatch']
+        mock_host_data.all_protocols.return_value = []
+        self.scanner.nm.__getitem__.return_value = mock_host_data
+
+        class _Collector(logging.Handler):
+            def __init__(self):
+                super().__init__()
+                self.records = []
+
+            def emit(self, record):
+                self.records.append(record)
+
+        collector = _Collector()
+        original_level = scan_logic.logger.level
+        scan_logic.logger.addHandler(collector)
+        try:
+            scan_logic.logger.setLevel(logging.INFO)
+            self.scanner.scan_subnet("192.168.1.0/24", {"scan_type": "discovery"})
+            self.assertFalse(any(rec.levelno == scan_logic.SCAN_INFO for rec in collector.records))
+        finally:
+            scan_logic.logger.removeHandler(collector)
+            scan_logic.logger.setLevel(original_level)
 
 
 class TestScanPreservesDiscovery(unittest.TestCase):

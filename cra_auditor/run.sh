@@ -27,6 +27,24 @@ if [ $nvd_config_status -ne 0 ]; then
 fi
 export NVD_API_KEY
 
+LOG_LEVEL=$(bashio::config 'log_level')
+log_level_config_status=$?
+if [ $log_level_config_status -ne 0 ]; then
+    bashio::log.error "Failed to read log_level from add-on config (exit: $log_level_config_status)."
+    exit $log_level_config_status
+fi
+
+LOG_LEVEL=$(echo "$LOG_LEVEL" | tr '[:upper:]' '[:lower:]')
+case "$LOG_LEVEL" in
+    trace|debug|scan_info|info|warning|error|fatal)
+        ;;
+    *)
+        bashio::log.warning "Invalid log_level '$LOG_LEVEL'. Falling back to 'info'."
+        LOG_LEVEL="info"
+        ;;
+esac
+export LOG_LEVEL
+
 if [ -z "$GEMINI_API_KEY" ]; then
     bashio::log.warning "Gemini API Key is not set. AI features will be disabled."
 else
@@ -38,6 +56,8 @@ if [ -z "$NVD_API_KEY" ]; then
 else
     bashio::log.info "NVD API Key found. Vulnerability lookups optimized."
 fi
+
+bashio::log.info "Backend log level set to: $LOG_LEVEL"
 
 # 3. Start production WSGI server (gunicorn replaces Flask dev server)
 exec gunicorn \

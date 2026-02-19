@@ -14,6 +14,29 @@ import ipaddress
 import requests
 from datetime import datetime
 from pathlib import Path
+
+TRACE = 5
+SCAN_INFO = 15
+logging.addLevelName(TRACE, "TRACE")
+logging.addLevelName(SCAN_INFO, "SCAN_INFO")
+
+_LOG_LEVEL_MAP = {
+    "trace": TRACE,
+    "debug": logging.DEBUG,
+    "scan_info": SCAN_INFO,
+    "info": logging.INFO,
+    "warning": logging.WARNING,
+    "error": logging.ERROR,
+    "fatal": logging.FATAL,
+}
+
+
+def _resolve_log_level(level_name: str | None) -> int:
+    if not level_name:
+        return logging.INFO
+    return _LOG_LEVEL_MAP.get(str(level_name).strip().lower(), logging.INFO)
+
+
 from scan_logic import CRAScanner
 
 # Configure logging (replaces print() for structured HA output)
@@ -76,8 +99,14 @@ def _configure_log_buffer() -> None:
     buffer_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s'))
     root_logger.addHandler(buffer_handler)
 
-    if root_logger.level in (logging.NOTSET, logging.WARNING):
-        root_logger.setLevel(logging.INFO)
+    configured_level_name = os.environ.get("LOG_LEVEL", "info")
+    configured_level = _resolve_log_level(configured_level_name)
+    root_logger.setLevel(configured_level)
+    logger.info(
+        "[LOG] Root logger level set to %s (%s)",
+        logging.getLevelName(configured_level),
+        configured_level_name,
+    )
 
 
 def _subnet_from_ip(ip_address: str, prefix: int = 24) -> str | None:
@@ -478,12 +507,15 @@ def reset_scan_state():
 
 def try_claim_scan() -> bool:
     """Atomically try to claim the scan lock. Returns True if acquired."""
+    logger.debug("[SCAN] Attempting to claim scan lock")
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.execute(
             'UPDATE scan_state SET is_scanning = 1, scan_error = NULL WHERE id = 1 AND is_scanning = 0'
         )
         conn.commit()
-        return c.rowcount > 0
+        claimed = c.rowcount > 0
+        logger.debug("[SCAN] Scan lock claim result: %s", claimed)
+        return claimed
 
 def get_scan_state() -> dict:
     """Read the current scan state from the database."""
@@ -552,10 +584,12 @@ def start_scan():
     
     # Atomic lock: only one scan at a time across all workers
     if not try_claim_scan():
+        logger.debug("[SCAN] Rejecting scan start because lock is already held")
         return jsonify({"status": "error", "message": "Scan already in progress"}), 409
     
     thread = threading.Thread(target=run_scan_background, args=(subnet, options))
     thread.start()
+    logger.debug("[SCAN] Started background scan thread: %s", thread.name)
     return jsonify({"status": "success", "message": "Scan started"})
 
 @app.route('/api/status', methods=['GET'])
@@ -620,6 +654,7 @@ def get_latest_report():
         return jsonify(None)
     except sqlite3.Error as e:
         logger.error(f"Error fetching latest report: {e}")
+        logger.debug("Latest report DB traceback", exc_info=True)
         return jsonify({"error": "Database error"}), 500
 @app.route('/api/history', methods=['GET'])
 def get_history():
@@ -657,6 +692,7 @@ def get_history():
         return jsonify(history)
     except Exception as e:
         logger.error(f"Error fetching history: {e}")
+        logger.debug("History query traceback", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/history/<int:scan_id>', methods=['GET'])
@@ -737,9 +773,11 @@ def run_scan_background(subnet, options=None):
             )
         except Exception as db_err:
             logger.error(f"[SCAN] Failed to save scan to DB: {db_err}")
+            logger.debug("[SCAN] Save-to-DB traceback", exc_info=True)
 
     except Exception as e:
         logger.error(f"[SCAN] Scan failed: {e}")
+        logger.debug("[SCAN] Background scan traceback", exc_info=True)
         set_scan_state(False, error=str(e))
     else:
         set_scan_state(False)

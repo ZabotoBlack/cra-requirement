@@ -18,9 +18,14 @@ except Exception:
     Zeroconf = None
     _ZEROCONF_AVAILABLE = False
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+SCAN_INFO = 15
+logging.addLevelName(SCAN_INFO, "SCAN_INFO")
+
+
+def _log_scan_info(message, *args, **kwargs):
+    logger.log(SCAN_INFO, message, *args, **kwargs)
 
 # Pre-compiled regex for NetBIOS hostname extraction (performance)
 _NBSTAT_RE = re.compile(r"NetBIOS name:\s+([\w-]+)")
@@ -418,10 +423,11 @@ class CRAScanner:
                 self._update_scanned_devices(scanned_devices, discovery_phase=True)
             except Exception as e:
                 logger.error(f"[SCAN] Nmap discovery scan failed: {e}")
+                logger.debug("[SCAN] Discovery scan traceback", exc_info=True)
             stage_elapsed = time.time() - stage_start
             logger.info(f"[SCAN]   Found {len(scanned_devices)} live hosts in {stage_elapsed:.1f}s")
             for ip, dev in scanned_devices.items():
-                logger.info(f"[SCAN]   -> {ip} (MAC: {dev.get('mac', 'Unknown')}, vendor: {dev.get('vendor', 'Unknown')})")
+                _log_scan_info(f"[SCAN]   -> {ip} (MAC: {dev.get('mac', 'Unknown')}, vendor: {dev.get('vendor', 'Unknown')})")
         elif not self.nm:
             logger.error("[SCAN] Nmap not initialized. Falling back to Home Assistant-only merge.")
             # Avoid expensive/low-value compliance probes when discovery cannot run.
@@ -461,13 +467,14 @@ class CRAScanner:
             nmap_args += f" -p {port_spec}"
             
             try:
-                logger.info(f"[SCAN]   Nmap args: {nmap_args}")
+                _log_scan_info(f"[SCAN]   Nmap args: {nmap_args}")
                 self.nm.scan(hosts=target_spec, arguments=nmap_args)
                 self._update_scanned_devices(scanned_devices, discovery_phase=False)
                 stage_elapsed = time.time() - stage_start
                 logger.info(f"[SCAN]   Completed in {stage_elapsed:.1f}s -- updated {len(scanned_devices)} devices")
             except Exception as e:
                 logger.error(f"[SCAN] Nmap detail scan failed: {e}. Falling back to discovery results ({len(scanned_devices)} devices).")
+                logger.debug("[SCAN] Detailed scan traceback", exc_info=True)
         elif features.get('port_scan') and not hosts_to_scan:
             logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Detailed scan skipped (no discovered hosts).")
         elif not features.get('port_scan'):
@@ -511,7 +518,7 @@ class CRAScanner:
                     check_vendor = dev.get('vendor', 'Unknown')
 
                 dev_label = dev.get('hostname') or dev.get('ip', 'Unknown')
-                logger.info(f"[SCAN]   [{idx}/{total_devices}] {dev.get('ip', 'N/A')} ({check_vendor}) - {dev_label}")
+                _log_scan_info(f"[SCAN]   [{idx}/{total_devices}] {dev.get('ip', 'N/A')} ({check_vendor}) - {dev_label}")
 
                 # Set resolved vendor for SBOM/firmware checks to use enriched data
                 dev['resolved_vendor'] = check_vendor
@@ -559,7 +566,7 @@ class CRAScanner:
                     status = "Warning"
 
                 _p = lambda r: "pass" if r.get('passed') else "FAIL"
-                logger.info(
+                _log_scan_info(
                     f"[SCAN]     Secure={_p(sbd_result)}  Confid={_p(conf_result)}  "
                     f"AttackSurface={attack_surface['rating']}({attack_surface['openPortsCount']})  "
                     f"HTTPS={_p(https_result)}  CVE={_p(vuln_result)}  SBOM={_p(sbom_result)}  "
@@ -687,7 +694,8 @@ class CRAScanner:
                 logger.info("[SCAN] mDNS discovery found no hostnames.")
             return mdns_results
         except Exception:
-            logger.error("[SCAN] mDNS discovery failed.", exc_info=True)
+            logger.error("[SCAN] mDNS discovery failed.")
+            logger.debug("[SCAN] mDNS discovery traceback", exc_info=True)
             return {}
 
     def _normalize_hostname(self, hostname):
@@ -844,6 +852,7 @@ class CRAScanner:
                 logger.error(f"[SCAN]   Failed to fetch HA states: {response.status_code} {response.text}")
         except Exception as e:
             logger.error(f"[SCAN]   Error communicating with Supervisor: {e}")
+            logger.debug("[SCAN] Supervisor communication traceback", exc_info=True)
         
         logger.info(f"[SCAN]   Found {len(devices)} HA devices")
         return devices
