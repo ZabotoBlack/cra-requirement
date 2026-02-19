@@ -163,7 +163,7 @@ python scripts/mock_security_logging_device.py --http-port 8080 --disable-udp
 This add-on requires elevated permissions to function correctly:
 - **`privileged`**: Configured as a list of Linux capabilities (e.g., `NET_ADMIN`, `NET_RAW`) in `config.yaml`. These are granted instead of full privileged mode to enable low-level network operations like ARP scanning and raw socket access.
 - **`host_network: true`**: Required to share the host's network stack for accurate device discovery.
-- **`apparmor: cra_auditor`**: Uses a custom AppArmor profile (`apparmor.txt`) tailored for Python + Nmap scanning while keeping writable paths focused on `/data`, `/tmp`, and runtime state.
+- **`apparmor: true`**: Keeps AppArmor enabled; custom profile rules are defined in `apparmor.txt` for Python + Nmap scanning while keeping writable paths focused on `/data`, `/tmp`, and runtime state.
 
 > [!WARNING]
 > These settings grant the container significant access to the host network. Ensure you trust this add-on and the device running it. Restricting or removing these specific capabilities (not necessarily full privileged) may break scanning functionality.

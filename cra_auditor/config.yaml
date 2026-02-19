@@ -20,7 +20,7 @@ panel_icon: mdi:security
 # webui: "http://[HOST]:[PORT:8099]"
 homeassistant_api: true
 hassio_api: true
-apparmor: cra_auditor # Use custom AppArmor profile from apparmor.txt
+apparmor: true # Keep AppArmor enabled (custom apparmor.txt remains in add-on folder)
 host_network: true # Required for ARP/raw sockets; grants elevated host access
 privileged:
   - NET_ADMIN
