@@ -45,6 +45,42 @@ case "$LOG_LEVEL" in
 esac
 export LOG_LEVEL
 
+# 2b. Configure Gunicorn logging based on add-on log level.
+# Access logs are the noisy per-request GET/POST lines.
+GUNICORN_LOG_LEVEL="info"
+ACCESS_LOGFILE="/dev/null"
+
+case "$LOG_LEVEL" in
+    trace)
+        GUNICORN_LOG_LEVEL="debug"
+        ACCESS_LOGFILE="-"
+        ;;
+    debug)
+        GUNICORN_LOG_LEVEL="debug"
+        ACCESS_LOGFILE="-"
+        ;;
+    scan_info)
+        GUNICORN_LOG_LEVEL="info"
+        ACCESS_LOGFILE="/dev/null"
+        ;;
+    info)
+        GUNICORN_LOG_LEVEL="info"
+        ACCESS_LOGFILE="/dev/null"
+        ;;
+    warning)
+        GUNICORN_LOG_LEVEL="warning"
+        ACCESS_LOGFILE="/dev/null"
+        ;;
+    error)
+        GUNICORN_LOG_LEVEL="error"
+        ACCESS_LOGFILE="/dev/null"
+        ;;
+    fatal)
+        GUNICORN_LOG_LEVEL="critical"
+        ACCESS_LOGFILE="/dev/null"
+        ;;
+esac
+
 if [ -z "$GEMINI_API_KEY" ]; then
     bashio::log.warning "Gemini API Key is not set. AI features will be disabled."
 else
@@ -58,6 +94,11 @@ else
 fi
 
 bashio::log.info "Backend log level set to: $LOG_LEVEL"
+if [ "$ACCESS_LOGFILE" = "-" ]; then
+    bashio::log.info "Gunicorn access logs enabled (debug/trace mode)."
+else
+    bashio::log.info "Gunicorn access logs suppressed at log level: $LOG_LEVEL"
+fi
 
 # 3. Start production WSGI server (gunicorn replaces Flask dev server)
 exec gunicorn \
@@ -65,6 +106,7 @@ exec gunicorn \
     --workers 2 \
     --threads 2 \
     --timeout 300 \
-    --access-logfile - \
+    --log-level "$GUNICORN_LOG_LEVEL" \
+    --access-logfile "$ACCESS_LOGFILE" \
     --error-logfile - \
     server:app
