@@ -61,10 +61,6 @@ def _resolve_runtime_log_file() -> Path:
     return _resolve_persistent_base_dir(Path(__file__).resolve().parent) / "cra_auditor.log"
 
 
-def _resolve_cache_base_dir() -> Path:
-    return _resolve_persistent_base_dir(Path(__file__).resolve().parent)
-
-
 def _resolve_data_dir() -> Path | None:
     """Resolve persistent data directory preference.
 
@@ -235,12 +231,12 @@ def _detect_home_assistant_primary_subnet() -> str | None:
     try:
         response = requests.get('http://supervisor/network/info', headers=headers, timeout=5)
         if response.status_code != 200:
-            logger.debug(f"[NET] Supervisor network info returned {response.status_code}")
+            logger.debug("[NET] Supervisor network info returned %s", response.status_code)
             return None
 
         raw_payload = response.json()
     except Exception as exc:
-        logger.debug(f"[NET] Failed to fetch Supervisor network info: {exc}")
+        logger.debug("[NET] Failed to fetch Supervisor network info: %s", exc)
         return None
 
     payload = raw_payload.get('data') if isinstance(raw_payload, dict) else raw_payload
@@ -263,13 +259,13 @@ def _detect_home_assistant_primary_subnet() -> str | None:
     for candidate in primary_items:
         subnet = _extract_ipv4_subnet_from_structure(candidate)
         if subnet:
-            logger.info(f"[NET] Using Home Assistant primary subnet: {subnet}")
+            logger.info("[NET] Using Home Assistant primary subnet: %s", subnet)
             return subnet
 
     for candidate in interface_items:
         subnet = _extract_ipv4_subnet_from_structure(candidate)
         if subnet:
-            logger.info(f"[NET] Using Home Assistant interface subnet: {subnet}")
+            logger.info("[NET] Using Home Assistant interface subnet: %s", subnet)
             return subnet
 
     return _extract_ipv4_subnet_from_structure(payload)
@@ -535,6 +531,12 @@ def get_scan_state() -> dict:
         return {"scanning": bool(row['is_scanning']), "error": row['scan_error']}
     return {"scanning": False, "error": None}
 
+
+def _public_scan_error(error: str | None) -> str | None:
+    if not error:
+        return None
+    return "Scan failed. Check logs for details."
+
 def set_scan_state(scanning: bool, error: str = None):
     """Update the scan state in the database."""
     with sqlite3.connect(DB_FILE) as conn:
@@ -606,8 +608,9 @@ def start_scan():
 def get_status():
     state = get_scan_state()
     result = {"scanning": state["scanning"]}
-    if state["error"]:
-        result["error"] = state["error"]
+    public_error = _public_scan_error(state.get("error"))
+    if public_error:
+        result["error"] = public_error
     return jsonify(result)
 
 @app.route('/api/config', methods=['GET'])

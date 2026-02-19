@@ -14,14 +14,6 @@ interface DeviceListProps {
   devices: Device[];
 }
 
-const statusTone = (status: string): 'success' | 'warning' | 'danger' | 'info' | 'neutral' => {
-  if (status === ComplianceStatus.COMPLIANT) return 'success';
-  if (status === ComplianceStatus.WARNING) return 'warning';
-  if (status === ComplianceStatus.NON_COMPLIANT) return 'danger';
-  if (status === ComplianceStatus.DISCOVERED) return 'info';
-  return 'neutral';
-};
-
 const statusDotClass = (status: string) => {
   if (status === ComplianceStatus.COMPLIANT) return 'bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.9)]';
   if (status === ComplianceStatus.WARNING) return 'bg-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.85)]';

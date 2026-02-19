@@ -427,8 +427,11 @@ class CRAScanner:
 
         logger.info("[SCAN] " + "=" * 56)
         logger.info(
-            f"[SCAN] Starting scan on {subnet} "
-            f"(profile={scan_type}, features={features}, vendors={selected_vendors})"
+            "[SCAN] Starting scan on %s (profile=%s, features=%s, vendors=%s)",
+            subnet,
+            scan_type,
+            features,
+            selected_vendors,
         )
         logger.info("[SCAN] " + "-" * 56)
 
@@ -440,25 +443,30 @@ class CRAScanner:
         # Stage 1: Discovery Scan (Ping + ARP)
         current_stage = 1
         if self.nm and features.get('network_discovery'):
-            logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Discovery scan (-sn -PR)...")
+            logger.info("[SCAN] Stage %s/%s: Discovery scan (-sn -PR)...", current_stage, total_stages)
             stage_start = time.time()
             try:
                 self.nm.scan(hosts=subnet, arguments='-sn -PR')
                 self._update_scanned_devices(scanned_devices, discovery_phase=True)
             except Exception as e:
-                logger.error(f"[SCAN] Nmap discovery scan failed: {e}")
+                logger.error("[SCAN] Nmap discovery scan failed: %s", e)
                 logger.debug("[SCAN] Discovery scan traceback", exc_info=True)
             stage_elapsed = time.time() - stage_start
-            logger.info(f"[SCAN]   Found {len(scanned_devices)} live hosts in {stage_elapsed:.1f}s")
+            logger.info("[SCAN]   Found %s live hosts in %.1fs", len(scanned_devices), stage_elapsed)
             for ip, dev in scanned_devices.items():
-                _log_scan_info(f"[SCAN]   -> {ip} (MAC: {dev.get('mac', 'Unknown')}, vendor: {dev.get('vendor', 'Unknown')})")
+                _log_scan_info(
+                    "[SCAN]   -> %s (MAC: %s, vendor: %s)",
+                    ip,
+                    dev.get('mac', 'Unknown'),
+                    dev.get('vendor', 'Unknown'),
+                )
         elif not self.nm:
             logger.error("[SCAN] Nmap not initialized. Falling back to Home Assistant-only merge.")
             # Avoid expensive/low-value compliance probes when discovery cannot run.
             features['port_scan'] = False
             features['compliance_checks'] = False
         else:
-            logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Discovery disabled by feature flags (skipped).")
+            logger.info("[SCAN] Stage %s/%s: Discovery disabled by feature flags (skipped).", current_stage, total_stages)
 
         hosts_to_scan = list(scanned_devices.keys())
         mdns_hostnames = {}
@@ -471,7 +479,7 @@ class CRAScanner:
         # Optional Stage 2: Detailed Scan
         current_stage += 1
         if hosts_to_scan and features.get('port_scan') and self.nm:
-            logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Detailed port scan on {len(hosts_to_scan)} hosts...")
+            logger.info("[SCAN] Stage %s/%s: Detailed port scan on %s hosts...", current_stage, total_stages, len(hosts_to_scan))
             stage_start = time.time()
 
             target_spec = " ".join(hosts_to_scan)
@@ -491,18 +499,22 @@ class CRAScanner:
             nmap_args += f" -p {port_spec}"
             
             try:
-                _log_scan_info(f"[SCAN]   Nmap args: {nmap_args}")
+                _log_scan_info("[SCAN]   Nmap args: %s", nmap_args)
                 self.nm.scan(hosts=target_spec, arguments=nmap_args)
                 self._update_scanned_devices(scanned_devices, discovery_phase=False)
                 stage_elapsed = time.time() - stage_start
-                logger.info(f"[SCAN]   Completed in {stage_elapsed:.1f}s -- updated {len(scanned_devices)} devices")
+                logger.info("[SCAN]   Completed in %.1fs -- updated %s devices", stage_elapsed, len(scanned_devices))
             except Exception as e:
-                logger.error(f"[SCAN] Nmap detail scan failed: {e}. Falling back to discovery results ({len(scanned_devices)} devices).")
+                logger.error(
+                    "[SCAN] Nmap detail scan failed: %s. Falling back to discovery results (%s devices).",
+                    e,
+                    len(scanned_devices),
+                )
                 logger.debug("[SCAN] Detailed scan traceback", exc_info=True)
         elif features.get('port_scan') and not hosts_to_scan:
-            logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Detailed scan skipped (no discovered hosts).")
+            logger.info("[SCAN] Stage %s/%s: Detailed scan skipped (no discovered hosts).", current_stage, total_stages)
         elif not features.get('port_scan'):
-            logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Detailed scan disabled by profile/features.")
+            logger.info("[SCAN] Stage %s/%s: Detailed scan disabled by profile/features.", current_stage, total_stages)
 
         if scanned_devices:
             self._enrich_hostnames(scanned_devices, mdns_hostnames)
@@ -511,7 +523,7 @@ class CRAScanner:
 
         # Stage: HA Merge
         current_stage += 1
-        logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Merging with Home Assistant devices...")
+        logger.info("[SCAN] Stage %s/%s: Merging with Home Assistant devices...", current_stage, total_stages)
         merged_devices = self._merge_devices(nmap_devices, ha_devices)
         scan_timestamp = datetime.now().isoformat()
 
@@ -521,7 +533,7 @@ class CRAScanner:
         final_results = []
 
         if not features.get('compliance_checks'):
-            logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Compliance checks disabled by profile/features.")
+            logger.info("[SCAN] Stage %s/%s: Compliance checks disabled by profile/features.", current_stage, total_stages)
             for dev in merged_devices:
                 dev.update({
                     "status": "Discovered",
@@ -531,7 +543,7 @@ class CRAScanner:
                 })
                 final_results.append(dev)
         else:
-            logger.info(f"[SCAN] Stage {current_stage}/{total_stages}: Compliance checks on {total_devices} devices...")
+            logger.info("[SCAN] Stage %s/%s: Compliance checks on %s devices...", current_stage, total_stages, total_devices)
             stage_start = time.time()
 
             for idx, dev in enumerate(merged_devices, 1):
@@ -542,7 +554,14 @@ class CRAScanner:
                     check_vendor = dev.get('vendor', 'Unknown')
 
                 dev_label = dev.get('hostname') or dev.get('ip', 'Unknown')
-                _log_scan_info(f"[SCAN]   [{idx}/{total_devices}] {dev.get('ip', 'N/A')} ({check_vendor}) - {dev_label}")
+                _log_scan_info(
+                    "[SCAN]   [%s/%s] %s (%s) - %s",
+                    idx,
+                    total_devices,
+                    dev.get('ip', 'N/A'),
+                    check_vendor,
+                    dev_label,
+                )
 
                 # Set resolved vendor for SBOM/firmware checks to use enriched data
                 dev['resolved_vendor'] = check_vendor
@@ -615,7 +634,7 @@ class CRAScanner:
                 final_results.append(dev)
 
             stage_elapsed = time.time() - stage_start
-            logger.info(f"[SCAN]   Compliance checks completed in {stage_elapsed:.1f}s")
+            logger.info("[SCAN]   Compliance checks completed in %.1fs", stage_elapsed)
 
         total_elapsed = time.time() - scan_start
 
@@ -626,9 +645,13 @@ class CRAScanner:
         discovered = sum(1 for d in final_results if d.get('status') == 'Discovered')
         logger.info("[SCAN] " + "=" * 56)
         logger.info(
-            f"[SCAN] Scan complete: {len(final_results)} devices "
-            f"({compliant} Compliant, {warning} Warning, {non_compliant} Non-Compliant, {discovered} Discovered) "
-            f"in {total_elapsed:.1f}s"
+            "[SCAN] Scan complete: %s devices (%s Compliant, %s Warning, %s Non-Compliant, %s Discovered) in %.1fs",
+            len(final_results),
+            compliant,
+            warning,
+            non_compliant,
+            discovered,
+            total_elapsed,
         )
         return final_results
 
@@ -840,7 +863,7 @@ class CRAScanner:
                 {"entity_id": "light.zigbee_device_1", "attributes": {"friendly_name": "Kitchen Light", "source": "ha", "manufacturer": "Philips", "model": "LWB010", "sw_version": "1.50.2"}}, # Zigbee, no IP
                 {"entity_id": "router.fritz_box_7590", "attributes": {"friendly_name": "FRITZ!Box 7590", "ip_address": "192.168.1.1", "source": "ha", "manufacturer": "AVM", "model": "FRITZ!Box 7590", "sw_version": "7.57"}}
             ]
-            logger.info(f"[SCAN]   Loaded {len(mock_devices)} mock HA devices")
+            logger.info("[SCAN]   Loaded %s mock HA devices", len(mock_devices))
             return mock_devices
             
         headers = {
@@ -850,7 +873,7 @@ class CRAScanner:
         
         # Fetch device registry for richer data (sw_version, manufacturer, model)
         device_registry = self._get_ha_device_registry(headers)
-        logger.info(f"[SCAN]   Device Registry: {len(device_registry)} entries")
+        logger.info("[SCAN]   Device Registry: %s entries", len(device_registry))
         
         devices = []
         try:
@@ -873,12 +896,12 @@ class CRAScanner:
                             "model": reg_info.get('model') or attrs.get('model'),
                         })
             else:
-                logger.error(f"[SCAN]   Failed to fetch HA states: {response.status_code} {response.text}")
+                logger.error("[SCAN]   Failed to fetch HA states: %s %s", response.status_code, response.text)
         except Exception as e:
-            logger.error(f"[SCAN]   Error communicating with Supervisor: {e}")
+            logger.error("[SCAN]   Error communicating with Supervisor: %s", e)
             logger.debug("[SCAN] Supervisor communication traceback", exc_info=True)
         
-        logger.info(f"[SCAN]   Found {len(devices)} HA devices")
+        logger.info("[SCAN]   Found %s HA devices", len(devices))
         return devices
 
     def _get_ha_device_registry(self, headers):
@@ -913,9 +936,9 @@ class CRAScanner:
                 entity_map = self._map_entities_to_devices(headers, result)
                 result.update(entity_map)
             else:
-                logger.debug(f"Device Registry fetch returned {response.status_code} (may not be available)")
+                logger.debug("Device Registry fetch returned %s (may not be available)", response.status_code)
         except Exception as e:
-            logger.debug(f"Device Registry fetch failed: {e}")
+            logger.debug("Device Registry fetch failed: %s", e)
         
         return result
 
@@ -933,7 +956,7 @@ class CRAScanner:
                     if entity_id and device_id and device_id in device_registry:
                         entity_map[entity_id] = device_registry[device_id]
         except Exception as e:
-            logger.debug(f"Entity Registry fetch failed: {e}")
+            logger.debug("Entity Registry fetch failed: %s", e)
         return entity_map
 
     def _merge_devices(self, nmap_devices, ha_devices):
@@ -1339,7 +1362,7 @@ class CRAScanner:
         try:
             cves = self.nvd_client.get_cves_for_cpe(canonical_cpe, min_cvss=9.0, limit=5)
         except Exception as e:
-            logger.error(f"NVD CVE lookup failed: {e}")
+            logger.error("NVD CVE lookup failed: %s", e)
             return {"passed": True, "details": "CVE lookup failed (network error).", "cves": []}
 
         if cves:
@@ -1611,7 +1634,7 @@ class CRAScanner:
                         if r.headers.get('Content-Type', '').startswith(('application/json', 'application/xml', 'text/xml')):
                             return True, 'Unknown Format'
                 except Exception as e:
-                    logger.debug(f"SBOM probe failed for {url}: {e}")
+                    logger.debug("SBOM probe failed for %s: %s", url, e)
         
         return False, None
 
@@ -1755,7 +1778,7 @@ class CRAScanner:
                     if fields['contact']:
                         return True, fields
             except Exception as e:
-                logger.debug(f"security.txt probe failed for {url}: {e}")
+                logger.debug("security.txt probe failed for %s: %s", url, e)
 
         return False, None
 
@@ -1824,7 +1847,7 @@ class CRAScanner:
                 else:
                     details.append("No canonical CPE found for firmware version-specific CVE lookup.")
             except Exception as e:
-                logger.error(f"Version-specific NVD CVE lookup failed: {e}")
+                logger.error("Version-specific NVD CVE lookup failed: %s", e)
                 details.append("Version-specific CVE lookup failed (network error).")
 
         if version_cves:

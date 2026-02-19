@@ -1,6 +1,6 @@
 import { ComplianceStatus } from '../types';
 
-export type StatusTranslationKey =
+type StatusTranslationKey =
   | 'status.compliant'
   | 'status.warningLabel'
   | 'status.nonCompliantLabel'
