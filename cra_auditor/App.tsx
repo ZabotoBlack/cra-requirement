@@ -338,6 +338,23 @@ const App: React.FC = () => {
                 )}
               </button>
             ))}
+
+            {sidebarExpanded && (
+              <div className="mt-2 rounded-xl border border-slate-700/70 bg-slate-900/60 p-3">
+                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-widest text-slate-400">UI Mode</label>
+                <select
+                  value={userMode}
+                  disabled={scanning}
+                  onChange={(event) => handleModeChange(event.target.value as UserMode)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950/80 px-2 py-2 text-sm text-slate-100 outline-none transition hover:border-slate-500 focus:border-cyan-400/50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <option value="basic">End User</option>
+                  <option value="intermediate">Intermediate</option>
+                  <option value="expert">Expert</option>
+                </select>
+                <p className="mt-2 text-xs text-slate-400">Switch experience level from here at any time.</p>
+              </div>
+            )}
           </nav>
         </div>
       </aside>
@@ -356,41 +373,6 @@ const App: React.FC = () => {
               </div>
 
               <div className="flex flex-col gap-2 md:items-end">
-                <div className="grid w-full grid-cols-3 gap-2 md:w-auto">
-                  {(['basic', 'intermediate', 'expert'] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      onClick={() => handleModeChange(mode)}
-                      disabled={scanning}
-                      className={`rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition ${userMode === mode ? MODE_DISPLAY[mode].activeClass : MODE_DISPLAY[mode].inactiveClass} ${scanning ? 'cursor-not-allowed opacity-70' : ''}`}
-                    >
-                      {MODE_DISPLAY[mode].label}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                  <span
-                    title="Simple health summary with auto subnet detection and minimal technical detail"
-                    aria-label="End User mode: simple health summary with auto subnet"
-                    className="inline-flex items-center gap-1 rounded-full border border-emerald-400/35 bg-emerald-500/10 px-2 py-0.5 text-emerald-200"
-                  >
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" /> End User
-                  </span>
-                  <span
-                    title="Configurable subnet with standard compliance visibility"
-                    aria-label="Intermediate mode: configurable subnet with standard visibility"
-                    className="inline-flex items-center gap-1 rounded-full border border-cyan-400/35 bg-cyan-500/10 px-2 py-0.5 text-cyan-200"
-                  >
-                    <span className="h-1.5 w-1.5 rounded-full bg-cyan-300" /> Intermediate
-                  </span>
-                  <span
-                    title="Full controls with raw data, logs console, and JSON export"
-                    aria-label="Expert mode: full controls with logs and JSON export"
-                    className="inline-flex items-center gap-1 rounded-full border border-violet-400/35 bg-violet-500/10 px-2 py-0.5 text-violet-200"
-                  >
-                    <span className="h-1.5 w-1.5 rounded-full bg-violet-300" /> Expert
-                  </span>
-                </div>
                 <div className="flex flex-col gap-3 md:flex-row md:items-center">
                   {subnetLocked ? (
                     <div className="min-w-[260px] rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 py-2 text-sm text-slate-200">

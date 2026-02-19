@@ -10,6 +10,7 @@ import time
 import sqlite3
 import json
 import ipaddress
+import requests
 from datetime import datetime
 from pathlib import Path
 from scan_logic import CRAScanner
@@ -47,6 +48,137 @@ def _subnet_from_ip(ip_address: str, prefix: int = 24) -> str | None:
         return str(interface.network)
     except ValueError:
         return None
+
+
+def _subnet_from_cidr(cidr: str) -> str | None:
+    try:
+        interface = ipaddress.ip_interface(cidr)
+        if interface.version != 4:
+            return None
+        return str(interface.network)
+    except ValueError:
+        return None
+
+
+def _subnet_from_ip_mask(ip_address: str, mask: str | int) -> str | None:
+    try:
+        network = ipaddress.ip_network(f"{ip_address}/{mask}", strict=False)
+        if network.version != 4:
+            return None
+        return str(network)
+    except ValueError:
+        return None
+
+
+def _extract_ipv4_subnet_from_structure(payload) -> str | None:
+    if payload is None:
+        return None
+
+    stack = [payload]
+    while stack:
+        current = stack.pop()
+
+        if isinstance(current, str):
+            if '/' in current:
+                subnet = _subnet_from_cidr(current.strip())
+                if subnet:
+                    return subnet
+            continue
+
+        if isinstance(current, list):
+            stack.extend(reversed(current))
+            continue
+
+        if not isinstance(current, dict):
+            continue
+
+        network_value = current.get('network')
+        if isinstance(network_value, str):
+            try:
+                parsed_network = ipaddress.ip_network(network_value.strip(), strict=False)
+                if parsed_network.version == 4:
+                    return str(parsed_network)
+            except ValueError:
+                pass
+
+        ip_candidate = None
+        for key in ('address', 'ip', 'local', 'host'):
+            value = current.get(key)
+            if isinstance(value, str):
+                ip_candidate = value.strip()
+                break
+
+        if ip_candidate:
+            if '/' in ip_candidate:
+                subnet = _subnet_from_cidr(ip_candidate)
+                if subnet:
+                    return subnet
+            else:
+                for mask_key in ('prefix', 'prefixlen', 'cidr', 'netmask', 'mask'):
+                    mask_value = current.get(mask_key)
+                    if isinstance(mask_value, (int, str)):
+                        subnet = _subnet_from_ip_mask(ip_candidate, mask_value)
+                        if subnet:
+                            return subnet
+
+        for nested_key in ('ipv4', 'addresses', 'address', 'addr_info', 'configuration'):
+            if nested_key in current:
+                stack.append(current[nested_key])
+
+    return None
+
+
+def _detect_home_assistant_primary_subnet() -> str | None:
+    supervisor_token = os.environ.get('SUPERVISOR_TOKEN')
+    if not supervisor_token:
+        return None
+
+    headers = {
+        'Authorization': f'Bearer {supervisor_token}',
+        'Content-Type': 'application/json',
+    }
+
+    try:
+        response = requests.get('http://supervisor/network/info', headers=headers, timeout=5)
+        if response.status_code != 200:
+            logger.debug(f"[NET] Supervisor network info returned {response.status_code}")
+            return None
+
+        raw_payload = response.json()
+    except Exception as exc:
+        logger.debug(f"[NET] Failed to fetch Supervisor network info: {exc}")
+        return None
+
+    payload = raw_payload.get('data') if isinstance(raw_payload, dict) else raw_payload
+    if not isinstance(payload, dict):
+        return None
+
+    interfaces = payload.get('interfaces')
+    if isinstance(interfaces, dict):
+        interface_items = list(interfaces.values())
+    elif isinstance(interfaces, list):
+        interface_items = interfaces
+    else:
+        interface_items = []
+
+    primary_items = [
+        item for item in interface_items
+        if isinstance(item, dict) and (item.get('primary') is True or item.get('default') is True)
+    ]
+
+    for candidate in primary_items:
+        subnet = _extract_ipv4_subnet_from_structure(candidate)
+        if subnet:
+            logger.info(f"[NET] Using Home Assistant primary subnet: {subnet}")
+            return subnet
+
+    for candidate in interface_items:
+        subnet = _extract_ipv4_subnet_from_structure(candidate)
+        if subnet:
+            logger.info(f"[NET] Using Home Assistant interface subnet: {subnet}")
+            return subnet
+
+    return _extract_ipv4_subnet_from_structure(payload)
 
 
 def _extract_candidate_ipv4_addresses() -> list[str]:
@@ -100,6 +232,10 @@ def _extract_candidate_ipv4_addresses() -> list[str]:
 
 
 def _detect_default_subnet() -> str | None:
+    ha_subnet = _detect_home_assistant_primary_subnet()
+    if ha_subnet:
+        return ha_subnet
+
     candidates = _extract_candidate_ipv4_addresses()
     if not candidates:
         return None

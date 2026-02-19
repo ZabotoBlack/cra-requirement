@@ -363,13 +363,49 @@ class TestNetworkHelpers(unittest.TestCase):
         subnet = server._subnet_from_ip('not-an-ip', prefix=24)
         self.assertIsNone(subnet)
 
+    @patch('server._detect_home_assistant_primary_subnet', return_value='192.168.50.0/24')
     @patch('server._extract_candidate_ipv4_addresses', return_value=['10.0.5.12'])
-    def test_detect_default_subnet_uses_private_candidate(self, _mock_candidates):
+    def test_detect_default_subnet_prefers_ha_primary_subnet(self, _mock_candidates, _mock_ha_subnet):
+        subnet = server._detect_default_subnet()
+        self.assertEqual(subnet, '192.168.50.0/24')
+
+    @patch('server._detect_home_assistant_primary_subnet', return_value=None)
+    @patch('server._extract_candidate_ipv4_addresses', return_value=['10.0.5.12'])
+    def test_detect_default_subnet_uses_private_candidate(self, _mock_candidates, _mock_ha_subnet):
         subnet = server._detect_default_subnet()
         self.assertEqual(subnet, '10.0.5.0/24')
 
+    @patch('server.requests.get')
+    @patch.dict('server.os.environ', {'SUPERVISOR_TOKEN': 'test-token'}, clear=False)
+    def test_detect_home_assistant_primary_subnet_from_supervisor(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            'data': {
+                'interfaces': [
+                    {
+                        'interface': 'eth0',
+                        'primary': True,
+                        'ipv4': {
+                            'address': [
+                                {
+                                    'address': '192.168.100.15',
+                                    'prefix': 24,
+                                }
+                            ]
+                        },
+                    }
+                ]
+            }
+        }
+        mock_get.return_value = mock_response
+
+        subnet = server._detect_home_assistant_primary_subnet()
+        self.assertEqual(subnet, '192.168.100.0/24')
+
     @patch('server._extract_candidate_ipv4_addresses', return_value=[])
-    def test_detect_default_subnet_no_candidates(self, _mock_candidates):
+    @patch('server._detect_home_assistant_primary_subnet', return_value=None)
+    def test_detect_default_subnet_no_candidates(self, _mock_ha_subnet, _mock_candidates):
         subnet = server._detect_default_subnet()
         self.assertIsNone(subnet)
 
