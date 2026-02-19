@@ -47,8 +47,8 @@ LOG_BUFFER: deque[str] = deque(maxlen=300)
 
 def _resolve_persistent_base_dir(default_dir: Path | None = None) -> Path:
     env_dir = os.environ.get("CRA_DATA_DIR")
-    if env_dir:
-        return Path(env_dir)
+    if env_dir and env_dir.strip():
+        return Path(env_dir.strip())
 
     container_data = Path("/data")
     if container_data.exists() and container_data.is_dir():
@@ -74,8 +74,12 @@ def _resolve_data_dir() -> Path | None:
     """
     env_dir = os.environ.get("CRA_DATA_DIR")
     container_data = Path("/data")
-    if env_dir or (container_data.exists() and container_data.is_dir()):
-        return _resolve_persistent_base_dir()
+    default_dir = Path(__file__).resolve().parent
+
+    if env_dir and env_dir.strip():
+        return _resolve_persistent_base_dir(default_dir)
+    if container_data.exists() and container_data.is_dir():
+        return _resolve_persistent_base_dir(default_dir)
 
     return None
 
