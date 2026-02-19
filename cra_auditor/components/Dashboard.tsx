@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ShieldCheck, ShieldQuestion, Sparkles } from 'lucide-react';
+import { AlertTriangle, Info, ShieldCheck, ShieldQuestion, Sparkles } from 'lucide-react';
 import { ComplianceStatus, ScanReport } from '../types';
 import { useLanguage } from '../LanguageContext';
 import GlassCard from './ui/GlassCard';
@@ -104,6 +104,24 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
           <div className="mt-3 flex gap-2">
             <StatusBadge label={geminiEnabled ? t('dashboard.geminiOnline') : t('dashboard.noApiKey')} tone={geminiEnabled ? 'success' : 'warning'} />
             <StatusBadge label={nvdEnabled ? t('dashboard.nvdSynced') : t('dashboard.nvdOffline')} tone={nvdEnabled ? 'success' : 'danger'} />
+          </div>
+          <div className="mt-3 flex justify-end">
+            <span className="group relative inline-flex">
+              <button
+                type="button"
+                aria-label={t('dashboard.nvdInfo')}
+                title={t('dashboard.nvdInfo')}
+                className="text-soft hover:text-main inline-flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border-subtle)] transition"
+              >
+                <Info size={13} aria-hidden="true" />
+              </button>
+              <span
+                role="tooltip"
+                className="surface-elevated text-main pointer-events-none absolute right-0 top-full z-10 mt-2 hidden w-72 rounded-lg border px-3 py-2 text-xs leading-relaxed group-hover:block group-focus-within:block"
+              >
+                {t('dashboard.nvdInfo')}
+              </span>
+            </span>
           </div>
         </GlassCard>
 
