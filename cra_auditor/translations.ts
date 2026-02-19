@@ -35,6 +35,10 @@ export const TRANSLATIONS = {
     'status.profile': 'Profile',
     'status.geminiOnline': 'Gemini Online',
     'status.geminiDisabled': 'Gemini Disabled',
+    'status.compliant': 'Compliant',
+    'status.warningLabel': 'Warning',
+    'status.nonCompliantLabel': 'Non-Compliant',
+    'status.discovered': 'Discovered',
     'status.nvdOnline': 'NVD Online',
     'status.nvdDisabled': 'NVD Disabled',
     'subnet.auto': 'Auto Subnet',
@@ -179,7 +183,10 @@ export const TRANSLATIONS = {
     'expert.logsConsole': 'Logs Console',
     'expert.collapseLogs': 'Collapse Logs',
     'expert.expandLogs': 'Expand Logs',
-    'expert.noLogs': 'No logs captured yet.'
+    'expert.noLogs': 'No logs captured yet.',
+    'gemini.error.noApiKey': 'Gemini API key is not configured. Add GEMINI_API_KEY to use AI remediation advice.',
+    'gemini.error.requestFailed': 'Failed to retrieve AI advice. Please check your API key and connection.',
+    'gemini.error.noAdvice': 'No advice generated.'
   },
   de: {
     'app.commandUi': 'Kommando-UI',
@@ -208,6 +215,10 @@ export const TRANSLATIONS = {
     'status.profile': 'Profil',
     'status.geminiOnline': 'Gemini online',
     'status.geminiDisabled': 'Gemini deaktiviert',
+    'status.compliant': 'Konform',
+    'status.warningLabel': 'Warnung',
+    'status.nonCompliantLabel': 'Nicht konform',
+    'status.discovered': 'Erkannt',
     'status.nvdOnline': 'NVD online',
     'status.nvdDisabled': 'NVD deaktiviert',
     'subnet.auto': 'Auto-Subnetz',
@@ -352,7 +363,10 @@ export const TRANSLATIONS = {
     'expert.logsConsole': 'Log-Konsole',
     'expert.collapseLogs': 'Logs einklappen',
     'expert.expandLogs': 'Logs ausklappen',
-    'expert.noLogs': 'Noch keine Logs erfasst.'
+    'expert.noLogs': 'Noch keine Logs erfasst.',
+    'gemini.error.noApiKey': 'Gemini-API-Schlüssel ist nicht konfiguriert. Füge GEMINI_API_KEY hinzu, um KI-Empfehlungen zu nutzen.',
+    'gemini.error.requestFailed': 'KI-Empfehlungen konnten nicht abgerufen werden. Prüfe API-Schlüssel und Verbindung.',
+    'gemini.error.noAdvice': 'Keine Empfehlung erzeugt.'
   }
 } as const;
 

@@ -13,6 +13,14 @@ interface DeviceListProps {
   devices: Device[];
 }
 
+const localizeStatus = (status: string, t: (key: 'status.compliant' | 'status.warningLabel' | 'status.nonCompliantLabel' | 'status.discovered') => string): string => {
+  if (status === ComplianceStatus.COMPLIANT) return t('status.compliant');
+  if (status === ComplianceStatus.WARNING) return t('status.warningLabel');
+  if (status === ComplianceStatus.NON_COMPLIANT) return t('status.nonCompliantLabel');
+  if (status === ComplianceStatus.DISCOVERED) return t('status.discovered');
+  return status;
+};
+
 const statusTone = (status: string): 'success' | 'warning' | 'danger' | 'info' | 'neutral' => {
   if (status === ComplianceStatus.COMPLIANT) return 'success';
   if (status === ComplianceStatus.WARNING) return 'warning';
@@ -30,7 +38,7 @@ const statusDotClass = (status: string) => {
 };
 
 const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [tab, setTab] = useState<DossierTab>('checks');
   const [loadingAdvice, setLoadingAdvice] = useState(false);
   const [advice, setAdvice] = useState<string | null>(null);
@@ -62,7 +70,13 @@ const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
     }
 
     setLoadingAdvice(true);
-    const result = await getRemediationAdvice(device);
+    const result = await getRemediationAdvice(device, {
+      localizedStatus: localizeStatus(device.status, t),
+      responseLanguage: language,
+      noApiKey: t('gemini.error.noApiKey'),
+      requestFailed: t('gemini.error.requestFailed'),
+      noAdvice: t('gemini.error.noAdvice')
+    });
     setAdvice(result);
     setLoadingAdvice(false);
     setTab('ai');
@@ -169,7 +183,7 @@ const DeviceRow: React.FC<{ device: Device; rowId: string }> = ({ device, rowId 
         <td className="px-4 py-3">
           <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/75 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-100">
             <span className={`h-2.5 w-2.5 rounded-full ${statusDotClass(device.status)}`} />
-            {device.status}
+            {localizeStatus(device.status, t)}
           </div>
         </td>
         <td className="px-4 py-3 text-right text-slate-400">

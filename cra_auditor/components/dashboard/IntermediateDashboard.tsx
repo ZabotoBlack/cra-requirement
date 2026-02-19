@@ -4,12 +4,20 @@ import Dashboard from '../Dashboard';
 import GlassCard from '../ui/GlassCard';
 import StatusBadge from '../ui/StatusBadge';
 import TechButton from '../ui/TechButton';
-import { ScanReport, FrontendConfig } from '../../types';
+import { ScanReport, FrontendConfig, ComplianceStatus } from '../../types';
 
 interface IntermediateDashboardProps {
   report: ScanReport;
   config: FrontendConfig | null;
 }
+
+const localizeStatus = (status: string, t: (key: 'status.compliant' | 'status.warningLabel' | 'status.nonCompliantLabel' | 'status.discovered') => string): string => {
+  if (status === ComplianceStatus.COMPLIANT) return t('status.compliant');
+  if (status === ComplianceStatus.WARNING) return t('status.warningLabel');
+  if (status === ComplianceStatus.NON_COMPLIANT) return t('status.nonCompliantLabel');
+  if (status === ComplianceStatus.DISCOVERED) return t('status.discovered');
+  return status;
+};
 
 const IntermediateDashboard: React.FC<IntermediateDashboardProps> = ({ report, config }) => {
   const { t } = useLanguage();
@@ -52,7 +60,10 @@ const IntermediateDashboard: React.FC<IntermediateDashboardProps> = ({ report, c
                 <p className="text-soft truncate">{row.vendor}</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <StatusBadge label={row.status} tone={row.status === 'Compliant' ? 'success' : row.status === 'Warning' ? 'warning' : row.status === 'Non-Compliant' ? 'danger' : 'neutral'} />
+                <StatusBadge
+                  label={localizeStatus(row.status, t)}
+                  tone={row.status === ComplianceStatus.COMPLIANT ? 'success' : row.status === ComplianceStatus.WARNING ? 'warning' : row.status === ComplianceStatus.NON_COMPLIANT ? 'danger' : 'neutral'}
+                />
                 {showDeviceDetails && <span className="text-muted text-xs">{row.details}</span>}
               </div>
             </div>
