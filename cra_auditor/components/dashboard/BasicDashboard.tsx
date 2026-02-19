@@ -31,10 +31,10 @@ const BasicDashboard: React.FC<BasicDashboardProps> = ({ report }) => {
       summary.push(`${defaultPasswordCount} device${defaultPasswordCount === 1 ? '' : 's'} may still use default passwords`);
     }
     if (updateCount > 0) {
-      summary.push(`${updateCount} device${updateCount === 1 ? '' : 's'} need firmware updates`);
+      summary.push(`${updateCount} device${updateCount === 1 ? '' : 's'} ${updateCount === 1 ? 'needs' : 'need'} firmware updates`);
     }
     if (vulnerabilityCount > 0) {
-      summary.push(`${vulnerabilityCount} device${vulnerabilityCount === 1 ? '' : 's'} have known vulnerabilities`);
+      summary.push(`${vulnerabilityCount} device${vulnerabilityCount === 1 ? '' : 's'} ${vulnerabilityCount === 1 ? 'has' : 'have'} known vulnerabilities`);
     }
 
     if (summary.length === 0 && hasAttentionRequired) {

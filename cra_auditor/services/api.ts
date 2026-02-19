@@ -51,9 +51,7 @@ export const getConfig = async (): Promise<{ gemini_enabled: boolean; nvd_enable
 export const getDefaultSubnet = async (): Promise<DefaultSubnetResponse | null> => {
   try {
     const response = await fetch('api/network/default');
-    if (!response.ok) {
-      return await response.json();
-    }
+    if (!response.ok) return null;
     return await response.json();
   } catch (e) {
     return null;

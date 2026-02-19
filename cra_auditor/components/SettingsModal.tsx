@@ -69,11 +69,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 {(['discovery', 'standard', 'deep'] as const).map((type) => (
                   <button
                     key={type}
+                    disabled={scanning}
                     onClick={() => applyScanType(type)}
                     className={`rounded-lg border px-3 py-2 text-sm font-semibold capitalize transition ${scanOptions.scan_type === type
                       ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-200'
                       : 'border-slate-700 bg-slate-800/70 text-slate-300 hover:text-white'
-                      }`}
+                      } ${scanning ? 'opacity-60 cursor-not-allowed' : ''}`}
                   >
                     {type}
                   </button>
