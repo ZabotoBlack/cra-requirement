@@ -144,6 +144,8 @@ const App: React.FC = () => {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
   const [logs, setLogs] = useState<string[]>([]);
+  const previousScanningRef = useRef(false);
+  const recentScanCompletionRef = useRef<number | null>(null);
 
   const [scanOptions, setScanOptions] = useState<ScanOptions>({
     scan_type: 'deep',
@@ -177,6 +179,12 @@ const App: React.FC = () => {
     const statusData = await getScanStatus();
 
     if (statusData !== null) {
+      const now = Date.now();
+      if (previousScanningRef.current && !statusData.scanning) {
+        recentScanCompletionRef.current = now;
+      }
+      previousScanningRef.current = statusData.scanning;
+
       setScanning(statusData.scanning);
       setLoading(false);
 
@@ -192,7 +200,26 @@ const App: React.FC = () => {
       if (userMode === 'expert') {
         const logsData = await getLogs(180);
         if (logsData?.logs) {
-          setLogs(logsData.logs);
+          setLogs((previousLogs) => {
+            const incomingLogs = logsData.logs;
+
+            if (incomingLogs.length === 0 || previousLogs.length === 0) {
+              return incomingLogs;
+            }
+
+            const scanJustCompleted = recentScanCompletionRef.current !== null
+              && (now - recentScanCompletionRef.current) < 15000;
+
+            const isUnexpectedCollapse = incomingLogs.length <= 2
+              && previousLogs.length >= 10
+              && scanJustCompleted;
+
+            if (isUnexpectedCollapse) {
+              return previousLogs;
+            }
+
+            return incomingLogs;
+          });
         }
       }
     }
@@ -325,6 +352,8 @@ const App: React.FC = () => {
 
     try {
       setScanning(true);
+      previousScanningRef.current = true;
+      recentScanCompletionRef.current = null;
       setScanError(null);
       setView('dashboard');
       await startScan(targetSubnet, effectiveOptions);

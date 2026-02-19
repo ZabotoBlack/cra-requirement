@@ -1,6 +1,7 @@
 from flask import Flask, jsonify, request, send_from_directory
 from collections import deque
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 import re
 import shutil
@@ -21,6 +22,21 @@ logger = logging.getLogger(__name__)
 LOG_BUFFER: deque[str] = deque(maxlen=300)
 
 
+def _resolve_runtime_log_file() -> Path:
+    env_dir = os.environ.get("CRA_DATA_DIR")
+    if env_dir:
+        return Path(env_dir) / "cra_auditor.log"
+
+    container_data = Path("/data")
+    if container_data.exists() and container_data.is_dir():
+        return container_data / "cra_auditor.log"
+
+    return Path(__file__).resolve().parent / "cra_auditor.log"
+
+
+RUNTIME_LOG_FILE = _resolve_runtime_log_file()
+
+
 class InMemoryLogHandler(logging.Handler):
     def emit(self, record):
         try:
@@ -33,6 +49,28 @@ def _configure_log_buffer() -> None:
     root_logger = logging.getLogger()
     if any(isinstance(handler, InMemoryLogHandler) for handler in root_logger.handlers):
         return
+
+    try:
+        RUNTIME_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
+    try:
+        if not any(
+            isinstance(handler, RotatingFileHandler)
+            and Path(getattr(handler, "baseFilename", "")).resolve() == RUNTIME_LOG_FILE.resolve()
+            for handler in root_logger.handlers
+        ):
+            file_handler = RotatingFileHandler(
+                RUNTIME_LOG_FILE,
+                maxBytes=1_500_000,
+                backupCount=1,
+                encoding='utf-8'
+            )
+            file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s'))
+            root_logger.addHandler(file_handler)
+    except Exception:
+        pass
 
     buffer_handler = InMemoryLogHandler()
     buffer_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s'))
@@ -295,6 +333,15 @@ def _resolve_data_dir() -> Path | None:
     return None
 
 
+def _tail_shared_log_lines(limit: int) -> list[str]:
+    try:
+        if not RUNTIME_LOG_FILE.exists():
+            return []
+        return RUNTIME_LOG_FILE.read_text(encoding='utf-8', errors='replace').splitlines()[-limit:]
+    except Exception:
+        return []
+
+
 APP_DIR = Path(__file__).resolve().parent
 LEGACY_DB_FILE = APP_DIR / "scans.db"
 DATA_DIR = _resolve_data_dir()
@@ -555,7 +602,9 @@ def get_logs():
         limit = 120
 
     limit = max(1, min(limit, 300))
-    logs = list(LOG_BUFFER)[-limit:]
+    logs = _tail_shared_log_lines(limit)
+    if not logs:
+        logs = list(LOG_BUFFER)[-limit:]
     return jsonify({"logs": logs})
 
 @app.route('/api/report', methods=['GET'])
