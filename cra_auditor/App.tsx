@@ -6,10 +6,12 @@ import BasicDashboard from './components/dashboard/BasicDashboard';
 import IntermediateDashboard from './components/dashboard/IntermediateDashboard';
 import ExpertDashboard from './components/dashboard/ExpertDashboard';
 import SettingsModal from './components/SettingsModal';
+import LanguageSelector from './components/LanguageSelector';
 import GlassCard from './components/ui/GlassCard';
 import StatusBadge from './components/ui/StatusBadge';
 import TechButton from './components/ui/TechButton';
 import { startScan, getScanStatus, getReport, getConfig, getHistoryDetail, getDefaultSubnet, getLogs } from './services/api';
+import { LanguageProvider, useLanguage } from './LanguageContext';
 import { ScanReport, ViewState, ScanOptions, FrontendConfig, UserMode } from './types';
 
 const isValidIPv4Address = (address: string): boolean => {
@@ -100,25 +102,14 @@ const THEME_STORAGE_KEY = 'cra-theme';
 
 type ThemeMode = 'light' | 'dark';
 
-const MODE_DISPLAY: Record<UserMode, { label: string }> = {
-  basic: {
-    label: 'End User'
-  },
-  intermediate: {
-    label: 'Intermediate'
-  },
-  expert: {
-    label: 'Expert'
-  }
-};
-
 const MODE_ACCENT: Record<UserMode, string> = {
   basic: 'var(--color-emerald)',
   intermediate: 'var(--color-cyan)',
   expert: 'var(--color-violet)'
 };
 
-const App: React.FC = () => {
+const AppShell: React.FC = () => {
+  const { t } = useLanguage();
   const [view, setView] = useState<ViewState>('dashboard');
   const [scanning, setScanning] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -174,6 +165,11 @@ const App: React.FC = () => {
   const subnetLocked = userMode === 'basic';
   const canStartScan = !scanning && (userMode === 'basic' || isValidSubnet);
   const accentColor = MODE_ACCENT[userMode];
+  const getModeLabel = (mode: UserMode): string => {
+    if (mode === 'basic') return t('mode.basic');
+    if (mode === 'intermediate') return t('mode.intermediate');
+    return t('mode.expert');
+  };
 
   const fetchData = useCallback(async () => {
     const statusData = await getScanStatus();
@@ -323,9 +319,9 @@ const App: React.FC = () => {
     let targetSubnet = normalizedSubnet;
 
     if (userMode === 'basic' && !targetSubnet) {
-      const enteredSubnet = window.prompt('Automatic subnet detection failed. Please enter your subnet (for example 192.168.1.0/24):', '192.168.1.0/24');
+      const enteredSubnet = window.prompt(t('prompt.autoSubnetFailed'), '192.168.1.0/24');
       if (!enteredSubnet) {
-        setScanError('Subnet is required to start the scan.');
+        setScanError(t('errors.subnetRequired'));
         return;
       }
       targetSubnet = enteredSubnet.trim();
@@ -333,7 +329,7 @@ const App: React.FC = () => {
     }
 
     if (!isValidCidrSubnet(targetSubnet)) {
-      setScanError('Invalid CIDR format. Use IPv4 (e.g. 192.168.1.0/24) or IPv6 (e.g. 2001:db8::/64).');
+      setScanError(t('errors.invalidCidr'));
       return;
     }
 
@@ -360,7 +356,7 @@ const App: React.FC = () => {
     } catch (e) {
       console.error(e);
       setScanning(false);
-      alert('Failed to start scan. Check console.');
+      alert(t('errors.startScanFailed'));
     }
   };
 
@@ -370,7 +366,7 @@ const App: React.FC = () => {
       setReport(historicalReport);
       setView('dashboard');
     } else {
-      alert('Failed to load historical report.');
+      alert(t('errors.historyLoadFailed'));
     }
   };
 
@@ -383,12 +379,12 @@ const App: React.FC = () => {
   };
 
   const navItems: Array<{ id: ViewState; label: string; icon: React.ComponentType<{ size?: number }> }> = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'history', label: 'History', icon: History }
+    { id: 'dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
+    { id: 'history', label: t('nav.history'), icon: History }
   ];
 
   if (userMode !== 'basic') {
-    navItems.splice(1, 0, { id: 'devices', label: 'Devices', icon: List });
+    navItems.splice(1, 0, { id: 'devices', label: t('nav.devices'), icon: List });
   }
 
   return (
@@ -402,12 +398,12 @@ const App: React.FC = () => {
             {sidebarExpanded && (
               <div className="mr-auto ml-3 min-w-0">
                 <p className="text-main truncate text-sm font-semibold">CRA Auditor</p>
-                <p className="text-soft text-[11px]">Command UI</p>
+                <p className="text-soft text-[11px]">{t('app.commandUi')}</p>
               </div>
             )}
             <button
               onClick={() => setSidebarExpanded((prev) => !prev)}
-              title={sidebarExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
+              title={sidebarExpanded ? t('sidebar.collapse') : t('sidebar.expand')}
               className={`surface-card text-muted hover:text-main flex h-9 items-center rounded-lg border transition ${sidebarExpanded ? 'w-9 justify-center' : 'w-11 justify-center'}`}
             >
               {sidebarExpanded ? <ChevronsLeft size={16} /> : <ChevronsRight size={16} />}
@@ -438,7 +434,7 @@ const App: React.FC = () => {
 
             {sidebarExpanded && (
               <div className="surface-card mt-2 rounded-xl border p-3">
-                <label className="text-soft mb-2 block text-[11px] font-semibold uppercase tracking-widest">UI Mode</label>
+                <label className="text-soft mb-2 block text-[11px] font-semibold uppercase tracking-widest">{t('sidebar.uiMode')}</label>
                 <div ref={modeMenuRef} className="relative">
                   <button
                     type="button"
@@ -448,11 +444,11 @@ const App: React.FC = () => {
                     onClick={() => setIsModeMenuOpen((prev) => !prev)}
                     className="surface-elevated text-main flex w-full items-center justify-between rounded-xl border px-2 py-2 text-sm outline-none transition focus:border-[var(--color-accent-border)] disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <span>{MODE_DISPLAY[userMode].label}</span>
+                    <span>{getModeLabel(userMode)}</span>
                     <span className="text-soft text-xs">▾</span>
                   </button>
                   {isModeMenuOpen && (
-                    <div className="surface-elevated absolute z-20 mt-2 w-full overflow-hidden rounded-xl border" role="listbox" aria-label="UI Mode options">
+                    <div className="surface-elevated absolute z-20 mt-2 w-full overflow-hidden rounded-xl border" role="listbox" aria-label={t('sidebar.uiModeOptions')}>
                       {(['basic', 'intermediate', 'expert'] as UserMode[]).map((modeOption) => (
                         <button
                           key={modeOption}
@@ -462,25 +458,26 @@ const App: React.FC = () => {
                           onClick={() => handleModeChange(modeOption)}
                           className={`text-main hover:bg-[var(--panel-hover)] w-full px-3 py-2 text-left text-sm transition ${userMode === modeOption ? 'bg-[var(--panel-selected)] font-semibold' : ''}`}
                         >
-                          {MODE_DISPLAY[modeOption].label}
+                          {getModeLabel(modeOption)}
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
-                <p className="text-soft mt-2 text-xs">Switch experience level from here at any time.</p>
+                <p className="text-soft mt-2 text-xs">{t('sidebar.uiModeHint')}</p>
               </div>
             )}
           </nav>
 
           <div className={`mt-auto ${sidebarExpanded ? '' : 'w-full px-1'}`}>
+            {sidebarExpanded && <LanguageSelector />}
             <button
               onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
-              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              title={theme === 'dark' ? t('sidebar.theme.toLight') : t('sidebar.theme.toDark')}
               className={`surface-card text-muted hover:text-main flex h-11 items-center rounded-xl border transition ${sidebarExpanded ? 'w-full justify-start gap-3 px-3' : 'mx-auto w-11 justify-center'}`}
             >
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-              {sidebarExpanded && <span className="text-sm font-medium">{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>}
+              {sidebarExpanded && <span className="text-sm font-medium">{theme === 'dark' ? t('sidebar.theme.light') : t('sidebar.theme.dark')}</span>}
             </button>
           </div>
         </div>
@@ -492,18 +489,18 @@ const App: React.FC = () => {
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div className="flex min-w-0 items-center gap-3 md:gap-4">
                 <div>
-                  <h1 className="text-main text-lg font-bold tracking-tight md:text-xl">CRA Auditor Command</h1>
-                  <p className="text-muted text-sm">Live compliance intelligence for Home Assistant environments</p>
+                  <h1 className="text-main text-lg font-bold tracking-tight md:text-xl">{t('header.title')}</h1>
+                  <p className="text-muted text-sm">{t('header.subtitle')}</p>
                 </div>
-                <StatusBadge label={scanning ? 'Scan Active' : 'Idle'} tone={scanning ? 'info' : 'success'} pulse={scanning} />
-                <StatusBadge label={`Mode ${MODE_DISPLAY[userMode].label}`} tone="neutral" />
+                <StatusBadge label={scanning ? t('status.scanActive') : t('status.idle')} tone={scanning ? 'info' : 'success'} pulse={scanning} />
+                <StatusBadge label={`${t('status.mode')} ${getModeLabel(userMode)}`} tone="neutral" />
               </div>
 
               <div className="flex flex-col gap-2 md:items-end">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center">
                   {subnetLocked ? (
                     <div className="surface-elevated text-main min-w-[260px] rounded-xl border px-3 py-2 text-sm">
-                      Auto Subnet: {subnet || 'Detecting...'}
+                      {t('subnet.auto')}: {subnet || t('subnet.detecting')}
                     </div>
                   ) : (
                     <div className={`surface-elevated flex min-w-[260px] items-center rounded-xl border px-3 py-2 transition ${hasSubnetInput ? (isValidSubnet ? 'border-emerald-500/50' : 'border-rose-500/55') : (isSubnetFocused ? 'border-[var(--color-accent-border)]' : '')}`}>
@@ -514,30 +511,30 @@ const App: React.FC = () => {
                         onFocus={() => setIsSubnetFocused(true)}
                         onBlur={() => setIsSubnetFocused(false)}
                         className="text-main w-full bg-transparent text-sm outline-none placeholder:text-[var(--text-soft)]"
-                        placeholder="Target CIDR (e.g. 192.168.1.0/24 or 2001:db8::/64)"
+                        placeholder={t('subnet.placeholder')}
                       />
                     </div>
                   )}
                   <TechButton onClick={() => setShowSettings(true)} disabled={scanning} variant="secondary">
                     <Settings size={15} />
-                    Settings
+                    {t('actions.settings')}
                   </TechButton>
                   <TechButton onClick={handleScan} disabled={!canStartScan} variant="primary" className="neon-text">
                     {scanning ? <RotateCw className="animate-spin" size={15} /> : <Play size={15} />}
-                    {scanning ? 'Scanning' : 'Start Scan'}
+                    {scanning ? t('actions.scanning') : t('actions.startScan')}
                   </TechButton>
                 </div>
 
                 {!subnetLocked && showSubnetHelper && (
                   <div className={`w-full rounded-lg border px-3 py-2 text-xs md:max-w-[540px] ${hasSubnetInput ? (isValidSubnet ? 'text-[var(--badge-success-text)] border-[var(--badge-success-border)] bg-[var(--badge-success-bg)]' : 'text-[var(--badge-danger-text)] border-[var(--badge-danger-border)] bg-[var(--badge-danger-bg)]') : 'surface-card text-muted'}`}>
                     {!hasSubnetInput && (
-                      <p>CIDR only. Enter a subnet, not a single host IP.</p>
+                      <p>{t('subnet.helper.empty')}</p>
                     )}
                     {hasSubnetInput && isValidSubnet && (
-                      <p>Valid subnet target. Ready to start scan.</p>
+                      <p>{t('subnet.helper.valid')}</p>
                     )}
                     {hasSubnetInput && !isValidSubnet && (
-                      <p>Invalid CIDR. Use IPv4 like 192.168.1.0/24 or IPv6 like 2001:db8::/64.</p>
+                      <p>{t('subnet.helper.invalid')}</p>
                     )}
                   </div>
                 )}
@@ -546,10 +543,10 @@ const App: React.FC = () => {
 
             {report && view !== 'history' && (
               <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--border-subtle)] pt-3">
-                <StatusBadge label={`Last Scan ${new Date(report.timestamp).toLocaleTimeString()}`} tone="neutral" />
-                {report.scanProfile && <StatusBadge label={`Profile ${report.scanProfile}`} tone="info" />}
-                <StatusBadge label={config?.gemini_enabled ? 'Gemini Online' : 'Gemini Disabled'} tone="neutral" />
-                <StatusBadge label={config?.nvd_enabled ? 'NVD Online' : 'NVD Disabled'} tone="neutral" />
+                <StatusBadge label={`${t('status.lastScan')} ${new Date(report.timestamp).toLocaleTimeString()}`} tone="neutral" />
+                {report.scanProfile && <StatusBadge label={`${t('status.profile')} ${report.scanProfile}`} tone="info" />}
+                <StatusBadge label={config?.gemini_enabled ? t('status.geminiOnline') : t('status.geminiDisabled')} tone="neutral" />
+                <StatusBadge label={config?.nvd_enabled ? t('status.nvdOnline') : t('status.nvdDisabled')} tone="neutral" />
               </div>
             )}
           </GlassCard>
@@ -559,7 +556,7 @@ const App: React.FC = () => {
               <div className="flex items-start gap-3">
                 <AlertTriangle size={20} className="mt-0.5 shrink-0 text-[var(--badge-danger-text)]" />
                 <div>
-                  <h4 className="text-base font-semibold text-[var(--badge-danger-text)]">Scan Failed</h4>
+                  <h4 className="text-base font-semibold text-[var(--badge-danger-text)]">{t('errors.scanFailed')}</h4>
                   <p className="text-muted text-sm">{scanError}</p>
                 </div>
                 <button onClick={() => setScanError(null)} className="text-muted hover:text-main ml-auto">
@@ -574,7 +571,7 @@ const App: React.FC = () => {
               <GlassCard className="rounded-2xl p-10">
                 <div className="flex h-[50vh] flex-col items-center justify-center gap-4">
                   <RotateCw className="accent-text animate-spin" size={40} />
-                  <p className="text-muted">Establishing command channel...</p>
+                  <p className="text-muted">{t('loading.commandChannel')}</p>
                 </div>
               </GlassCard>
             ) : (
@@ -591,9 +588,9 @@ const App: React.FC = () => {
                       <div className="accent-ring mx-auto mb-5 inline-flex h-14 w-14 items-center justify-center rounded-full border">
                         <ShieldCheck size={28} />
                       </div>
-                      <h3 className="text-main text-xl font-bold">Ready for Network Audit</h3>
+                      <h3 className="text-main text-xl font-bold">{t('empty.readyTitle')}</h3>
                       <p className="text-soft mx-auto mt-2 max-w-md text-sm">
-                        Enter a target subnet in the command bar and launch a scan to generate your CRA compliance report.
+                        {t('empty.readyDescription')}
                       </p>
                     </div>
                   </GlassCard>
@@ -605,14 +602,14 @@ const App: React.FC = () => {
                     <div className="terminal-panel relative h-full overflow-hidden rounded-xl border p-4 font-mono text-sm text-[var(--color-accent)]">
                       <div className="mb-3 flex items-center gap-2 border-b border-[var(--border-subtle)] pb-2">
                         <Activity size={15} className="accent-text" />
-                        <span className="accent-text uppercase tracking-widest">Command Terminal</span>
+                        <span className="accent-text uppercase tracking-widest">{t('overlay.commandTerminal')}</span>
                       </div>
                       <div className="space-y-2 text-[color-mix(in_srgb,var(--color-accent)_86%,var(--text-main))]">
                         {userMode === 'basic' ? (
                           <>
-                            <p>Scanning your network for connected devices...</p>
-                            <p>Checking common security and update issues...</p>
-                            <p className="typing-cursor">Preparing simple health summary...</p>
+                            <p>{t('overlay.basic.line1')}</p>
+                            <p>{t('overlay.basic.line2')}</p>
+                            <p className="typing-cursor">{t('overlay.basic.line3')}</p>
                           </>
                         ) : (
                           <>
@@ -625,8 +622,8 @@ const App: React.FC = () => {
                         )}
                       </div>
                       <div className="text-muted mt-4 flex items-center gap-3 text-xs uppercase tracking-widest">
-                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />Scanner Active</span>
-                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 animate-pulse rounded-full bg-[var(--color-accent)]" />Streaming logs</span>
+                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />{t('overlay.scannerActive')}</span>
+                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 animate-pulse rounded-full bg-[var(--color-accent)]" />{t('overlay.streamingLogs')}</span>
                       </div>
                     </div>
                   </div>
@@ -648,5 +645,11 @@ const App: React.FC = () => {
     </div>
   );
 };
+
+const App: React.FC = () => (
+  <LanguageProvider>
+    <AppShell />
+  </LanguageProvider>
+);
 
 export default App;

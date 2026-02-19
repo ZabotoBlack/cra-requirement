@@ -1,6 +1,7 @@
 import React from 'react';
 import { CheckSquare, Settings, Square, X } from 'lucide-react';
 import TechButton from './ui/TechButton';
+import { useLanguage } from '../LanguageContext';
 import { ScanOptions, UserMode } from '../types';
 
 interface SettingsModalProps {
@@ -20,6 +21,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   onScanOptionsChange
 }) => {
+  const { t } = useLanguage();
+
   if (!show) {
     return null;
   }
@@ -29,16 +32,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const endUserDepthOptions: Array<{ label: string; value: ScanOptions['scan_type'] }> = [
-    { label: 'Basic', value: 'standard' },
-    { label: 'Deep', value: 'deep' }
+    { label: t('settings.depth.basic'), value: 'standard' },
+    { label: t('settings.depth.deep'), value: 'deep' }
   ];
+
+  const depthLabel = (type: ScanOptions['scan_type']): string => {
+    if (type === 'discovery') return t('settings.depth.discovery');
+    if (type === 'standard') return t('settings.depth.standard');
+    return t('settings.depth.deep');
+  };
+
+  const modeLabel = (): string => {
+    if (mode === 'basic') return t('mode.basic');
+    if (mode === 'intermediate') return t('mode.intermediate');
+    return t('mode.expert');
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
       <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900/95 shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-700/70 bg-slate-800/60 p-4">
           <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-cyan-200">
-            <Settings size={16} /> Scan Configuration
+            <Settings size={16} /> {t('settings.title')}
           </h3>
           <button onClick={onClose} className="text-slate-400 transition hover:text-white">
             <X size={18} />
@@ -47,16 +62,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
         <div className="space-y-5 p-6">
           <div>
-            <label className="mb-2 block text-sm font-semibold uppercase tracking-wider text-slate-300">Experience Level</label>
+            <label className="mb-2 block text-sm font-semibold uppercase tracking-wider text-slate-300">{t('settings.experienceLevel')}</label>
             <div className="rounded-xl border border-slate-700 bg-slate-800/70 px-3 py-2 text-sm text-slate-200">
-              <span className="font-semibold capitalize">{mode}</span>
-              <span className="ml-2 text-xs text-slate-400">(Set from sidebar UI Mode)</span>
+              <span className="font-semibold">{modeLabel()}</span>
+              <span className="ml-2 text-xs text-slate-400">{t('settings.levelHint')}</span>
             </div>
           </div>
 
           {mode === 'basic' && (
             <div>
-              <label className="mb-2 block text-sm font-semibold uppercase tracking-wider text-slate-300">Scan Depth</label>
+              <label className="mb-2 block text-sm font-semibold uppercase tracking-wider text-slate-300">{t('settings.scanDepth')}</label>
               <div className="grid grid-cols-2 gap-2">
                 {endUserDepthOptions.map((option) => (
                   <button
@@ -77,7 +92,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {mode !== 'basic' && (
             <div>
-              <label className="mb-2 block text-sm font-semibold uppercase tracking-wider text-slate-300">Scan Depth</label>
+              <label className="mb-2 block text-sm font-semibold uppercase tracking-wider text-slate-300">{t('settings.scanDepth')}</label>
               <div className="grid grid-cols-3 gap-2">
                 {(['discovery', 'standard', 'deep'] as const).map((type) => (
                   <button
@@ -89,7 +104,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                       : 'border-slate-700 bg-slate-800/70 text-slate-300 hover:text-white'
                       } ${scanning ? 'opacity-60 cursor-not-allowed' : ''}`}
                   >
-                    {type}
+                    {depthLabel(type)}
                   </button>
                 ))}
               </div>
@@ -98,7 +113,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {((mode === 'basic' && scanOptions.scan_type === 'deep') || mode !== 'basic') && (
             <div className={mode !== 'basic' && scanOptions.scan_type === 'discovery' ? 'pointer-events-none opacity-50' : ''}>
-              <label className="mb-2 block text-sm font-semibold uppercase tracking-wider text-slate-300">Vendor Detection</label>
+              <label className="mb-2 block text-sm font-semibold uppercase tracking-wider text-slate-300">{t('settings.vendorDetection')}</label>
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => onScanOptionsChange({ ...scanOptions, vendors: 'all' })}
@@ -108,7 +123,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     }`}
                 >
                   {scanOptions.vendors === 'all' ? <CheckSquare size={12} /> : <Square size={12} />}
-                  All Vendors
+                  {t('settings.vendors.all')}
                 </button>
                 <button
                   onClick={() => onScanOptionsChange({ ...scanOptions, vendors: [] })}
@@ -118,7 +133,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     }`}
                 >
                   {Array.isArray(scanOptions.vendors) && scanOptions.vendors.length === 0 ? <CheckSquare size={12} /> : <Square size={12} />}
-                  No Vendors
+                  {t('settings.vendors.none')}
                 </button>
                 {['tuya', 'shelly', 'hue', 'kasa', 'sonoff', 'ikea'].map((vendor) => {
                   const selected = scanOptions.vendors === 'all' || (Array.isArray(scanOptions.vendors) && scanOptions.vendors.includes(vendor));
@@ -166,8 +181,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                   className="mt-0.5"
                 />
                 <div>
-                  <div className="text-sm font-medium text-slate-100">Active Vulnerability Probing</div>
-                  <div className="text-sm text-slate-300">Attempt safe default credential logins and unauth API checks.</div>
+                  <div className="text-sm font-medium text-slate-100">{t('settings.activeProbing.title')}</div>
+                  <div className="text-sm text-slate-300">{t('settings.activeProbing.description')}</div>
                 </div>
               </label>
             </div>
@@ -175,7 +190,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         <div className="flex justify-end border-t border-slate-700/70 bg-slate-800/60 p-4">
-          <TechButton onClick={onClose} variant="primary">Save & Close</TechButton>
+          <TechButton onClick={onClose} variant="primary">{t('settings.saveClose')}</TechButton>
         </div>
       </div>
     </div>
