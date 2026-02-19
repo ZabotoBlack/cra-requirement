@@ -4,6 +4,7 @@ import Dashboard from '../Dashboard';
 import DeviceList from '../DeviceList';
 import GlassCard from '../ui/GlassCard';
 import TechButton from '../ui/TechButton';
+import { useLanguage } from '../../LanguageContext';
 import { FrontendConfig, ScanReport } from '../../types';
 
 interface ExpertDashboardProps {
@@ -13,6 +14,7 @@ interface ExpertDashboardProps {
 }
 
 const ExpertDashboard: React.FC<ExpertDashboardProps> = ({ report, config, logs }) => {
+  const { t } = useLanguage();
   const [showDevices, setShowDevices] = useState(true);
   const [expandedLogs, setExpandedLogs] = useState(false);
 
@@ -30,15 +32,15 @@ const ExpertDashboard: React.FC<ExpertDashboardProps> = ({ report, config, logs 
     <div className="space-y-5">
       <GlassCard className="rounded-2xl border border-[var(--color-accent-border)] p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="accent-text text-xs font-semibold uppercase tracking-widest">Expert Overview</p>
-          <p className="text-muted text-xs">Full controls, raw data, and logs</p>
+          <p className="accent-text text-xs font-semibold uppercase tracking-widest">{t('expert.overview')}</p>
+          <p className="text-muted text-xs">{t('expert.subtitle')}</p>
         </div>
       </GlassCard>
 
       <div className="flex justify-end">
         <TechButton variant="secondary" onClick={handleExportJson}>
           <Download size={14} />
-          Export JSON
+          {t('expert.exportJson')}
         </TechButton>
       </div>
 
@@ -46,9 +48,9 @@ const ExpertDashboard: React.FC<ExpertDashboardProps> = ({ report, config, logs 
 
       <GlassCard className="rounded-2xl p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-muted text-sm font-semibold uppercase tracking-wider">Devices</h3>
+          <h3 className="text-muted text-sm font-semibold uppercase tracking-wider">{t('expert.devices')}</h3>
           <TechButton variant="secondary" onClick={() => setShowDevices((previous) => !previous)}>
-            {showDevices ? 'Collapse Devices' : 'Expand Devices'}
+            {showDevices ? t('expert.collapseDevices') : t('expert.expandDevices')}
           </TechButton>
         </div>
         {showDevices && <div className="mt-4"><DeviceList devices={report.devices} /></div>}
@@ -56,14 +58,14 @@ const ExpertDashboard: React.FC<ExpertDashboardProps> = ({ report, config, logs 
 
       <GlassCard className="rounded-2xl p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-muted text-sm font-semibold uppercase tracking-wider">Logs Console</h3>
+          <h3 className="text-muted text-sm font-semibold uppercase tracking-wider">{t('expert.logsConsole')}</h3>
           <TechButton variant="secondary" onClick={() => setExpandedLogs((previous) => !previous)}>
-            {expandedLogs ? 'Collapse Logs' : 'Expand Logs'}
+            {expandedLogs ? t('expert.collapseLogs') : t('expert.expandLogs')}
           </TechButton>
         </div>
         <div className={`terminal-panel overflow-auto rounded-xl border p-3 font-mono text-xs text-[var(--color-accent)] ${expandedLogs ? 'max-h-[840px]' : 'max-h-[280px]'}`}>
           {logs.length === 0 ? (
-            <p className="text-soft">No logs captured yet.</p>
+            <p className="text-soft">{t('expert.noLogs')}</p>
           ) : (
             logs.map((line, index) => (
               <div key={`${line}-${index}`} className="whitespace-pre-wrap break-words py-0.5">

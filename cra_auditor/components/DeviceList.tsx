@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Bot, ChevronDown, ChevronUp, Cpu, FileText, Lock, Network, Router, Shield } from 'lucide-react';
 import { ComplianceStatus, Device } from '../types';
+import { useLanguage } from '../LanguageContext';
 import { getRemediationAdvice } from '../services/geminiService';
 import GlassCard from './ui/GlassCard';
 import StatusBadge from './ui/StatusBadge';
@@ -29,6 +30,7 @@ const statusDotClass = (status: string) => {
 };
 
 const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
+  const { t } = useLanguage();
   const [tab, setTab] = useState<DossierTab>('checks');
   const [loadingAdvice, setLoadingAdvice] = useState(false);
   const [advice, setAdvice] = useState<string | null>(null);
@@ -46,11 +48,11 @@ const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
   }, [device]);
 
   const checks = [
-    { key: 'Secure Defaults', passed: device.checks?.secureByDefault?.passed, details: device.checks?.secureByDefault?.details, icon: <Lock size={14} /> },
-    { key: 'Encryption', passed: device.checks?.dataConfidentiality?.passed, details: device.checks?.dataConfidentiality?.details, icon: <Shield size={14} /> },
-    { key: 'Vulnerabilities', passed: device.checks?.vulnerabilities?.passed, details: device.checks?.vulnerabilities?.details, icon: <Cpu size={14} /> },
-    { key: 'SBOM', passed: device.checks?.sbomCompliance?.passed, details: device.checks?.sbomCompliance?.details, icon: <FileText size={14} /> },
-    { key: 'Security Logging', passed: device.checks?.securityLogging?.passed, details: device.checks?.securityLogging?.details, icon: <Network size={14} /> },
+    { key: t('deviceList.check.secureDefaults'), passed: device.checks?.secureByDefault?.passed, details: device.checks?.secureByDefault?.details, icon: <Lock size={14} /> },
+    { key: t('deviceList.check.encryption'), passed: device.checks?.dataConfidentiality?.passed, details: device.checks?.dataConfidentiality?.details, icon: <Shield size={14} /> },
+    { key: t('deviceList.check.vulnerabilities'), passed: device.checks?.vulnerabilities?.passed, details: device.checks?.vulnerabilities?.details, icon: <Cpu size={14} /> },
+    { key: t('deviceList.check.sbom'), passed: device.checks?.sbomCompliance?.passed, details: device.checks?.sbomCompliance?.details, icon: <FileText size={14} /> },
+    { key: t('deviceList.check.securityLogging'), passed: device.checks?.securityLogging?.passed, details: device.checks?.securityLogging?.details, icon: <Network size={14} /> },
   ];
 
   const handleAnalyze = async () => {
@@ -82,17 +84,17 @@ const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
     <div className="rounded-xl border border-slate-700/70 bg-slate-950/55 p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h4 className="text-sm font-bold text-white">Device Dossier</h4>
+          <h4 className="text-sm font-bold text-white">{t('deviceList.dossierTitle')}</h4>
           <p className="font-mono text-sm text-slate-300">{device.ip} · {device.mac}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {tabButton('checks', 'Security Checks')}
-          {tabButton('raw', 'Raw Data')}
-          {tabButton('ai', 'AI Remediation')}
+          {tabButton('checks', t('deviceList.tab.securityChecks'))}
+          {tabButton('raw', t('deviceList.tab.rawData'))}
+          {tabButton('ai', t('deviceList.tab.aiRemediation'))}
           {device.status !== ComplianceStatus.COMPLIANT && (
             <TechButton variant="primary" className="px-3 py-1.5 text-xs" onClick={handleAnalyze} disabled={loadingAdvice}>
               <Bot size={14} />
-              {loadingAdvice ? 'Analyzing' : 'Analyze'}
+              {loadingAdvice ? t('deviceList.actions.analyzing') : t('deviceList.actions.analyze')}
             </TechButton>
           )}
         </div>
@@ -106,10 +108,10 @@ const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
                 <span className="inline-flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wider">{check.icon}{check.key}</span>
               </div>
               <StatusBadge
-                label={check.passed === undefined ? 'Not Evaluated' : check.passed ? 'Pass' : 'Attention'}
+                label={check.passed === undefined ? t('deviceList.check.notEvaluated') : check.passed ? t('deviceList.check.pass') : t('deviceList.check.attention')}
                 tone={check.passed === undefined ? 'neutral' : check.passed ? 'success' : 'warning'}
               />
-              <p className="mt-2 text-sm leading-relaxed text-slate-300">{check.details || 'No data returned for this profile.'}</p>
+              <p className="mt-2 text-sm leading-relaxed text-slate-300">{check.details || t('deviceList.check.noData')}</p>
             </div>
           ))}
         </div>
@@ -126,7 +128,7 @@ const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
           {advice ? (
             <p className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-violet-100">{advice}</p>
           ) : (
-            <p className="text-sm text-slate-300">Run Analyze to generate remediation guidance for this device.</p>
+            <p className="text-sm text-slate-300">{t('deviceList.ai.empty')}</p>
           )}
         </div>
       )}
@@ -135,6 +137,7 @@ const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
 };
 
 const DeviceRow: React.FC<{ device: Device; rowId: string }> = ({ device, rowId }) => {
+  const { t } = useLanguage();
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -150,9 +153,9 @@ const DeviceRow: React.FC<{ device: Device; rowId: string }> = ({ device, rowId 
             </div>
             <div>
               <p className={`font-medium ${device.hostname ? 'text-white' : 'text-slate-500 italic'}`}>
-                {device.hostname || 'Unknown Hostname'}
+                {device.hostname || t('deviceList.unknownHostname')}
               </p>
-              <p className="text-sm text-slate-300">{device.osMatch || 'Unknown OS'}</p>
+              <p className="text-sm text-slate-300">{device.osMatch || t('deviceList.unknownOs')}</p>
             </div>
           </div>
         </td>
@@ -161,7 +164,7 @@ const DeviceRow: React.FC<{ device: Device; rowId: string }> = ({ device, rowId 
           <p className="font-mono text-sm text-slate-300">{device.mac}</p>
         </td>
         <td className="px-4 py-3">
-          <StatusBadge label={device.vendor || 'Unknown'} tone="info" />
+          <StatusBadge label={device.vendor || t('deviceList.unknownVendor')} tone="info" />
         </td>
         <td className="px-4 py-3">
           <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/75 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-100">
@@ -186,6 +189,7 @@ const DeviceRow: React.FC<{ device: Device; rowId: string }> = ({ device, rowId 
 };
 
 const DeviceList: React.FC<DeviceListProps> = ({ devices }) => {
+  const { t } = useLanguage();
   const [filterText, setFilterText] = useState('');
   const [sortConfig, setSortConfig] = useState<{ key: keyof Device; direction: 'asc' | 'desc' } | null>(null);
 
@@ -246,12 +250,12 @@ const DeviceList: React.FC<DeviceListProps> = ({ devices }) => {
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <input
             type="text"
-            placeholder="Filter by hostname, IP, MAC, vendor..."
+            placeholder={t('deviceList.filterPlaceholder')}
             value={filterText}
             onChange={(e) => setFilterText(e.target.value)}
             className="w-full max-w-lg rounded-xl border border-slate-700 bg-slate-900/85 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-400/40"
           />
-          <StatusBadge label={`${sortedDevices.length}/${devices.length} visible`} tone="neutral" />
+          <StatusBadge label={`${sortedDevices.length}/${devices.length} ${t('deviceList.visible')}`} tone="neutral" />
         </div>
       </GlassCard>
 
@@ -260,10 +264,10 @@ const DeviceList: React.FC<DeviceListProps> = ({ devices }) => {
           <table className="w-full min-w-[880px] text-left">
             <thead>
               <tr className="border-b border-slate-800 bg-slate-950/70 text-xs uppercase tracking-wider text-slate-300">
-                <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('hostname')}>Device {sortIcon('hostname')}</th>
-                <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('ip')}>IP / MAC {sortIcon('ip')}</th>
-                <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('vendor')}>Vendor {sortIcon('vendor')}</th>
-                <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('status')}>Status {sortIcon('status')}</th>
+                <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('hostname')}>{t('deviceList.col.device')} {sortIcon('hostname')}</th>
+                <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('ip')}>{t('deviceList.col.ipMac')} {sortIcon('ip')}</th>
+                <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('vendor')}>{t('deviceList.col.vendor')} {sortIcon('vendor')}</th>
+                <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('status')}>{t('deviceList.col.status')} {sortIcon('status')}</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -274,7 +278,7 @@ const DeviceList: React.FC<DeviceListProps> = ({ devices }) => {
               {sortedDevices.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-6 py-14 text-center text-sm text-slate-500">
-                    {devices.length === 0 ? 'No devices found. Run a scan to populate list.' : 'No devices match the current filter.'}
+                    {devices.length === 0 ? t('deviceList.empty.noDevices') : t('deviceList.empty.noMatch')}
                   </td>
                 </tr>
               )}

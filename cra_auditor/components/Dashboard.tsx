@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ShieldCheck, ShieldQuestion, Sparkles } from 'lucide-react';
 import { ComplianceStatus, ScanReport } from '../types';
+import { useLanguage } from '../LanguageContext';
 import GlassCard from './ui/GlassCard';
 import StatusBadge from './ui/StatusBadge';
 
@@ -18,6 +19,7 @@ const toneByStatus: Record<string, 'success' | 'warning' | 'danger' | 'neutral'>
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled }) => {
+  const { t } = useLanguage();
   const complianceScore = useMemo(() => {
     if (report.summary.total === 0) return 0;
     return Math.round((report.summary.compliant / report.summary.total) * 100);
@@ -45,9 +47,13 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
   const aiSummary = useMemo(() => {
     const critical = report.summary.nonCompliant;
     const warnings = report.summary.warning;
-    const riskTier = critical > 0 ? 'HIGH' : warnings > 0 ? 'MODERATE' : 'LOW';
-    return `Command assessment complete. Risk tier is ${riskTier}. ${critical} non-compliant and ${warnings} warning device${warnings === 1 ? '' : 's'} detected across ${report.summary.total} assets.`;
-  }, [report.summary]);
+    const riskTier = critical > 0
+      ? t('dashboard.riskTier.high')
+      : warnings > 0
+        ? t('dashboard.riskTier.moderate')
+        : t('dashboard.riskTier.low');
+    return `${t('dashboard.commandAssessmentComplete')} ${t('dashboard.riskTierIs')} ${riskTier}. ${critical} ${t('dashboard.nonCompliantLower')} ${t('dashboard.and')} ${warnings} ${t('dashboard.warningDevices')} ${t('dashboard.detectedAcross')} ${report.summary.total} ${t('dashboard.assets')}.`;
+  }, [report.summary, t]);
 
   const [typedText, setTypedText] = useState('');
 
@@ -72,39 +78,39 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
         <GlassCard className="rounded-2xl p-5 xl:col-span-2">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-muted text-sm uppercase tracking-wider">Total Devices</p>
+              <p className="text-muted text-sm uppercase tracking-wider">{t('dashboard.totalDevices')}</p>
               <h3 className="text-main mt-1 text-3xl font-bold">{report.summary.total}</h3>
-              <p className="text-muted mt-1 text-sm">Target: {report.targetRange}</p>
+              <p className="text-muted mt-1 text-sm">{t('dashboard.target')}: {report.targetRange}</p>
             </div>
             <div className="accent-ring rounded-full border p-3">
               <ShieldQuestion size={22} />
             </div>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
-            <StatusBadge label={`${report.summary.compliant} Compliant`} tone="success" />
-            <StatusBadge label={`${report.summary.warning} Warning`} tone="warning" />
-            <StatusBadge label={`${report.summary.nonCompliant} Non-Compliant`} tone="danger" />
+            <StatusBadge label={`${report.summary.compliant} ${t('dashboard.compliant')}`} tone="success" />
+            <StatusBadge label={`${report.summary.warning} ${t('dashboard.warning')}`} tone="warning" />
+            <StatusBadge label={`${report.summary.nonCompliant} ${t('dashboard.nonCompliant')}`} tone="danger" />
           </div>
         </GlassCard>
 
         <GlassCard className="rounded-2xl p-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-muted text-sm uppercase tracking-wider">AI Insight</p>
-              <h3 className="text-main mt-1 text-xl font-bold">{geminiEnabled ? 'Operational' : 'Disabled'}</h3>
+              <p className="text-muted text-sm uppercase tracking-wider">{t('dashboard.aiInsight')}</p>
+              <h3 className="text-main mt-1 text-xl font-bold">{geminiEnabled ? t('dashboard.operational') : t('dashboard.disabled')}</h3>
             </div>
             <Sparkles className={geminiEnabled ? 'accent-text neon-text' : 'text-soft'} size={20} />
           </div>
           <div className="mt-3 flex gap-2">
-            <StatusBadge label={geminiEnabled ? 'Gemini Online' : 'No API key'} tone={geminiEnabled ? 'success' : 'warning'} />
-            <StatusBadge label={nvdEnabled ? 'NVD Synced' : 'NVD Offline'} tone={nvdEnabled ? 'success' : 'danger'} />
+            <StatusBadge label={geminiEnabled ? t('dashboard.geminiOnline') : t('dashboard.noApiKey')} tone={geminiEnabled ? 'success' : 'warning'} />
+            <StatusBadge label={nvdEnabled ? t('dashboard.nvdSynced') : t('dashboard.nvdOffline')} tone={nvdEnabled ? 'success' : 'danger'} />
           </div>
         </GlassCard>
 
         <GlassCard className="rounded-2xl p-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-muted text-sm uppercase tracking-wider">Warning Devices</p>
+              <p className="text-muted text-sm uppercase tracking-wider">{t('dashboard.warningDevicesTitle')}</p>
               <h3 className="mt-1 text-2xl font-bold text-[var(--badge-warning-text)]">{report.summary.warning}</h3>
             </div>
             <AlertTriangle size={20} className="text-[var(--badge-warning-text)]" />
@@ -114,7 +120,7 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
         <GlassCard className="rounded-2xl p-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-muted text-sm uppercase tracking-wider">Compliant Devices</p>
+              <p className="text-muted text-sm uppercase tracking-wider">{t('dashboard.compliantDevicesTitle')}</p>
               <h3 className="mt-1 text-2xl font-bold text-[var(--badge-success-text)]">{report.summary.compliant}</h3>
             </div>
             <ShieldCheck size={20} className="text-[var(--badge-success-text)]" />
@@ -124,7 +130,7 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         <GlassCard className="rounded-2xl p-5 xl:col-span-1">
-          <p className="text-muted text-sm uppercase tracking-wider">Compliance Score</p>
+          <p className="text-muted text-sm uppercase tracking-wider">{t('dashboard.complianceScore')}</p>
           <div className="mt-4 flex items-center justify-center">
             <div className="relative h-44 w-44">
               <svg viewBox="0 0 140 140" className="h-full w-full -rotate-90">
@@ -143,15 +149,15 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <p className="text-main font-mono text-4xl font-bold">{complianceScore}%</p>
-                <p className="text-muted text-sm uppercase tracking-widest">Compliance</p>
+                <p className="text-muted text-sm uppercase tracking-widest">{t('dashboard.compliance')}</p>
               </div>
             </div>
           </div>
-          <p className="text-muted mt-2 text-center text-sm">Score is based on compliant devices versus scanned inventory.</p>
+          <p className="text-muted mt-2 text-center text-sm">{t('dashboard.scoreExplanation')}</p>
         </GlassCard>
 
         <GlassCard className="rounded-2xl p-5 xl:col-span-1">
-          <p className="text-muted text-sm uppercase tracking-wider">Risk Analysis</p>
+          <p className="text-muted text-sm uppercase tracking-wider">{t('dashboard.riskAnalysis')}</p>
           <div className="mt-4 space-y-3">
             {topVendors.length > 0 ? topVendors.map((item) => {
               const ratio = item.count / maxVendorCount;
@@ -161,7 +167,7 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
                 <div key={item.name}>
                   <div className="mb-1 flex items-center justify-between text-sm">
                     <span className="text-muted truncate">{item.name}</span>
-                    <StatusBadge label={`${item.count} risk`} tone={tone} />
+                    <StatusBadge label={`${item.count} ${t('dashboard.risk')}`} tone={tone} />
                   </div>
                   <div className="h-2 rounded-full bg-[var(--border-subtle)]">
                     <div
@@ -175,13 +181,13 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
                 </div>
               );
             }) : (
-              <p className="text-soft pt-8 text-center text-sm">No elevated vendor risk detected.</p>
+              <p className="text-soft pt-8 text-center text-sm">{t('dashboard.noElevatedVendorRisk')}</p>
             )}
           </div>
         </GlassCard>
 
         <GlassCard className="rounded-2xl p-5 xl:col-span-1">
-          <p className="text-muted text-sm uppercase tracking-wider">Message from Command</p>
+          <p className="text-muted text-sm uppercase tracking-wider">{t('dashboard.messageFromCommand')}</p>
           <div className="accent-ring mt-3 rounded-xl border p-4">
             <p className="typing-cursor min-h-[110px] text-main text-sm leading-relaxed">
               {typedText}
@@ -191,7 +197,7 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
             {Object.entries(report.summary)
               .filter(([key]) => key !== 'total')
               .map(([key, value]) => (
-                <StatusBadge key={key} label={`${key} ${value}`} tone={toneByStatus[key === 'compliant' ? ComplianceStatus.COMPLIANT : key === 'warning' ? ComplianceStatus.WARNING : ComplianceStatus.NON_COMPLIANT]} />
+                <StatusBadge key={key} label={`${key === 'compliant' ? t('dashboard.compliant') : key === 'warning' ? t('dashboard.warning') : t('dashboard.nonCompliant')} ${value}`} tone={toneByStatus[key === 'compliant' ? ComplianceStatus.COMPLIANT : key === 'warning' ? ComplianceStatus.WARNING : ComplianceStatus.NON_COMPLIANT]} />
               ))}
           </div>
         </GlassCard>

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ArrowDown, ArrowUp, Calendar, Eye, Search, Target, Trash2 } from 'lucide-react';
 import { deleteHistory, getHistory } from '../services/api';
+import { useLanguage } from '../LanguageContext';
 import { ScanHistoryItem } from '../types';
 import GlassCard from './ui/GlassCard';
 import StatusBadge from './ui/StatusBadge';
@@ -11,6 +12,7 @@ interface HistoryViewProps {
 }
 
 const SnapshotBar: React.FC<{ item: ScanHistoryItem }> = ({ item }) => {
+  const { t } = useLanguage();
   const total = Math.max(item.summary.total, 1);
   const compliantPct = Math.round((item.summary.compliant / total) * 100);
   const warningPct = Math.round((item.summary.warning / total) * 100);
@@ -26,15 +28,16 @@ const SnapshotBar: React.FC<{ item: ScanHistoryItem }> = ({ item }) => {
         </div>
       </div>
       <div className="flex flex-wrap gap-2">
-        <StatusBadge label={`${item.summary.total} Devices`} tone="info" />
-        {item.summary.nonCompliant > 0 && <StatusBadge label={`${item.summary.nonCompliant} Issues`} tone="danger" />}
-        {item.summary.warning > 0 && <StatusBadge label={`${item.summary.warning} Warnings`} tone="warning" />}
+        <StatusBadge label={`${item.summary.total} ${t('history.devices')}`} tone="info" />
+        {item.summary.nonCompliant > 0 && <StatusBadge label={`${item.summary.nonCompliant} ${t('history.issues')}`} tone="danger" />}
+        {item.summary.warning > 0 && <StatusBadge label={`${item.summary.warning} ${t('history.warnings')}`} tone="warning" />}
       </div>
     </div>
   );
 };
 
 const HistoryView: React.FC<HistoryViewProps> = ({ onViewReport }) => {
+  const { t } = useLanguage();
   const [history, setHistory] = useState<ScanHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -55,7 +58,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ onViewReport }) => {
 
   const handleDelete = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Are you sure you want to delete this scan report?')) {
+    if (confirm(t('history.confirmDelete'))) {
       const success = await deleteHistory(id);
       if (success) fetchHistory();
     }
@@ -80,15 +83,15 @@ const HistoryView: React.FC<HistoryViewProps> = ({ onViewReport }) => {
       <GlassCard className="rounded-2xl p-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="text-lg font-bold text-white">Scan History Timeline</h2>
-            <p className="text-sm text-slate-300">Review previous scan snapshots and reopen full reports.</p>
+            <h2 className="text-lg font-bold text-white">{t('history.title')}</h2>
+            <p className="text-sm text-slate-300">{t('history.subtitle')}</p>
           </div>
 
           <div className="relative w-full md:w-auto">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
             <input
               type="text"
-              placeholder="Search target ranges..."
+              placeholder={t('history.searchPlaceholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full rounded-xl border border-slate-700 bg-slate-900/85 py-2 pl-9 pr-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 md:w-72"
@@ -101,22 +104,22 @@ const HistoryView: React.FC<HistoryViewProps> = ({ onViewReport }) => {
             onClick={() => toggleSort('timestamp')}
             className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-sm font-semibold uppercase tracking-wider text-slate-300 hover:text-white"
           >
-            <Calendar size={13} /> Date {sortIcon('timestamp')}
+            <Calendar size={13} /> {t('history.date')} {sortIcon('timestamp')}
           </button>
           <button
             onClick={() => toggleSort('target')}
             className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-sm font-semibold uppercase tracking-wider text-slate-300 hover:text-white"
           >
-            <Target size={13} /> Target {sortIcon('target')}
+            <Target size={13} /> {t('history.target')} {sortIcon('target')}
           </button>
         </div>
       </GlassCard>
 
       <GlassCard className="rounded-2xl p-5">
         {loading ? (
-          <div className="py-20 text-center text-sm text-slate-500">Loading timeline...</div>
+          <div className="py-20 text-center text-sm text-slate-500">{t('history.loading')}</div>
         ) : history.length === 0 ? (
-          <div className="py-20 text-center text-sm text-slate-500">No history found.</div>
+          <div className="py-20 text-center text-sm text-slate-500">{t('history.none')}</div>
         ) : (
           <div className="space-y-4">
             {history.map((item, index) => (
@@ -132,10 +135,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ onViewReport }) => {
 
                   <div className="flex flex-wrap gap-2">
                     <TechButton variant="secondary" className="px-3 py-1.5 text-xs" onClick={() => onViewReport(item.id)}>
-                      <Eye size={14} /> View
+                      <Eye size={14} /> {t('history.view')}
                     </TechButton>
                     <TechButton variant="danger" className="px-3 py-1.5 text-xs" onClick={(e) => handleDelete(item.id, e)}>
-                      <Trash2 size={14} /> Delete
+                      <Trash2 size={14} /> {t('history.delete')}
                     </TechButton>
                   </div>
                 </div>

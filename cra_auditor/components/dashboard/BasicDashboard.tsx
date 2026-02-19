@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { AlertTriangle, ShieldCheck } from 'lucide-react';
+import { useLanguage } from '../../LanguageContext';
 import { ScanReport } from '../../types';
 import GlassCard from '../ui/GlassCard';
 import StatusBadge from '../ui/StatusBadge';
@@ -9,6 +10,7 @@ interface BasicDashboardProps {
 }
 
 const BasicDashboard: React.FC<BasicDashboardProps> = ({ report }) => {
+  const { t } = useLanguage();
   const hasAttentionRequired = report.summary.nonCompliant > 0 || report.summary.warning > 0;
 
   const issueSummary = useMemo(() => {
@@ -28,46 +30,46 @@ const BasicDashboard: React.FC<BasicDashboardProps> = ({ report }) => {
 
     const summary: string[] = [];
     if (defaultPasswordCount > 0) {
-      summary.push(`${defaultPasswordCount} device${defaultPasswordCount === 1 ? '' : 's'} may still use default passwords`);
+      summary.push(`${defaultPasswordCount} ${t('basic.issue.devices')} ${t('basic.issue.defaultPasswords')}`);
     }
     if (updateCount > 0) {
-      summary.push(`${updateCount} device${updateCount === 1 ? '' : 's'} ${updateCount === 1 ? 'needs' : 'need'} firmware updates`);
+      summary.push(`${updateCount} ${t('basic.issue.devices')} ${t('basic.issue.firmwareUpdates')}`);
     }
     if (vulnerabilityCount > 0) {
-      summary.push(`${vulnerabilityCount} device${vulnerabilityCount === 1 ? '' : 's'} ${vulnerabilityCount === 1 ? 'has' : 'have'} known vulnerabilities`);
+      summary.push(`${vulnerabilityCount} ${t('basic.issue.devices')} ${t('basic.issue.vulnerabilities')}`);
     }
 
     if (summary.length === 0 && hasAttentionRequired) {
-      summary.push('Some devices need review based on compliance checks.');
+      summary.push(t('basic.issue.reviewRequired'));
     }
 
     return summary;
-  }, [hasAttentionRequired, report.devices]);
+  }, [hasAttentionRequired, report.devices, t]);
 
   return (
     <div className="space-y-5">
       <GlassCard className="rounded-2xl border border-[var(--color-accent-border)] p-6">
-        <p className="accent-text mb-4 text-xs font-semibold uppercase tracking-widest">End User Overview</p>
+        <p className="accent-text mb-4 text-xs font-semibold uppercase tracking-widest">{t('basic.overview')}</p>
         <div className="flex flex-col items-center gap-3 text-center">
           <div className={`inline-flex h-16 w-16 items-center justify-center rounded-full border ${hasAttentionRequired ? 'text-[var(--badge-danger-text)] border-[var(--badge-danger-border)] bg-[var(--badge-danger-bg)]' : 'text-[var(--badge-success-text)] border-[var(--badge-success-border)] bg-[var(--badge-success-bg)]'}`}>
             {hasAttentionRequired ? <AlertTriangle size={30} /> : <ShieldCheck size={30} />}
           </div>
           <h2 className={`text-3xl font-bold ${hasAttentionRequired ? 'text-[var(--badge-danger-text)]' : 'text-[var(--badge-success-text)]'}`}>
-            {hasAttentionRequired ? 'Attention Required' : 'System Secure'}
+            {hasAttentionRequired ? t('basic.attentionRequired') : t('basic.systemSecure')}
           </h2>
-          <p className="text-muted">{report.summary.total} devices scanned</p>
+          <p className="text-muted">{report.summary.total} {t('basic.devicesScanned')}</p>
           <div className="flex flex-wrap justify-center gap-2">
-            <StatusBadge label={`${report.summary.compliant} Compliant`} tone="success" />
-            <StatusBadge label={`${report.summary.warning} Warning`} tone="warning" />
-            <StatusBadge label={`${report.summary.nonCompliant} Non-Compliant`} tone="danger" />
+            <StatusBadge label={`${report.summary.compliant} ${t('basic.compliant')}`} tone="success" />
+            <StatusBadge label={`${report.summary.warning} ${t('basic.warning')}`} tone="warning" />
+            <StatusBadge label={`${report.summary.nonCompliant} ${t('basic.nonCompliant')}`} tone="danger" />
           </div>
         </div>
       </GlassCard>
 
       <GlassCard className="rounded-2xl p-5">
-        <h3 className="text-muted text-sm font-semibold uppercase tracking-wider">Simple Issues</h3>
+        <h3 className="text-muted text-sm font-semibold uppercase tracking-wider">{t('basic.simpleIssues')}</h3>
         {issueSummary.length === 0 ? (
-          <p className="mt-3 text-sm text-[var(--badge-success-text)]">No major issues detected in this scan.</p>
+          <p className="mt-3 text-sm text-[var(--badge-success-text)]">{t('basic.noMajorIssues')}</p>
         ) : (
           <ul className="text-main mt-3 space-y-2 text-sm">
             {issueSummary.map((issue) => (

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useLanguage } from '../../LanguageContext';
 import Dashboard from '../Dashboard';
 import GlassCard from '../ui/GlassCard';
 import StatusBadge from '../ui/StatusBadge';
@@ -11,24 +12,25 @@ interface IntermediateDashboardProps {
 }
 
 const IntermediateDashboard: React.FC<IntermediateDashboardProps> = ({ report, config }) => {
+  const { t } = useLanguage();
   const [showDeviceDetails, setShowDeviceDetails] = useState(false);
 
   const rows = useMemo(() => {
     return report.devices.map((device) => ({
       key: `${device.mac}-${device.ip}`,
-      hostname: device.hostname || 'Unknown Hostname',
-      vendor: device.vendor || 'Unknown',
+      hostname: device.hostname || t('intermediate.unknownHostname'),
+      vendor: device.vendor || t('intermediate.unknownVendor'),
       status: device.status,
-      details: `${device.openPorts?.length ?? 0} open ports${device.osMatch ? ` • ${device.osMatch}` : ''}${device.attackSurface ? ` • Attack Surface ${device.attackSurface.score}` : ''}`
+      details: `${device.openPorts?.length ?? 0} ${t('intermediate.openPorts')}${device.osMatch ? ` • ${device.osMatch}` : ''}${device.attackSurface ? ` • ${t('intermediate.attackSurface')} ${device.attackSurface.score}` : ''}`
     }));
-  }, [report.devices]);
+  }, [report.devices, t]);
 
   return (
     <div className="space-y-5">
       <GlassCard className="rounded-2xl border border-[var(--color-accent-border)] p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="accent-text text-xs font-semibold uppercase tracking-widest">Intermediate Overview</p>
-          <StatusBadge label="Standard Visibility" tone="info" />
+          <p className="accent-text text-xs font-semibold uppercase tracking-widest">{t('intermediate.overview')}</p>
+          <StatusBadge label={t('intermediate.standardVisibility')} tone="info" />
         </div>
       </GlassCard>
 
@@ -36,9 +38,9 @@ const IntermediateDashboard: React.FC<IntermediateDashboardProps> = ({ report, c
 
       <GlassCard className="rounded-2xl p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-muted text-sm font-semibold uppercase tracking-wider">Device Overview</h3>
+          <h3 className="text-muted text-sm font-semibold uppercase tracking-wider">{t('intermediate.deviceOverview')}</h3>
           <TechButton variant="secondary" onClick={() => setShowDeviceDetails((prev) => !prev)}>
-            {showDeviceDetails ? 'Hide Attack Surface Details' : 'Show Attack Surface Details'}
+            {showDeviceDetails ? t('intermediate.hideAttackSurface') : t('intermediate.showAttackSurface')}
           </TechButton>
         </div>
 
@@ -55,7 +57,7 @@ const IntermediateDashboard: React.FC<IntermediateDashboardProps> = ({ report, c
               </div>
             </div>
           ))}
-          {rows.length === 0 && <p className="text-soft text-sm">No devices in this report.</p>}
+          {rows.length === 0 && <p className="text-soft text-sm">{t('intermediate.noDevices')}</p>}
         </div>
       </GlassCard>
     </div>
