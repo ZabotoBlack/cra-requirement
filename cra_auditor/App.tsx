@@ -274,12 +274,16 @@ const App: React.FC = () => {
       setSubnet(data.subnet);
     });
 
-    setScanOptions((previous) => ({
-      ...previous,
-      scan_type: previous.scan_type === 'deep' ? 'deep' : 'standard',
-      auth_checks: previous.scan_type === 'deep' ? true : false,
-      vendors: previous.vendors ?? 'all'
-    }));
+    setScanOptions((previous) => {
+      const newScanType: ScanOptions['scan_type'] = previous.scan_type === 'deep' ? 'deep' : 'standard';
+
+      return {
+        ...previous,
+        scan_type: newScanType,
+        auth_checks: newScanType === 'deep',
+        vendors: previous.vendors ?? 'all'
+      };
+    });
   }, [userMode]);
 
   useEffect(() => {
