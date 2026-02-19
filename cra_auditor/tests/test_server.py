@@ -55,6 +55,33 @@ class TestServer(unittest.TestCase):
         self.assertIn('version', data)
         self.assertIn('gemini_enabled', data)
 
+    @patch('server._detect_default_subnet', return_value='192.168.1.0/24')
+    def test_network_default_success(self, _mock_detect):
+        """Test default subnet endpoint when detection succeeds."""
+        response = self.app.get('/api/network/default')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(data['subnet'], '192.168.1.0/24')
+        self.assertEqual(data['source'], 'auto')
+
+    @patch('server._detect_default_subnet', return_value=None)
+    def test_network_default_not_found(self, _mock_detect):
+        """Test default subnet endpoint fallback behavior when detection fails."""
+        response = self.app.get('/api/network/default')
+        self.assertEqual(response.status_code, 404)
+        data = json.loads(response.data)
+        self.assertIsNone(data['subnet'])
+        self.assertEqual(data['source'], 'fallback-required')
+
+    def test_logs_endpoint(self):
+        """Test logs endpoint returns bounded list payload."""
+        response = self.app.get('/api/logs?limit=10')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn('logs', data)
+        self.assertIsInstance(data['logs'], list)
+        self.assertLessEqual(len(data['logs']), 10)
+
     @patch('server.threading.Thread')
     def test_scan_start(self, mock_thread):
         """Test starting a scan."""
@@ -325,6 +352,26 @@ class TestServerPersistence(unittest.TestCase):
                 server.DB_FILE = old_db_file
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestNetworkHelpers(unittest.TestCase):
+    def test_subnet_from_ip_ipv4(self):
+        subnet = server._subnet_from_ip('192.168.10.42', prefix=24)
+        self.assertEqual(subnet, '192.168.10.0/24')
+
+    def test_subnet_from_ip_invalid(self):
+        subnet = server._subnet_from_ip('not-an-ip', prefix=24)
+        self.assertIsNone(subnet)
+
+    @patch('server._extract_candidate_ipv4_addresses', return_value=['10.0.5.12'])
+    def test_detect_default_subnet_uses_private_candidate(self, _mock_candidates):
+        subnet = server._detect_default_subnet()
+        self.assertEqual(subnet, '10.0.5.0/24')
+
+    @patch('server._extract_candidate_ipv4_addresses', return_value=[])
+    def test_detect_default_subnet_no_candidates(self, _mock_candidates):
+        subnet = server._detect_default_subnet()
+        self.assertIsNone(subnet)
 
 if __name__ == '__main__':
     unittest.main()

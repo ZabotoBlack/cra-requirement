@@ -44,6 +44,22 @@ export interface FrontendConfig {
   version: string;
 }
 
+export type UserMode = 'basic' | 'intermediate' | 'expert';
+
+export interface UserSettings {
+  mode: UserMode;
+}
+
+export interface DefaultSubnetResponse {
+  subnet: string | null;
+  source: 'auto' | 'fallback-required';
+  message?: string;
+}
+
+export interface LogsResponse {
+  logs: string[];
+}
+
 export interface Device {
   mac: string;
   ip: string;

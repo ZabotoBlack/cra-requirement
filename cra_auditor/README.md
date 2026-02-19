@@ -9,6 +9,27 @@ A comprehensive Cyber Resilience Act (CRA) compliance scanner for your local net
 - **Vulnerability Scanning**: Checks for open ports and known CVEs.
 - **Compliance Reporting**: Categorizes devices based on EU Cyber Resilience Act standards.
 - **AI Integration**: Optional integration with Gemini AI for enhanced security advice.
+- **3-Tier Dashboard Modes**: End User, Intermediate, and Expert views for different technical levels.
+
+## Dashboard Modes
+
+The UI supports three switchable experience levels (quick toggle in the command header and in Settings):
+
+- **End User (Basic)**
+	- Auto-detects subnet via backend (`/api/network/default`) and locks subnet input
+	- Uses simplified health summary cards and plain-language issue list
+	- Hides advanced tables and raw data views
+- **Intermediate**
+	- Editable subnet input
+	- Standard dashboard with simplified device overview and optional expanded detail
+- **Expert**
+	- Full dashboard plus full device list
+	- In-app logs console via `/api/logs`
+	- JSON export button for full report payload
+
+### Basic-Mode Subnet Fallback
+
+If automatic subnet detection is unavailable, the UI prompts once for a CIDR subnet before starting the scan.
 
 ## Scan Profiles & Feature Flags
 
@@ -76,6 +97,23 @@ log_paths:
 	- /journal
 	- /cgi-bin/log.cgi
 ```
+
+## Additional API Endpoints
+
+- `GET /api/network/default`
+	- Returns detected subnet, e.g.:
+		```json
+		{"subnet":"192.168.1.0/24","source":"auto"}
+		```
+	- If detection fails, returns `404` with:
+		```json
+		{"subnet":null,"source":"fallback-required","message":"Unable to automatically detect local subnet"}
+		```
+- `GET /api/logs?limit=150`
+	- Returns recent runtime logs for Expert console view:
+		```json
+		{"logs":["..."]}
+		```
 
 ## Manual Probe Validation (Mock Device)
 

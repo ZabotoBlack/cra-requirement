@@ -1,8 +1,10 @@
 from flask import Flask, jsonify, request, send_from_directory
+from collections import deque
 import logging
 import os
 import re
 import shutil
+import socket
 import threading
 import time
 import sqlite3
@@ -14,6 +16,112 @@ from scan_logic import CRAScanner
 
 # Configure logging (replaces print() for structured HA output)
 logger = logging.getLogger(__name__)
+
+LOG_BUFFER: deque[str] = deque(maxlen=300)
+
+
+class InMemoryLogHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            LOG_BUFFER.append(self.format(record))
+        except Exception:
+            pass
+
+
+def _configure_log_buffer() -> None:
+    root_logger = logging.getLogger()
+    if any(isinstance(handler, InMemoryLogHandler) for handler in root_logger.handlers):
+        return
+
+    buffer_handler = InMemoryLogHandler()
+    buffer_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s'))
+    root_logger.addHandler(buffer_handler)
+
+    if root_logger.level in (logging.NOTSET, logging.WARNING):
+        root_logger.setLevel(logging.INFO)
+
+
+def _subnet_from_ip(ip_address: str, prefix: int = 24) -> str | None:
+    try:
+        interface = ipaddress.ip_interface(f"{ip_address}/{prefix}")
+        return str(interface.network)
+    except ValueError:
+        return None
+
+
+def _extract_candidate_ipv4_addresses() -> list[str]:
+    candidates: list[str] = []
+
+    try:
+        hostname_ips = socket.gethostbyname_ex(socket.gethostname())[2]
+        candidates.extend(hostname_ips)
+    except Exception:
+        pass
+
+    for target in ('8.8.8.8', '1.1.1.1'):
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            probe.connect((target, 80))
+            candidates.append(probe.getsockname()[0])
+        except Exception:
+            continue
+        finally:
+            probe.close()
+
+    try:
+        import netifaces  # type: ignore
+
+        for iface in netifaces.interfaces():
+            addresses = netifaces.ifaddresses(iface).get(netifaces.AF_INET, [])
+            for address_info in addresses:
+                addr = address_info.get('addr')
+                if addr:
+                    candidates.append(addr)
+    except Exception:
+        pass
+
+    unique: list[str] = []
+    seen: set[str] = set()
+    for raw_ip in candidates:
+        try:
+            ip_obj = ipaddress.ip_address(raw_ip)
+        except ValueError:
+            continue
+
+        if ip_obj.version != 4 or ip_obj.is_loopback:
+            continue
+
+        normalized = str(ip_obj)
+        if normalized not in seen:
+            seen.add(normalized)
+            unique.append(normalized)
+
+    return unique
+
+
+def _detect_default_subnet() -> str | None:
+    candidates = _extract_candidate_ipv4_addresses()
+    if not candidates:
+        return None
+
+    selected_ip = None
+    for candidate in candidates:
+        try:
+            candidate_obj = ipaddress.ip_address(candidate)
+        except ValueError:
+            continue
+
+        if candidate_obj.is_private:
+            selected_ip = candidate
+            break
+
+    if selected_ip is None:
+        selected_ip = candidates[0]
+
+    return _subnet_from_ip(selected_ip, prefix=24)
+
+
+_configure_log_buffer()
 
 app = Flask(__name__)
 
@@ -288,6 +396,31 @@ def get_config():
         "nvd_enabled": has_nvd,
         "version": "1.0.9"
     })
+
+
+@app.route('/api/network/default', methods=['GET'])
+def get_default_network_subnet():
+    subnet = _detect_default_subnet()
+    if subnet:
+        return jsonify({"subnet": subnet, "source": "auto"})
+
+    return jsonify({
+        "subnet": None,
+        "source": "fallback-required",
+        "message": "Unable to automatically detect local subnet"
+    }), 404
+
+
+@app.route('/api/logs', methods=['GET'])
+def get_logs():
+    try:
+        limit = int(request.args.get('limit', 120))
+    except ValueError:
+        limit = 120
+
+    limit = max(1, min(limit, 300))
+    logs = list(LOG_BUFFER)[-limit:]
+    return jsonify({"logs": logs})
 
 @app.route('/api/report', methods=['GET'])
 def get_latest_report():

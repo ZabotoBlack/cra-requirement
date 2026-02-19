@@ -8,6 +8,24 @@ The **CRA Compliance Auditor** is a powerful network security tool designed for 
 - **Port Analysis**: Detect open ports and potential vulnerabilities.
 - **Compliance Status**: Categorize devices as Compliant, Warning, or Non-Compliant.
 - **AI Insights**: (Optional) Integrate with Google Gemini for detailed security analysis.
+- **3-Tier Dashboard UX**: End User, Intermediate, and Expert views with fast mode switching.
+
+## Dashboard Experience Levels
+
+The web UI includes an experience selector (quick toggle in header + Settings modal):
+
+- **End User (Basic)**
+	- Attempts automatic subnet detection via `GET /api/network/default`
+	- Locks subnet field and presents simple health-focused summaries
+	- Hides advanced/raw technical data
+- **Intermediate**
+	- Keeps subnet configurable
+	- Shows standard dashboard and a concise device overview section
+- **Expert**
+	- Exposes full dashboard and complete device table
+	- Includes runtime logs console and JSON report export
+
+If basic-mode subnet auto-detection fails, the UI prompts once for a CIDR input before scan start.
 
 ## Configuration
 To enable AI insights, you can provide a Gemini API Key in the configuration tab.
@@ -63,6 +81,30 @@ The backend still accepts:
 
 ### Important Discovery Behavior
 Discovery mode now **skips all compliance checks** by design. It returns discovered device metadata only (IP/MAC/vendor/hostname and merged HA data where available).
+
+## Additional API Endpoints
+
+### `GET /api/network/default`
+
+Returns detected subnet in `/24` form when available:
+
+```json
+{"subnet":"192.168.1.0/24","source":"auto"}
+```
+
+If detection fails:
+
+```json
+{"subnet":null,"source":"fallback-required","message":"Unable to automatically detect local subnet"}
+```
+
+### `GET /api/logs?limit=150`
+
+Returns recent backend logs for the Expert dashboard console:
+
+```json
+{"logs":["..."]}
+```
 
 ## Hostname Resolution (Reverse DNS + mDNS)
 

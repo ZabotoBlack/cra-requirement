@@ -1,4 +1,4 @@
-import { ScanReport, ScanOptions } from '../types';
+import { ScanReport, ScanOptions, DefaultSubnetResponse, LogsResponse } from '../types';
 
 export const startScan = async (subnet: string, options: ScanOptions): Promise<void> => {
   const response = await fetch('api/scan', {
@@ -45,6 +45,28 @@ export const getConfig = async (): Promise<{ gemini_enabled: boolean; nvd_enable
     return await response.json();
   } catch (e) {
     return { gemini_enabled: false, nvd_enabled: false, version: 'unknown' };
+  }
+};
+
+export const getDefaultSubnet = async (): Promise<DefaultSubnetResponse | null> => {
+  try {
+    const response = await fetch('api/network/default');
+    if (!response.ok) {
+      return await response.json();
+    }
+    return await response.json();
+  } catch (e) {
+    return null;
+  }
+};
+
+export const getLogs = async (limit: number = 150): Promise<LogsResponse | null> => {
+  try {
+    const response = await fetch(`api/logs?limit=${limit}`);
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (e) {
+    return null;
   }
 };
 
