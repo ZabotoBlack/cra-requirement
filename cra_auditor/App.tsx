@@ -159,6 +159,8 @@ const AppShell: React.FC = () => {
   const pollInterval = useRef<NodeJS.Timeout | null>(null);
   const viewRef = useRef(view);
   const modeMenuRef = useRef<HTMLDivElement | null>(null);
+  const settingsAutoOpenedRef = useRef(false);
+  const previousStepOpenedSettingsRef = useRef(false);
   const currentTourStep = isTourActive ? TOUR_STEPS[currentStep] : null;
 
   useEffect(() => {
@@ -335,6 +337,13 @@ const AppShell: React.FC = () => {
 
   useEffect(() => {
     if (!isTourActive || !currentTourStep) {
+      if (!isTourActive) {
+        if (settingsAutoOpenedRef.current) {
+          setShowSettings(false);
+          settingsAutoOpenedRef.current = false;
+        }
+        previousStepOpenedSettingsRef.current = false;
+      }
       return;
     }
 
@@ -350,11 +359,17 @@ const AppShell: React.FC = () => {
       setView(currentTourStep.viewRequirement);
     }
 
-    if (currentTourStep.opensSettings) {
+    const stepRequiresSettings = Boolean(currentTourStep.opensSettings);
+
+    if (stepRequiresSettings) {
       setShowSettings(true);
-    } else {
+      settingsAutoOpenedRef.current = true;
+    } else if (previousStepOpenedSettingsRef.current && settingsAutoOpenedRef.current) {
       setShowSettings(false);
+      settingsAutoOpenedRef.current = false;
     }
+
+    previousStepOpenedSettingsRef.current = stepRequiresSettings;
   }, [isTourActive, currentTourStep, userMode, view]);
 
   const setTourSeen = () => {
