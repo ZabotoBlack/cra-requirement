@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, ChevronsLeft, ChevronsRight, History, LayoutDashboard, List, Moon, Play, RotateCw, Settings, ShieldCheck, Sun, X } from 'lucide-react';
+import { Activity, AlertTriangle, ChevronsLeft, ChevronsRight, HelpCircle, History, LayoutDashboard, List, Moon, Play, RotateCw, Settings, ShieldCheck, Sun, X } from 'lucide-react';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import DeviceList from './components/DeviceList';
 import HistoryView from './components/HistoryView';
@@ -13,6 +13,9 @@ import TechButton from './components/ui/TechButton';
 import { startScan, getScanStatus, getReport, getConfig, getHistoryDetail, getDefaultSubnet, getLogs } from './services/api';
 import { LanguageProvider, useLanguage } from './LanguageContext';
 import { ScanReport, ViewState, ScanOptions, FrontendConfig, UserMode } from './types';
+import { TOUR_STEPS, TourProvider, useTour } from './TourContext';
+import TourOverlay from './TourOverlay';
+import TourWelcomeModal from './TourWelcomeModal';
 
 const isValidIPv4Address = (address: string): boolean => {
   const parts = address.split('.');
@@ -99,6 +102,7 @@ const isValidCidrSubnet = (value: string): boolean => {
 
 const USER_MODE_STORAGE_KEY = 'cra-user-mode';
 const THEME_STORAGE_KEY = 'cra-theme';
+const TOUR_SEEN_STORAGE_KEY = 'cra-tour-seen';
 
 type ThemeMode = 'light' | 'dark';
 
@@ -110,6 +114,7 @@ const MODE_ACCENT: Record<UserMode, string> = {
 
 const AppShell: React.FC = () => {
   const { t } = useLanguage();
+  const { isTourActive, currentStep, startTour, endTour } = useTour();
   const [view, setView] = useState<ViewState>('dashboard');
   const [scanning, setScanning] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -149,10 +154,12 @@ const AppShell: React.FC = () => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('cra-sidebar-expanded') === 'true';
   });
+  const [showTourWelcome, setShowTourWelcome] = useState(false);
 
   const pollInterval = useRef<NodeJS.Timeout | null>(null);
   const viewRef = useRef(view);
   const modeMenuRef = useRef<HTMLDivElement | null>(null);
+  const currentTourStep = isTourActive ? TOUR_STEPS[currentStep] : null;
 
   useEffect(() => {
     viewRef.current = view;
@@ -286,6 +293,17 @@ const AppShell: React.FC = () => {
   }, [theme]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const hasSeenTour = window.localStorage.getItem(TOUR_SEEN_STORAGE_KEY) === 'true';
+    if (!hasSeenTour) {
+      setShowTourWelcome(true);
+    }
+  }, []);
+
+  useEffect(() => {
     if (userMode !== 'basic') {
       return;
     }
@@ -314,6 +332,48 @@ const AppShell: React.FC = () => {
       setView('dashboard');
     }
   }, [userMode, view]);
+
+  useEffect(() => {
+    if (!isTourActive || !currentTourStep) {
+      return;
+    }
+
+    if (currentTourStep.requiresSidebarExpanded) {
+      setSidebarExpanded(true);
+    }
+
+    if (currentTourStep.requiredMode && userMode !== currentTourStep.requiredMode) {
+      setUserMode(currentTourStep.requiredMode);
+    }
+
+    if (currentTourStep.viewRequirement && view !== currentTourStep.viewRequirement) {
+      setView(currentTourStep.viewRequirement);
+    }
+
+    if (currentTourStep.opensSettings) {
+      setShowSettings(true);
+    } else {
+      setShowSettings(false);
+    }
+  }, [isTourActive, currentTourStep, userMode, view]);
+
+  const setTourSeen = () => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(TOUR_SEEN_STORAGE_KEY, 'true');
+    }
+  };
+
+  const handleStartTour = () => {
+    setTourSeen();
+    setShowTourWelcome(false);
+    startTour();
+  };
+
+  const handleSkipTour = () => {
+    setTourSeen();
+    setShowTourWelcome(false);
+    endTour();
+  };
 
   const handleScan = async () => {
     let targetSubnet = normalizedSubnet;
@@ -392,7 +452,7 @@ const AppShell: React.FC = () => {
       <aside className={`surface-panel fixed inset-y-0 left-0 z-30 border-r backdrop-blur-xl transition-all duration-300 ${sidebarExpanded ? 'w-64' : 'w-20'}`}>
         <div className={`flex h-full flex-col py-5 ${sidebarExpanded ? 'px-3' : 'items-center'}`}>
           <div className={`mb-6 flex items-center ${sidebarExpanded ? 'justify-between px-1' : 'flex-col gap-3'}`}>
-            <div className="accent-ring flex h-11 w-11 items-center justify-center rounded-xl border shadow-[0_0_20px_color-mix(in_srgb,var(--color-accent)_28%,transparent)]">
+            <div data-tour-id="brand-icon" className="accent-ring flex h-11 w-11 items-center justify-center rounded-xl border shadow-[0_0_20px_color-mix(in_srgb,var(--color-accent)_28%,transparent)]">
               <ShieldCheck size={22} />
             </div>
             {sidebarExpanded && (
@@ -410,7 +470,7 @@ const AppShell: React.FC = () => {
             </button>
           </div>
 
-          <nav className={`flex flex-1 flex-col gap-3 ${sidebarExpanded ? '' : 'items-center'}`}>
+          <nav data-tour-id="sidebar-nav" className={`flex flex-1 flex-col gap-3 ${sidebarExpanded ? '' : 'items-center'}`}>
             {navItems.map(({ id, icon: Icon, label }) => (
               <button
                 key={id}
@@ -433,7 +493,7 @@ const AppShell: React.FC = () => {
             ))}
 
             {sidebarExpanded && (
-              <div className="surface-card mt-2 rounded-xl border p-3">
+              <div data-tour-id="ui-mode-selector" className="surface-card mt-2 rounded-xl border p-3">
                 <label className="text-soft mb-2 block text-[11px] font-semibold uppercase tracking-widest">{t('sidebar.uiMode')}</label>
                 <div ref={modeMenuRef} className="relative">
                   <button
@@ -470,8 +530,18 @@ const AppShell: React.FC = () => {
           </nav>
 
           <div className={`mt-auto ${sidebarExpanded ? '' : 'w-full px-1'}`}>
-            {sidebarExpanded && <LanguageSelector />}
+            {sidebarExpanded && <div data-tour-id="language-selector"><LanguageSelector /></div>}
             <button
+              data-tour-id="start-tour-button"
+              onClick={handleStartTour}
+              title={t('tour.sidebar.startTour')}
+              className={`surface-card text-muted hover:text-main mt-2 flex h-11 items-center rounded-xl border transition ${sidebarExpanded ? 'w-full justify-start gap-3 px-3' : 'mx-auto w-11 justify-center'}`}
+            >
+              <HelpCircle size={18} />
+              {sidebarExpanded && <span className="text-sm font-medium">{t('tour.sidebar.startTour')}</span>}
+            </button>
+            <button
+              data-tour-id="theme-toggle"
               onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
               title={theme === 'dark' ? t('sidebar.theme.toLight') : t('sidebar.theme.toDark')}
               className={`surface-card text-muted hover:text-main flex h-11 items-center rounded-xl border transition ${sidebarExpanded ? 'w-full justify-start gap-3 px-3' : 'mx-auto w-11 justify-center'}`}
@@ -487,7 +557,7 @@ const AppShell: React.FC = () => {
         <div className="space-y-6">
           <GlassCard className="sticky top-5 z-20 rounded-2xl border border-[var(--color-accent-border)] px-5 py-4 md:px-6">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-              <div className="flex min-w-0 items-center gap-3 md:gap-4">
+              <div data-tour-id="status-badges" className="flex min-w-0 items-center gap-3 md:gap-4">
                 <div>
                   <h1 className="text-main text-lg font-bold tracking-tight md:text-xl">{t('header.title')}</h1>
                   <p className="text-muted text-sm">{t('header.subtitle')}</p>
@@ -498,28 +568,30 @@ const AppShell: React.FC = () => {
 
               <div className="flex flex-col gap-2 md:items-end">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center">
-                  {subnetLocked ? (
-                    <div className="surface-elevated text-main min-w-[260px] rounded-xl border px-3 py-2 text-sm">
-                      {t('subnet.auto')}: {subnet || t('subnet.detecting')}
-                    </div>
-                  ) : (
-                    <div className={`surface-elevated flex min-w-[260px] items-center rounded-xl border px-3 py-2 transition ${hasSubnetInput ? (isValidSubnet ? 'border-emerald-500/50' : 'border-rose-500/55') : (isSubnetFocused ? 'border-[var(--color-accent-border)]' : '')}`}>
-                      <input
-                        type="text"
-                        value={subnet}
-                        onChange={(e) => setSubnet(e.target.value)}
-                        onFocus={() => setIsSubnetFocused(true)}
-                        onBlur={() => setIsSubnetFocused(false)}
-                        className="text-main w-full bg-transparent text-sm outline-none placeholder:text-[var(--text-soft)]"
-                        placeholder={t('subnet.placeholder')}
-                      />
-                    </div>
-                  )}
-                  <TechButton onClick={() => setShowSettings(true)} disabled={scanning} variant="secondary">
+                  <div data-tour-id="subnet-input">
+                    {subnetLocked ? (
+                      <div className="surface-elevated text-main min-w-[260px] rounded-xl border px-3 py-2 text-sm">
+                        {t('subnet.auto')}: {subnet || t('subnet.detecting')}
+                      </div>
+                    ) : (
+                      <div className={`surface-elevated flex min-w-[260px] items-center rounded-xl border px-3 py-2 transition ${hasSubnetInput ? (isValidSubnet ? 'border-emerald-500/50' : 'border-rose-500/55') : (isSubnetFocused ? 'border-[var(--color-accent-border)]' : '')}`}>
+                        <input
+                          type="text"
+                          value={subnet}
+                          onChange={(e) => setSubnet(e.target.value)}
+                          onFocus={() => setIsSubnetFocused(true)}
+                          onBlur={() => setIsSubnetFocused(false)}
+                          className="text-main w-full bg-transparent text-sm outline-none placeholder:text-[var(--text-soft)]"
+                          placeholder={t('subnet.placeholder')}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <TechButton data-tour-id="settings-button" onClick={() => setShowSettings(true)} disabled={scanning} variant="secondary">
                     <Settings size={15} />
                     {t('actions.settings')}
                   </TechButton>
-                  <TechButton onClick={handleScan} disabled={!canStartScan} variant="primary" className="neon-text">
+                  <TechButton data-tour-id="start-scan-button" onClick={handleScan} disabled={!canStartScan} variant="primary" className="neon-text">
                     {scanning ? <RotateCw className="animate-spin" size={15} /> : <Play size={15} />}
                     {scanning ? t('actions.scanning') : t('actions.startScan')}
                   </TechButton>
@@ -575,7 +647,10 @@ const AppShell: React.FC = () => {
                 </div>
               </GlassCard>
             ) : (
-              <div className={`relative ${scanning && !report && view !== 'history' ? 'min-h-[360px]' : ''}`}>
+              <div
+                className={`relative ${scanning && !report && view !== 'history' ? 'min-h-[360px]' : ''}`}
+                data-tour-id={view === 'dashboard' ? 'dashboard-area' : view === 'devices' ? 'devices-area' : 'history-area'}
+              >
                 {view === 'dashboard' && report && userMode === 'basic' && <BasicDashboard report={report} />}
                 {view === 'dashboard' && report && userMode === 'intermediate' && <IntermediateDashboard report={report} config={config} />}
                 {view === 'dashboard' && report && userMode === 'expert' && <ExpertDashboard report={report} config={config} logs={logs} />}
@@ -642,13 +717,18 @@ const AppShell: React.FC = () => {
         onClose={() => setShowSettings(false)}
         onScanOptionsChange={setScanOptions}
       />
+
+      <TourOverlay />
+      <TourWelcomeModal show={showTourWelcome} onStartTour={handleStartTour} onSkipTour={handleSkipTour} />
     </div>
   );
 };
 
 const App: React.FC = () => (
   <LanguageProvider>
-    <AppShell />
+    <TourProvider>
+      <AppShell />
+    </TourProvider>
   </LanguageProvider>
 );
 

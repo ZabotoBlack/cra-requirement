@@ -70,7 +70,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
 
           {mode === 'basic' && (
-            <div>
+            <div data-tour-id="settings-scan-depth">
               <label className="mb-2 block text-sm font-semibold uppercase tracking-wider text-slate-300">{t('settings.scanDepth')}</label>
               <div className="grid grid-cols-2 gap-2">
                 {endUserDepthOptions.map((option) => (
@@ -91,7 +91,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           )}
 
           {mode !== 'basic' && (
-            <div>
+            <div data-tour-id="settings-scan-depth">
               <label className="mb-2 block text-sm font-semibold uppercase tracking-wider text-slate-300">{t('settings.scanDepth')}</label>
               <div className="grid grid-cols-3 gap-2">
                 {(['discovery', 'standard', 'deep'] as const).map((type) => (
@@ -112,7 +112,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           )}
 
           {((mode === 'basic' && scanOptions.scan_type === 'deep') || mode !== 'basic') && (
-            <div className={mode !== 'basic' && scanOptions.scan_type === 'discovery' ? 'pointer-events-none opacity-50' : ''}>
+            <div data-tour-id="settings-vendor-detection" className={mode !== 'basic' && scanOptions.scan_type === 'discovery' ? 'pointer-events-none opacity-50' : ''}>
               <label className="mb-2 block text-sm font-semibold uppercase tracking-wider text-slate-300">{t('settings.vendorDetection')}</label>
               <div className="flex flex-wrap gap-2">
                 <button
@@ -172,7 +172,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           )}
 
           {mode === 'expert' && (
-            <div className={scanOptions.scan_type === 'discovery' ? 'pointer-events-none opacity-50' : ''}>
+            <div data-tour-id="settings-active-probing" className={scanOptions.scan_type === 'discovery' ? 'pointer-events-none opacity-50' : ''}>
               <label className="flex items-start gap-3 rounded-xl border border-slate-700 bg-slate-800/70 p-3">
                 <input
                   type="checkbox"
