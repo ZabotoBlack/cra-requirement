@@ -12,6 +12,14 @@ import urllib3
 from vulnerability_data import NVDClient, VendorRules, build_cpe, match_cpe
 
 try:
+    import dns.resolver
+    import dns.reversename
+    import dns.exception
+    _DNSPYTHON_AVAILABLE = True
+except ImportError:
+    _DNSPYTHON_AVAILABLE = False
+
+try:
     from zeroconf import ServiceBrowser, Zeroconf
     _ZEROCONF_AVAILABLE = True
 except Exception:
@@ -825,6 +833,20 @@ class CRAScanner:
 
     def _safe_reverse_dns(self, ip):
         """Perform reverse DNS lookup with exception-safe fallback."""
+        if _DNSPYTHON_AVAILABLE:
+            try:
+                resolver = dns.resolver.Resolver()
+                resolver.timeout = 2
+                resolver.lifetime = 2
+                rev_name = dns.reversename.from_address(ip)
+                answers = resolver.resolve(rev_name, "PTR")
+                for rdata in answers:
+                    name = str(rdata.target).rstrip('.')
+                    if name:
+                        return name
+            except Exception as e:
+                logger.debug("[SCAN] dnspython reverse DNS failed for %s: %s", ip, e)
+
         try:
             return socket.gethostbyaddr(ip)[0]
         except Exception:

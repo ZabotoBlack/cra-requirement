@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Bot, ChevronDown, ChevronUp, Cpu, FileText, Lock, Network, Router, Shield } from 'lucide-react';
+import { Bot, ChevronDown, ChevronUp, Cpu, FileText, Info, Lock, Network, Router, Shield } from 'lucide-react';
 import { ComplianceStatus, Device } from '../types';
 import { useLanguage } from '../LanguageContext';
 import { getRemediationAdvice } from '../services/geminiService';
@@ -73,6 +73,32 @@ const StatusIcon: React.FC<{ passed?: boolean; details?: string }> = ({ passed, 
   );
 };
 
+const CheckHeader: React.FC<{ label: string; requirement: string }> = ({ label, requirement }) => {
+  const { t } = useLanguage();
+
+  return (
+    <div className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap">
+      <span>{label}</span>
+      <span className="group relative inline-flex">
+        <button
+          type="button"
+          aria-label={t('dashboard.craRequirementInfo')}
+          title={t('dashboard.craRequirementInfo')}
+          className="text-soft hover:text-main inline-flex h-4 w-4 items-center justify-center rounded-full border border-[var(--border-subtle)] transition"
+        >
+          <Info size={10} aria-hidden="true" />
+        </button>
+        <span
+          role="tooltip"
+          className="surface-elevated text-main pointer-events-none absolute left-1/2 top-full z-10 mt-2 hidden w-72 -translate-x-1/2 rounded-lg border px-3 py-2 text-left text-xs normal-case leading-relaxed tracking-normal group-hover:block group-focus-within:block"
+        >
+          {requirement}
+        </span>
+      </span>
+    </div>
+  );
+};
+
 const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
   const { t, language } = useLanguage();
   const [tab, setTab] = useState<DossierTab>('checks');
@@ -92,14 +118,14 @@ const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
   }, [device]);
 
   const checks = [
-    { key: t('deviceList.check.secureDefaults'), passed: device.checks?.secureByDefault?.passed, details: device.checks?.secureByDefault?.details, icon: <Lock size={14} /> },
-    { key: t('deviceList.check.encryption'), passed: device.checks?.dataConfidentiality?.passed, details: device.checks?.dataConfidentiality?.details, icon: <Shield size={14} /> },
-    { key: t('deviceList.check.httpsOnly'), passed: device.checks?.httpsOnlyManagement?.passed, details: device.checks?.httpsOnlyManagement?.details, icon: <Shield size={14} /> },
-    { key: t('deviceList.check.vulnerabilities'), passed: device.checks?.vulnerabilities?.passed, details: device.checks?.vulnerabilities?.details, icon: <Cpu size={14} /> },
-    { key: t('deviceList.check.sbom'), passed: device.checks?.sbomCompliance?.passed, details: device.checks?.sbomCompliance?.details, icon: <FileText size={14} /> },
-    { key: t('deviceList.check.firmware'), passed: device.checks?.firmwareTracking?.passed, details: device.checks?.firmwareTracking?.details, icon: <FileText size={14} /> },
-    { key: t('deviceList.check.secTxt'), passed: device.checks?.securityTxt?.passed, details: device.checks?.securityTxt?.details, icon: <FileText size={14} /> },
-    { key: t('deviceList.check.securityLogging'), passed: device.checks?.securityLogging?.passed, details: device.checks?.securityLogging?.details, icon: <Network size={14} /> },
+    { key: t('deviceList.check.secureDefaults'), passed: device.checks?.secureByDefault?.passed, details: device.checks?.secureByDefault?.details, icon: <Lock size={14} />, requirement: t('dashboard.cra.req.secureDefaults') },
+    { key: t('deviceList.check.encryption'), passed: device.checks?.dataConfidentiality?.passed, details: device.checks?.dataConfidentiality?.details, icon: <Shield size={14} />, requirement: t('dashboard.cra.req.encryption') },
+    { key: t('deviceList.check.httpsOnly'), passed: device.checks?.httpsOnlyManagement?.passed, details: device.checks?.httpsOnlyManagement?.details, icon: <Shield size={14} />, requirement: t('dashboard.cra.req.httpsOnly') },
+    { key: t('deviceList.check.vulnerabilities'), passed: device.checks?.vulnerabilities?.passed, details: device.checks?.vulnerabilities?.details, icon: <Cpu size={14} />, requirement: t('dashboard.cra.req.vulnerabilities') },
+    { key: t('deviceList.check.sbom'), passed: device.checks?.sbomCompliance?.passed, details: device.checks?.sbomCompliance?.details, icon: <FileText size={14} />, requirement: t('dashboard.cra.req.sbom') },
+    { key: t('deviceList.check.firmware'), passed: device.checks?.firmwareTracking?.passed, details: device.checks?.firmwareTracking?.details, icon: <FileText size={14} />, requirement: t('dashboard.cra.req.firmware') },
+    { key: t('deviceList.check.secTxt'), passed: device.checks?.securityTxt?.passed, details: device.checks?.securityTxt?.details, icon: <FileText size={14} />, requirement: t('dashboard.cra.req.securityTxt') },
+    { key: t('deviceList.check.securityLogging'), passed: device.checks?.securityLogging?.passed, details: device.checks?.securityLogging?.details, icon: <Network size={14} />, requirement: t('dashboard.cra.req.securityLogging') },
   ];
 
   const handleAnalyze = async () => {
@@ -159,6 +185,22 @@ const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
             <div key={check.key} className="rounded-xl border border-slate-700/70 bg-slate-900/70 p-4">
               <div className="mb-2 flex items-center justify-between text-slate-300">
                 <span className="inline-flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wider">{check.icon}{check.key}</span>
+                <span className="group relative inline-flex">
+                  <button
+                    type="button"
+                    aria-label={t('dashboard.craRequirementInfo')}
+                    title={t('dashboard.craRequirementInfo')}
+                    className="text-soft hover:text-main inline-flex h-5 w-5 items-center justify-center rounded-full border border-[var(--border-subtle)] transition"
+                  >
+                    <Info size={11} aria-hidden="true" />
+                  </button>
+                  <span
+                    role="tooltip"
+                    className="surface-elevated text-main pointer-events-none absolute right-0 top-full z-10 mt-2 hidden w-80 rounded-lg border px-3 py-2 text-xs normal-case leading-relaxed tracking-normal group-hover:block group-focus-within:block"
+                  >
+                    {check.requirement}
+                  </span>
+                </span>
               </div>
               <StatusBadge
                 label={check.passed === undefined ? t('deviceList.check.notEvaluated') : check.passed ? t('deviceList.check.pass') : t('deviceList.check.attention')}
@@ -348,14 +390,30 @@ const DeviceList: React.FC<DeviceListProps> = ({ devices }) => {
                 <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('ip')}>{t('deviceList.col.ipMac')} {sortIcon('ip')}</th>
                 <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('vendor')}>{t('deviceList.col.vendor')} {sortIcon('vendor')}</th>
                 <th className="px-4 py-3 cursor-pointer whitespace-nowrap" onClick={() => handleSort('status')}>{t('deviceList.col.status')} {sortIcon('status')}</th>
-                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.secureDefaults')}>{t('deviceList.col.defaults')}</th>
-                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.encryption')}>{t('deviceList.col.encryption')}</th>
-                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.httpsOnly')}>{t('deviceList.col.https')}</th>
-                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.vulnerabilities')}>{t('deviceList.col.vulns')}</th>
-                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.sbom')}>{t('deviceList.col.sbom')}</th>
-                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.firmware')}>{t('deviceList.col.firmware')}</th>
-                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.secTxt')}>{t('deviceList.col.secTxt')}</th>
-                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.securityLogging')}>{t('deviceList.col.logging')}</th>
+                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.secureDefaults')}>
+                  <CheckHeader label={t('deviceList.col.defaults')} requirement={t('dashboard.cra.req.secureDefaults')} />
+                </th>
+                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.encryption')}>
+                  <CheckHeader label={t('deviceList.col.encryption')} requirement={t('dashboard.cra.req.encryption')} />
+                </th>
+                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.httpsOnly')}>
+                  <CheckHeader label={t('deviceList.col.https')} requirement={t('dashboard.cra.req.httpsOnly')} />
+                </th>
+                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.vulnerabilities')}>
+                  <CheckHeader label={t('deviceList.col.vulns')} requirement={t('dashboard.cra.req.vulnerabilities')} />
+                </th>
+                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.sbom')}>
+                  <CheckHeader label={t('deviceList.col.sbom')} requirement={t('dashboard.cra.req.sbom')} />
+                </th>
+                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.firmware')}>
+                  <CheckHeader label={t('deviceList.col.firmware')} requirement={t('dashboard.cra.req.firmware')} />
+                </th>
+                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.secTxt')}>
+                  <CheckHeader label={t('deviceList.col.secTxt')} requirement={t('dashboard.cra.req.securityTxt')} />
+                </th>
+                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.securityLogging')}>
+                  <CheckHeader label={t('deviceList.col.logging')} requirement={t('dashboard.cra.req.securityLogging')} />
+                </th>
                 <th className="px-4 py-3 border-l border-slate-700/50" />
               </tr>
             </thead>

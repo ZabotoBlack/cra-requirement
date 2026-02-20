@@ -5,6 +5,59 @@ import { useLanguage } from '../LanguageContext';
 import GlassCard from './ui/GlassCard';
 import StatusBadge from './ui/StatusBadge';
 
+type BackendCheckKey =
+  | 'secureByDefault'
+  | 'dataConfidentiality'
+  | 'httpsOnlyManagement'
+  | 'vulnerabilities'
+  | 'sbomCompliance'
+  | 'firmwareTracking'
+  | 'securityTxt'
+  | 'securityLogging';
+
+const CRA_CHECK_MAPPING: Array<{ id: BackendCheckKey; labelKey: string; requirementKey: string }> = [
+  {
+    id: 'secureByDefault',
+    labelKey: 'deviceList.check.secureDefaults',
+    requirementKey: 'dashboard.cra.req.secureDefaults'
+  },
+  {
+    id: 'dataConfidentiality',
+    labelKey: 'deviceList.check.encryption',
+    requirementKey: 'dashboard.cra.req.encryption'
+  },
+  {
+    id: 'httpsOnlyManagement',
+    labelKey: 'deviceList.check.httpsOnly',
+    requirementKey: 'dashboard.cra.req.httpsOnly'
+  },
+  {
+    id: 'vulnerabilities',
+    labelKey: 'deviceList.check.vulnerabilities',
+    requirementKey: 'dashboard.cra.req.vulnerabilities'
+  },
+  {
+    id: 'sbomCompliance',
+    labelKey: 'deviceList.check.sbom',
+    requirementKey: 'dashboard.cra.req.sbom'
+  },
+  {
+    id: 'firmwareTracking',
+    labelKey: 'deviceList.check.firmware',
+    requirementKey: 'dashboard.cra.req.firmware'
+  },
+  {
+    id: 'securityTxt',
+    labelKey: 'deviceList.check.secTxt',
+    requirementKey: 'dashboard.cra.req.securityTxt'
+  },
+  {
+    id: 'securityLogging',
+    labelKey: 'deviceList.check.securityLogging',
+    requirementKey: 'dashboard.cra.req.securityLogging'
+  }
+];
+
 interface DashboardProps {
   report: ScanReport;
   geminiEnabled?: boolean;
@@ -71,6 +124,29 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
 
   const topVendors = vendorRisk.slice(0, 4);
   const maxVendorCount = Math.max(...topVendors.map(item => item.count), 1);
+
+  const craCheckCoverage = useMemo(() => {
+    return CRA_CHECK_MAPPING.map((mapping) => {
+      let evaluated = 0;
+      let passed = 0;
+
+      for (const device of report.devices) {
+        const result = device.checks?.[mapping.id];
+        if (result && typeof result.passed === 'boolean') {
+          evaluated += 1;
+          if (result.passed) {
+            passed += 1;
+          }
+        }
+      }
+
+      return {
+        ...mapping,
+        evaluated,
+        passed
+      };
+    });
+  }, [report.devices]);
 
   return (
     <div className="space-y-5">
@@ -220,6 +296,52 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
           </div>
         </GlassCard>
       </div>
+
+      <GlassCard className="rounded-2xl p-5" data-tour-id="dashboard-cra-mapping">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-muted text-sm uppercase tracking-wider">{t('dashboard.craMappingTitle')}</p>
+          <StatusBadge label={t('dashboard.craMappingHint')} tone="neutral" />
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
+          {craCheckCoverage.map((check) => {
+            const tone = check.evaluated === 0
+              ? 'neutral'
+              : check.passed === check.evaluated
+                ? 'success'
+                : 'warning';
+
+            return (
+              <div key={check.id} className="surface-card rounded-xl border px-3 py-2">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-main text-sm font-semibold">{t(check.labelKey)}</p>
+                  <span className="group relative inline-flex">
+                    <button
+                      type="button"
+                      aria-label={t('dashboard.craRequirementInfo')}
+                      title={t('dashboard.craRequirementInfo')}
+                      className="text-soft hover:text-main inline-flex h-5 w-5 items-center justify-center rounded-full border border-[var(--border-subtle)] transition"
+                    >
+                      <Info size={11} aria-hidden="true" />
+                    </button>
+                    <span
+                      role="tooltip"
+                      className="surface-elevated text-main pointer-events-none absolute right-0 top-full z-10 mt-2 hidden w-80 rounded-lg border px-3 py-2 text-xs leading-relaxed group-hover:block group-focus-within:block"
+                    >
+                      {t(check.requirementKey)}
+                    </span>
+                  </span>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <StatusBadge label={`${check.passed}/${check.evaluated} ${t('dashboard.devicesPassing')}`} tone={tone} />
+                  {check.evaluated === 0 && (
+                    <span className="text-soft text-xs">{t('dashboard.notEvaluatedInProfile')}</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </GlassCard>
     </div>
   );
 };
