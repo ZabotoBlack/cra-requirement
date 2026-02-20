@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Download } from 'lucide-react';
 import Dashboard from '../Dashboard';
 import DeviceList from '../DeviceList';
-import ComplianceBreakdown from './ComplianceBreakdown';
 import GlassCard from '../ui/GlassCard';
 import TechButton from '../ui/TechButton';
 import { useLanguage } from '../../LanguageContext';
@@ -76,9 +75,6 @@ const ExpertDashboard: React.FC<ExpertDashboardProps> = ({ report, config, logs 
           )}
         </div>
       </GlassCard>
-
-      {/* Compliance Breakdown */}
-      <ComplianceBreakdown devices={report.devices} />
     </div>
   );
 };

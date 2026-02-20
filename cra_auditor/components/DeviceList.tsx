@@ -7,6 +7,7 @@ import { localizeStatus } from '../utils/status';
 import GlassCard from './ui/GlassCard';
 import StatusBadge from './ui/StatusBadge';
 import TechButton from './ui/TechButton';
+import { CheckCircle2, AlertTriangle, Minus, XCircle } from 'lucide-react';
 
 type DossierTab = 'checks' | 'raw' | 'ai';
 
@@ -21,6 +22,55 @@ const statusDotClass = (status: string) => {
   if (status === ComplianceStatus.NON_COMPLIANT) return 'bg-rose-400 shadow-[0_0_12px_rgba(251,113,133,0.9)]';
   if (status === ComplianceStatus.DISCOVERED) return 'bg-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.85)]';
   return 'bg-slate-400 shadow-[0_0_12px_rgba(148,163,184,0.8)]';
+};
+
+/** Render small status indicator for table cells */
+const StatusIcon: React.FC<{ passed?: boolean; details?: string }> = ({ passed, details }) => {
+  const { t } = useLanguage();
+
+  if (passed === undefined) {
+    return (
+      <div className="flex justify-center" title={t('deviceList.check.notEvaluated')}>
+        <Minus size={16} className="text-slate-500" />
+      </div>
+    );
+  }
+
+  if (passed) {
+    return (
+      <div className="flex justify-center group relative cursor-help">
+        <CheckCircle2 size={16} className="text-[var(--badge-success-text)] drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]" />
+        {details && (
+          <span
+            role="tooltip"
+            className="surface-elevated text-main pointer-events-none absolute bottom-full mb-2 hidden w-48 -translate-x-1/2 left-1/2 rounded-lg border px-3 py-2 text-xs leading-relaxed group-hover:block z-10"
+          >
+            {details}
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  const isWarning = details?.toLowerCase().includes('warning') || false;
+
+  return (
+    <div className="flex justify-center group relative cursor-help">
+      {isWarning ? (
+        <AlertTriangle size={16} className="text-[var(--badge-warning-text)] drop-shadow-[0_0_8px_rgba(251,191,36,0.5)]" />
+      ) : (
+        <XCircle size={16} className="text-[var(--badge-danger-text)] drop-shadow-[0_0_8px_rgba(251,113,133,0.5)]" />
+      )}
+      {details && (
+        <span
+          role="tooltip"
+          className="surface-elevated text-main pointer-events-none absolute bottom-full mb-2 hidden w-48 -translate-x-1/2 left-1/2 rounded-lg border px-3 py-2 text-xs leading-relaxed group-hover:block z-10"
+        >
+          {details}
+        </span>
+      )}
+    </div>
+  );
 };
 
 const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
@@ -44,8 +94,11 @@ const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
   const checks = [
     { key: t('deviceList.check.secureDefaults'), passed: device.checks?.secureByDefault?.passed, details: device.checks?.secureByDefault?.details, icon: <Lock size={14} /> },
     { key: t('deviceList.check.encryption'), passed: device.checks?.dataConfidentiality?.passed, details: device.checks?.dataConfidentiality?.details, icon: <Shield size={14} /> },
+    { key: t('deviceList.check.httpsOnly'), passed: device.checks?.httpsOnlyManagement?.passed, details: device.checks?.httpsOnlyManagement?.details, icon: <Shield size={14} /> },
     { key: t('deviceList.check.vulnerabilities'), passed: device.checks?.vulnerabilities?.passed, details: device.checks?.vulnerabilities?.details, icon: <Cpu size={14} /> },
     { key: t('deviceList.check.sbom'), passed: device.checks?.sbomCompliance?.passed, details: device.checks?.sbomCompliance?.details, icon: <FileText size={14} /> },
+    { key: t('deviceList.check.firmware'), passed: device.checks?.firmwareTracking?.passed, details: device.checks?.firmwareTracking?.details, icon: <FileText size={14} /> },
+    { key: t('deviceList.check.secTxt'), passed: device.checks?.securityTxt?.passed, details: device.checks?.securityTxt?.details, icon: <FileText size={14} /> },
     { key: t('deviceList.check.securityLogging'), passed: device.checks?.securityLogging?.passed, details: device.checks?.securityLogging?.details, icon: <Network size={14} /> },
   ];
 
@@ -167,19 +220,43 @@ const DeviceRow: React.FC<{ device: Device; rowId: string }> = ({ device, rowId 
           <StatusBadge label={device.vendor || t('deviceList.unknownVendor')} tone="info" />
         </td>
         <td className="px-4 py-3">
-          <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/75 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-100">
+          <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/75 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-100 whitespace-nowrap">
             <span className={`h-2.5 w-2.5 rounded-full ${statusDotClass(device.status)}`} />
             {localizeStatus(device.status, t)}
           </div>
         </td>
-        <td className="px-4 py-3 text-right text-slate-400">
+        <td className="px-2 py-3 border-l border-slate-700/50">
+          <StatusIcon passed={device.checks?.secureByDefault?.passed} details={device.checks?.secureByDefault?.details} />
+        </td>
+        <td className="px-2 py-3 border-l border-slate-700/50">
+          <StatusIcon passed={device.checks?.dataConfidentiality?.passed} details={device.checks?.dataConfidentiality?.details} />
+        </td>
+        <td className="px-2 py-3 border-l border-slate-700/50">
+          <StatusIcon passed={device.checks?.httpsOnlyManagement?.passed} details={device.checks?.httpsOnlyManagement?.details} />
+        </td>
+        <td className="px-2 py-3 border-l border-slate-700/50">
+          <StatusIcon passed={device.checks?.vulnerabilities?.passed} details={device.checks?.vulnerabilities?.details} />
+        </td>
+        <td className="px-2 py-3 border-l border-slate-700/50">
+          <StatusIcon passed={device.checks?.sbomCompliance?.passed} details={device.checks?.sbomCompliance?.details} />
+        </td>
+        <td className="px-2 py-3 border-l border-slate-700/50">
+          <StatusIcon passed={device.checks?.firmwareTracking?.passed} details={device.checks?.firmwareTracking?.details} />
+        </td>
+        <td className="px-2 py-3 border-l border-slate-700/50">
+          <StatusIcon passed={device.checks?.securityTxt?.passed} details={device.checks?.securityTxt?.details} />
+        </td>
+        <td className="px-2 py-3 border-l border-slate-700/50">
+          <StatusIcon passed={device.checks?.securityLogging?.passed} details={device.checks?.securityLogging?.details} />
+        </td>
+        <td className="px-4 py-3 text-right text-slate-400 border-l border-slate-700/50">
           {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
         </td>
       </tr>
 
       {expanded && (
         <tr id={rowId}>
-          <td colSpan={5} className="px-4 py-4">
+          <td colSpan={14} className="px-4 py-4 bg-slate-900/20">
             <DeviceDossier device={device} />
           </td>
         </tr>
@@ -270,8 +347,16 @@ const DeviceList: React.FC<DeviceListProps> = ({ devices }) => {
                 <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('hostname')}>{t('deviceList.col.device')} {sortIcon('hostname')}</th>
                 <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('ip')}>{t('deviceList.col.ipMac')} {sortIcon('ip')}</th>
                 <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('vendor')}>{t('deviceList.col.vendor')} {sortIcon('vendor')}</th>
-                <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('status')}>{t('deviceList.col.status')} {sortIcon('status')}</th>
-                <th className="px-4 py-3" />
+                <th className="px-4 py-3 cursor-pointer whitespace-nowrap" onClick={() => handleSort('status')}>{t('deviceList.col.status')} {sortIcon('status')}</th>
+                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.secureDefaults')}>{t('deviceList.col.defaults')}</th>
+                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.encryption')}>{t('deviceList.col.encryption')}</th>
+                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.httpsOnly')}>{t('deviceList.col.https')}</th>
+                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.vulnerabilities')}>{t('deviceList.col.vulns')}</th>
+                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.sbom')}>{t('deviceList.col.sbom')}</th>
+                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.firmware')}>{t('deviceList.col.firmware')}</th>
+                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.secTxt')}>{t('deviceList.col.secTxt')}</th>
+                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.securityLogging')}>{t('deviceList.col.logging')}</th>
+                <th className="px-4 py-3 border-l border-slate-700/50" />
               </tr>
             </thead>
             <tbody>
@@ -280,7 +365,7 @@ const DeviceList: React.FC<DeviceListProps> = ({ devices }) => {
               ))}
               {sortedDevices.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-14 text-center text-sm text-slate-500">
+                  <td colSpan={14} className="px-6 py-14 text-center text-sm text-slate-500">
                     {devices.length === 0 ? t('deviceList.empty.noDevices') : t('deviceList.empty.noMatch')}
                   </td>
                 </tr>
