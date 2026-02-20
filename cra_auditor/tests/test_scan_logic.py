@@ -289,6 +289,43 @@ class TestCRAScanner(unittest.TestCase):
         result = self.scanner.check_confidentiality(open_ports)
         self.assertTrue(result['passed'])
 
+    def test_check_confidentiality_ignores_port_80_when_redirected(self):
+        """Port 80 should not fail confidentiality when verified as redirect-only."""
+        open_ports = [
+            {"port": 80, "service": "http", "protocol": "tcp"},
+            {"port": 443, "service": "https", "protocol": "tcp"},
+        ]
+        https_result = {
+            "passed": True,
+            "redirected_ports": [80],
+            "failed_ports": [],
+            "checked_ports": [80],
+            "inconclusive_ports": []
+        }
+
+        result = self.scanner.check_confidentiality(open_ports, https_result)
+        self.assertTrue(result['passed'])
+        self.assertIn("redirects to HTTPS", result['details'])
+
+    def test_check_confidentiality_still_flags_other_unencrypted_ports_with_redirect(self):
+        """Redirect-only HTTP should not mask other unencrypted services."""
+        open_ports = [
+            {"port": 80, "service": "http", "protocol": "tcp"},
+            {"port": 23, "service": "telnet", "protocol": "tcp"},
+        ]
+        https_result = {
+            "passed": True,
+            "redirected_ports": [80],
+            "failed_ports": [],
+            "checked_ports": [80],
+            "inconclusive_ports": []
+        }
+
+        result = self.scanner.check_confidentiality(open_ports, https_result)
+        self.assertFalse(result['passed'])
+        self.assertIn("telnet/23", result['details'])
+        self.assertNotIn("http/80", result['details'])
+
     @patch('scan_logic.CRAScanner._probe_udp_syslog', return_value=(True, 'open|filtered'))
     def test_check_security_logging_passes_on_udp_514(self, mock_udp_probe):
         """Security logging passes when UDP/514 appears reachable."""
@@ -390,10 +427,29 @@ class TestCRAScanner(unittest.TestCase):
         self.assertEqual(result['score'], 10)
         self.assertEqual(result['openPortsCount'], 10)
 
-    def test_check_https_redirect_passes_on_301_to_https(self):
-        """HTTP management port should pass when it redirects to HTTPS."""
+    def test_check_https_redirect_passes_on_real_3xx_redirects(self):
+        """HTTP management port should pass for real redirect status codes to HTTPS."""
+        device = {
+            "ip": "192.168.1.10",
+            "openPorts": [{"port": 80, "service": "http", "protocol": "tcp"}]
+        }
+
+        for status_code in (301, 302, 303, 307, 308):
+            with self.subTest(status_code=status_code):
+                mock_response = MagicMock()
+                mock_response.status_code = status_code
+                mock_response.headers = {"Location": "https://192.168.1.10/login"}
+                self.scanner.session.get = MagicMock(return_value=mock_response)
+
+                result = self.scanner.check_https_redirect(device)
+                self.assertTrue(result['passed'])
+                self.assertEqual(result['failed_ports'], [])
+                self.assertIn(80, result['checked_ports'])
+
+    def test_check_https_redirect_fails_on_non_redirect_3xx(self):
+        """Non-redirect 3xx responses should not count as HTTPS redirects."""
         mock_response = MagicMock()
-        mock_response.status_code = 301
+        mock_response.status_code = 304
         mock_response.headers = {"Location": "https://192.168.1.10/login"}
         self.scanner.session.get = MagicMock(return_value=mock_response)
 
@@ -403,9 +459,8 @@ class TestCRAScanner(unittest.TestCase):
         }
 
         result = self.scanner.check_https_redirect(device)
-        self.assertTrue(result['passed'])
-        self.assertEqual(result['failed_ports'], [])
-        self.assertIn(80, result['checked_ports'])
+        self.assertFalse(result['passed'])
+        self.assertIn(80, result['failed_ports'])
 
     def test_check_https_redirect_fails_on_http_200(self):
         """HTTP management port should fail when served in cleartext."""

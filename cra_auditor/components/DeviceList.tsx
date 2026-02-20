@@ -298,7 +298,7 @@ const DeviceRow: React.FC<{ device: Device; rowId: string }> = ({ device, rowId 
 
       {expanded && (
         <tr id={rowId}>
-          <td colSpan={14} className="px-4 py-4 bg-slate-900/20">
+          <td colSpan={13} className="px-4 py-4 bg-slate-900/20">
             <DeviceDossier device={device} />
           </td>
         </tr>
@@ -423,7 +423,7 @@ const DeviceList: React.FC<DeviceListProps> = ({ devices }) => {
               ))}
               {sortedDevices.length === 0 && (
                 <tr>
-                  <td colSpan={14} className="px-6 py-14 text-center text-sm text-slate-500">
+                  <td colSpan={13} className="px-6 py-14 text-center text-sm text-slate-500">
                     {devices.length === 0 ? t('deviceList.empty.noDevices') : t('deviceList.empty.noMatch')}
                   </td>
                 </tr>

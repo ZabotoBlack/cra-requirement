@@ -582,7 +582,6 @@ class CRAScanner:
                 if features.get('auth_brute_force'):
                     sbd_result = self.check_secure_by_default(dev)
 
-                conf_result = self.check_confidentiality(dev.get('openPorts', []))
                 attack_surface = self.calculate_attack_surface_score(dev.get('openPorts', []))
 
                 if features.get('web_crawling'):
@@ -591,12 +590,17 @@ class CRAScanner:
                     fw_result = self.check_firmware_tracking(dev)
                     sec_txt_result = self.check_security_txt(dev)
                     sec_log_result = self.check_security_logging(dev)
+                    conf_result = self.check_confidentiality(
+                        dev.get('openPorts', []),
+                        https_redirect_result=https_result,
+                    )
                 else:
                     https_result = self._skipped_check_result("web crawling disabled")
                     sbom_result = self._skipped_check_result("web crawling disabled")
                     fw_result = self._skipped_check_result("web crawling disabled")
                     sec_txt_result = self._skipped_check_result("web crawling disabled")
                     sec_log_result = self._skipped_check_result("web crawling disabled")
+                    conf_result = self.check_confidentiality(dev.get('openPorts', []))
 
                 vuln_result = self.check_vulnerabilities(check_vendor, dev.get('openPorts', []))
 
@@ -1217,17 +1221,42 @@ class CRAScanner:
 
         return warnings
 
-    def check_confidentiality(self, open_ports):
-        """Check for unencrypted services."""
+    def check_confidentiality(self, open_ports, https_redirect_result=None):
+        """Check for unencrypted services.
+
+        Port 80 is exempted when HTTPS redirect verification confirms it only redirects.
+        """
         unencrypted_ports = [21, 23, 80] # FTP, Telnet, HTTP
+        redirected_http_ports = set()
+
+        if https_redirect_result and https_redirect_result.get('passed'):
+            for port in https_redirect_result.get('redirected_ports', []) or []:
+                try:
+                    redirected_http_ports.add(int(port))
+                except (TypeError, ValueError):
+                    continue
+
         found_unencrypted = []
         
         for p in open_ports:
-            if p['port'] in unencrypted_ports:
-                found_unencrypted.append(f"{p['service']}/{p['port']}")
+            try:
+                port = int(p.get('port'))
+            except (TypeError, ValueError):
+                continue
+
+            if port not in unencrypted_ports:
+                continue
+
+            if port == 80 and port in redirected_http_ports:
+                continue
+
+            found_unencrypted.append(f"{p.get('service', 'unknown')}/{port}")
         
         if found_unencrypted:
             return {"passed": False, "details": f"Unencrypted ports found: {', '.join(found_unencrypted)}"}
+
+        if 80 in redirected_http_ports:
+            return {"passed": True, "details": "No common unencrypted management ports found. Port 80 redirects to HTTPS."}
         
         return {"passed": True, "details": "No common unencrypted management ports found."}
 
@@ -1319,6 +1348,8 @@ class CRAScanner:
         inconclusive_ports = []
         redirected_ports = []
 
+        valid_redirect_status_codes = {301, 302, 303, 307, 308}
+
         for port in checked_ports:
             url = f"http://{ip}:{port}/"
             try:
@@ -1326,7 +1357,7 @@ class CRAScanner:
                 status_code = response.status_code
                 location = (response.headers.get('Location') or '').strip()
 
-                if 300 <= status_code < 400 and location.lower().startswith('https://'):
+                if status_code in valid_redirect_status_codes and location.lower().startswith('https://'):
                     redirected_ports.append(port)
                 elif status_code == 200:
                     failed_ports.append(port)
