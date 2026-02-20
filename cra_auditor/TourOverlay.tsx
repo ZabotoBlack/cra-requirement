@@ -18,6 +18,7 @@ interface TooltipLayout {
 const TOOLTIP_WIDTH = 340;
 const TOOLTIP_MARGIN = 16;
 const SPOTLIGHT_PADDING = 10;
+const SPOTLIGHT_EDGE_MARGIN = 2;
 
 /** Clamp numeric value to a min/max interval. */
 const clamp = (value: number, minValue: number, maxValue: number): number => {
@@ -218,7 +219,7 @@ const TourOverlay: React.FC = () => {
 
   const spotlightRect: Rectangle = {
     top: Math.max(targetRect.top - SPOTLIGHT_PADDING + (currentTourStep.spotlightOffsetY ?? 0), TOOLTIP_MARGIN),
-    left: Math.max(targetRect.left - SPOTLIGHT_PADDING + (currentTourStep.spotlightOffsetX ?? 0), TOOLTIP_MARGIN),
+    left: Math.max(targetRect.left - SPOTLIGHT_PADDING + (currentTourStep.spotlightOffsetX ?? 0), SPOTLIGHT_EDGE_MARGIN),
     width: Math.min(adjustedWidth, window.innerWidth - TOOLTIP_MARGIN * 2),
     height: Math.min(adjustedHeight, window.innerHeight - TOOLTIP_MARGIN * 2)
   };

@@ -26,7 +26,9 @@ export const TOUR_STEPS: TourStep[] = [
     titleKey: 'tour.step.1.title',
     descriptionKey: 'tour.step.1.description',
     placement: 'right',
-    spotlightOffsetX: -12,
+    spotlightOffsetX: 6,
+    spotlightWidthAdjust: -12,
+    spotlightHeightAdjust: -12,
     requiresSidebarExpanded: true
   },
   {
@@ -34,7 +36,7 @@ export const TOUR_STEPS: TourStep[] = [
     titleKey: 'tour.step.2.title',
     descriptionKey: 'tour.step.2.description',
     placement: 'right',
-    spotlightOffsetX: -12,
+    spotlightOffsetX: -24,
     requiresSidebarExpanded: true,
     requiredMode: 'intermediate'
   },
@@ -43,7 +45,7 @@ export const TOUR_STEPS: TourStep[] = [
     titleKey: 'tour.step.3.title',
     descriptionKey: 'tour.step.3.description',
     placement: 'right',
-    spotlightOffsetX: -12,
+    spotlightOffsetX: -24,
     requiresSidebarExpanded: true
   },
   {
@@ -51,7 +53,7 @@ export const TOUR_STEPS: TourStep[] = [
     titleKey: 'tour.step.4.title',
     descriptionKey: 'tour.step.4.description',
     placement: 'right',
-    spotlightOffsetX: -12,
+    spotlightOffsetX: -24,
     requiresSidebarExpanded: true
   },
   {
@@ -59,7 +61,7 @@ export const TOUR_STEPS: TourStep[] = [
     titleKey: 'tour.step.5.title',
     descriptionKey: 'tour.step.5.description',
     placement: 'right',
-    spotlightOffsetX: -12,
+    spotlightOffsetX: -24,
     requiresSidebarExpanded: true
   },
   {

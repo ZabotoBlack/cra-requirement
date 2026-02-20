@@ -565,7 +565,7 @@ const AppShell: React.FC = () => {
               data-tour-id="theme-toggle"
               onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
               title={theme === 'dark' ? t('sidebar.theme.toLight') : t('sidebar.theme.toDark')}
-              className={`surface-card text-muted hover:text-main flex h-11 items-center rounded-xl border transition ${sidebarExpanded ? 'w-full justify-start gap-3 px-3' : 'mx-auto w-11 justify-center'}`}
+              className={`surface-card text-muted hover:text-main mt-2 flex h-11 items-center rounded-xl border transition ${sidebarExpanded ? 'w-full justify-start gap-3 px-3' : 'mx-auto w-11 justify-center'}`}
             >
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
               {sidebarExpanded && <span className="text-sm font-medium">{theme === 'dark' ? t('sidebar.theme.light') : t('sidebar.theme.dark')}</span>}
