@@ -10,6 +10,11 @@ interface Rectangle {
   height: number;
 }
 
+interface TooltipLayout {
+  placement: TourPlacement;
+  style: React.CSSProperties;
+}
+
 const TOOLTIP_WIDTH = 340;
 const TOOLTIP_MARGIN = 16;
 const SPOTLIGHT_PADDING = 10;
@@ -35,31 +40,75 @@ const fallbackRect = (): Rectangle => {
 };
 
 /** Compute tooltip position around the highlighted target area. */
-const resolveTooltipPosition = (targetRect: Rectangle, placement: TourPlacement): React.CSSProperties => {
+const resolveTooltipPosition = (targetRect: Rectangle, placement: TourPlacement): TooltipLayout => {
   const tooltipHeightGuess = 220;
-  const maxLeft = Math.max(window.innerWidth - TOOLTIP_WIDTH - TOOLTIP_MARGIN, TOOLTIP_MARGIN);
+  const tooltipWidth = Math.min(TOOLTIP_WIDTH, window.innerWidth - TOOLTIP_MARGIN * 2);
+  const maxLeft = Math.max(window.innerWidth - tooltipWidth - TOOLTIP_MARGIN, TOOLTIP_MARGIN);
+  const maxTop = Math.max(window.innerHeight - tooltipHeightGuess - TOOLTIP_MARGIN, TOOLTIP_MARGIN);
 
-  if (placement === 'top') {
-    const left = clamp(targetRect.left + targetRect.width / 2 - TOOLTIP_WIDTH / 2, TOOLTIP_MARGIN, maxLeft);
-    const top = clamp(targetRect.top - tooltipHeightGuess - TOOLTIP_MARGIN, TOOLTIP_MARGIN, window.innerHeight - tooltipHeightGuess - TOOLTIP_MARGIN);
-    return { left, top };
+  const placementCandidates: Record<TourPlacement, TourPlacement[]> = {
+    top: ['top', 'bottom', 'right', 'left'],
+    bottom: ['bottom', 'top', 'right', 'left'],
+    left: ['left', 'right', 'bottom', 'top'],
+    right: ['right', 'left', 'bottom', 'top']
+  };
+
+  const computePosition = (candidate: TourPlacement): React.CSSProperties => {
+    if (candidate === 'top') {
+      return {
+        left: clamp(targetRect.left + targetRect.width / 2 - tooltipWidth / 2, TOOLTIP_MARGIN, maxLeft),
+        top: clamp(targetRect.top - tooltipHeightGuess - TOOLTIP_MARGIN, TOOLTIP_MARGIN, maxTop)
+      };
+    }
+
+    if (candidate === 'left') {
+      return {
+        left: clamp(targetRect.left - tooltipWidth - TOOLTIP_MARGIN, TOOLTIP_MARGIN, maxLeft),
+        top: clamp(targetRect.top + targetRect.height / 2 - tooltipHeightGuess / 2, TOOLTIP_MARGIN, maxTop)
+      };
+    }
+
+    if (candidate === 'right') {
+      return {
+        left: clamp(targetRect.left + targetRect.width + TOOLTIP_MARGIN, TOOLTIP_MARGIN, maxLeft),
+        top: clamp(targetRect.top + targetRect.height / 2 - tooltipHeightGuess / 2, TOOLTIP_MARGIN, maxTop)
+      };
+    }
+
+    return {
+      left: clamp(targetRect.left + targetRect.width / 2 - tooltipWidth / 2, TOOLTIP_MARGIN, maxLeft),
+      top: clamp(targetRect.top + targetRect.height + TOOLTIP_MARGIN, TOOLTIP_MARGIN, maxTop)
+    };
+  };
+
+  const isOverlapping = (tooltipStyle: React.CSSProperties): boolean => {
+    const tooltipTop = Number(tooltipStyle.top ?? 0);
+    const tooltipLeft = Number(tooltipStyle.left ?? 0);
+    const overlapPadding = 10;
+    const targetTop = targetRect.top - overlapPadding;
+    const targetLeft = targetRect.left - overlapPadding;
+    const targetRight = targetRect.left + targetRect.width + overlapPadding;
+    const targetBottom = targetRect.top + targetRect.height + overlapPadding;
+    const tooltipRight = tooltipLeft + tooltipWidth;
+    const tooltipBottom = tooltipTop + tooltipHeightGuess;
+
+    return tooltipLeft < targetRight
+      && tooltipRight > targetLeft
+      && tooltipTop < targetBottom
+      && tooltipBottom > targetTop;
+  };
+
+  for (const candidate of placementCandidates[placement]) {
+    const candidateStyle = computePosition(candidate);
+    if (!isOverlapping(candidateStyle)) {
+      return { placement: candidate, style: candidateStyle };
+    }
   }
 
-  if (placement === 'left') {
-    const left = clamp(targetRect.left - TOOLTIP_WIDTH - TOOLTIP_MARGIN, TOOLTIP_MARGIN, maxLeft);
-    const top = clamp(targetRect.top + targetRect.height / 2 - tooltipHeightGuess / 2, TOOLTIP_MARGIN, window.innerHeight - tooltipHeightGuess - TOOLTIP_MARGIN);
-    return { left, top };
-  }
-
-  if (placement === 'right') {
-    const left = clamp(targetRect.left + targetRect.width + TOOLTIP_MARGIN, TOOLTIP_MARGIN, maxLeft);
-    const top = clamp(targetRect.top + targetRect.height / 2 - tooltipHeightGuess / 2, TOOLTIP_MARGIN, window.innerHeight - tooltipHeightGuess - TOOLTIP_MARGIN);
-    return { left, top };
-  }
-
-  const left = clamp(targetRect.left + targetRect.width / 2 - TOOLTIP_WIDTH / 2, TOOLTIP_MARGIN, maxLeft);
-  const top = clamp(targetRect.top + targetRect.height + TOOLTIP_MARGIN, TOOLTIP_MARGIN, window.innerHeight - tooltipHeightGuess - TOOLTIP_MARGIN);
-  return { left, top };
+  return {
+    placement,
+    style: computePosition(placement)
+  };
 };
 
 /** Resolve first matching target element from a comma-separated selector list. */
@@ -114,14 +163,23 @@ const TourOverlay: React.FC = () => {
 
     updateTargetPosition(true);
 
-    const animationFrameId = window.requestAnimationFrame(() => updateTargetPosition(false));
+    const animationFrameIds: number[] = [
+      window.requestAnimationFrame(() => updateTargetPosition(false)),
+      window.requestAnimationFrame(() => updateTargetPosition(false))
+    ];
+    const intervalId = window.setInterval(() => updateTargetPosition(false), 140);
+    const delayedPassId = window.setTimeout(() => updateTargetPosition(false), 420);
     const handleLayoutChange = () => updateTargetPosition(false);
 
     window.addEventListener('resize', handleLayoutChange);
     window.addEventListener('scroll', handleLayoutChange, true);
 
     return () => {
-      window.cancelAnimationFrame(animationFrameId);
+      for (const animationFrameId of animationFrameIds) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+      window.clearInterval(intervalId);
+      window.clearTimeout(delayedPassId);
       window.removeEventListener('resize', handleLayoutChange);
       window.removeEventListener('scroll', handleLayoutChange, true);
     };
@@ -155,19 +213,26 @@ const TourOverlay: React.FC = () => {
   const adjustedWidth = Math.max(targetRect.width + SPOTLIGHT_PADDING * 2 + widthAdjust, 24);
   const adjustedHeight = Math.max(targetRect.height + SPOTLIGHT_PADDING * 2 + heightAdjust, 24);
 
-  const spotlightStyle: React.CSSProperties = {
+  const spotlightRect: Rectangle = {
     top: Math.max(targetRect.top - SPOTLIGHT_PADDING + (currentTourStep.spotlightOffsetY ?? 0), TOOLTIP_MARGIN),
     left: Math.max(targetRect.left - SPOTLIGHT_PADDING + (currentTourStep.spotlightOffsetX ?? 0), TOOLTIP_MARGIN),
     width: Math.min(adjustedWidth, window.innerWidth - TOOLTIP_MARGIN * 2),
     height: Math.min(adjustedHeight, window.innerHeight - TOOLTIP_MARGIN * 2)
   };
 
-  const tooltipStyle = resolveTooltipPosition(targetRect, currentTourStep.placement);
+  const spotlightStyle: React.CSSProperties = {
+    top: spotlightRect.top,
+    left: spotlightRect.left,
+    width: spotlightRect.width,
+    height: spotlightRect.height
+  };
+
+  const tooltipLayout = resolveTooltipPosition(spotlightRect, currentTourStep.placement);
 
   return createPortal(
     <div className="tour-overlay" role="presentation">
       <div className="tour-spotlight" style={spotlightStyle} />
-      <div className={`tour-tooltip tour-tooltip-${currentTourStep.placement}`} style={tooltipStyle} role="dialog" aria-live="polite">
+      <div className={`tour-tooltip tour-tooltip-${tooltipLayout.placement}`} style={tooltipLayout.style} role="dialog" aria-live="polite">
         <div className="tour-tooltip-arrow" />
         <div className="tour-progress">{progressText}</div>
         <h3>{t(currentTourStep.titleKey)}</h3>
