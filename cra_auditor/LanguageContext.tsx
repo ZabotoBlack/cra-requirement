@@ -9,6 +9,7 @@ interface LanguageContextValue {
 
 const LanguageContext = createContext<LanguageContextValue | undefined>(undefined);
 
+/** Normalize arbitrary language strings into supported app language codes. */
 const normalizeLanguage = (value: string | null | undefined): LanguageCode | null => {
   if (!value) return null;
 
@@ -21,6 +22,7 @@ const normalizeLanguage = (value: string | null | undefined): LanguageCode | nul
   return null;
 };
 
+/** Resolve initial language from app storage, Home Assistant storage, or browser locale. */
 const detectLanguage = (): LanguageCode => {
   if (typeof window === 'undefined') {
     return 'en';
@@ -88,6 +90,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   );
 };
 
+/** Typed hook wrapper around the language context with provider guard. */
 export const useLanguage = (): LanguageContextValue => {
   const context = useContext(LanguageContext);
 

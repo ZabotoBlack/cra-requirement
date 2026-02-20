@@ -32,6 +32,7 @@ _LOG_LEVEL_MAP = {
 
 
 def _resolve_log_level(level_name: str | None) -> int:
+    """Map a configured log level string to a numeric logging level."""
     if not level_name:
         return logging.INFO
     return _LOG_LEVEL_MAP.get(str(level_name).strip().lower(), logging.INFO)
@@ -46,6 +47,7 @@ LOG_BUFFER: deque[str] = deque(maxlen=300)
 
 
 def _resolve_persistent_base_dir(default_dir: Path | None = None) -> Path:
+    """Resolve the base directory for persistent runtime data files."""
     env_dir = os.environ.get("CRA_DATA_DIR")
     if env_dir and env_dir.strip():
         return Path(env_dir.strip())
@@ -58,6 +60,7 @@ def _resolve_persistent_base_dir(default_dir: Path | None = None) -> Path:
 
 
 def _resolve_runtime_log_file() -> Path:
+    """Return the path used for the shared rotating runtime log file."""
     return _resolve_persistent_base_dir(Path(__file__).resolve().parent) / "cra_auditor.log"
 
 
@@ -85,6 +88,7 @@ RUNTIME_LOG_FILE = _resolve_runtime_log_file()
 
 class InMemoryLogHandler(logging.Handler):
     def emit(self, record):
+        """Append formatted log records to the in-memory ring buffer."""
         try:
             LOG_BUFFER.append(self.format(record))
         except Exception:
@@ -92,6 +96,7 @@ class InMemoryLogHandler(logging.Handler):
 
 
 def _configure_log_buffer() -> None:
+    """Attach runtime log handlers and configure the root logger level once."""
     root_logger = logging.getLogger()
     if any(isinstance(handler, InMemoryLogHandler) for handler in root_logger.handlers):
         return
@@ -133,6 +138,7 @@ def _configure_log_buffer() -> None:
 
 
 def _subnet_from_ip(ip_address: str, prefix: int = 24) -> str | None:
+    """Build a CIDR subnet from an IP address and prefix length."""
     try:
         interface = ipaddress.ip_interface(f"{ip_address}/{prefix}")
         return str(interface.network)
@@ -141,6 +147,7 @@ def _subnet_from_ip(ip_address: str, prefix: int = 24) -> str | None:
 
 
 def _subnet_from_cidr(cidr: str) -> str | None:
+    """Normalize an IPv4 CIDR string into canonical network notation."""
     try:
         interface = ipaddress.ip_interface(cidr)
         if interface.version != 4:
@@ -151,6 +158,7 @@ def _subnet_from_cidr(cidr: str) -> str | None:
 
 
 def _subnet_from_ip_mask(ip_address: str, mask: str | int) -> str | None:
+    """Create an IPv4 subnet from separate address and mask/prefix values."""
     try:
         network = ipaddress.ip_network(f"{ip_address}/{mask}", strict=False)
         if network.version != 4:
@@ -161,6 +169,7 @@ def _subnet_from_ip_mask(ip_address: str, mask: str | int) -> str | None:
 
 
 def _extract_ipv4_subnet_from_structure(payload) -> str | None:
+    """Walk nested network payloads and extract the first valid IPv4 subnet."""
     if payload is None:
         return None
 
@@ -219,6 +228,7 @@ def _extract_ipv4_subnet_from_structure(payload) -> str | None:
 
 
 def _detect_home_assistant_primary_subnet() -> str | None:
+    """Read Home Assistant Supervisor network info and return the primary IPv4 subnet."""
     supervisor_token = os.environ.get('SUPERVISOR_TOKEN')
     if not supervisor_token:
         return None
@@ -272,6 +282,7 @@ def _detect_home_assistant_primary_subnet() -> str | None:
 
 
 def _extract_candidate_ipv4_addresses() -> list[str]:
+    """Collect likely local IPv4 addresses from hostname, sockets, and interfaces."""
     candidates: list[str] = []
 
     try:
@@ -322,6 +333,7 @@ def _extract_candidate_ipv4_addresses() -> list[str]:
 
 
 def _detect_default_subnet() -> str | None:
+    """Determine the best default subnet for scans using HA data or local interfaces."""
     ha_subnet = _detect_home_assistant_primary_subnet()
     if ha_subnet:
         return ha_subnet
@@ -368,6 +380,7 @@ scanner = CRAScanner()
 
 
 def _tail_shared_log_lines(limit: int) -> list[str]:
+    """Read the last N lines from the shared runtime log file."""
     try:
         if not RUNTIME_LOG_FILE.exists():
             return []
@@ -533,6 +546,7 @@ def get_scan_state() -> dict:
 
 
 def _public_scan_error(error: str | None) -> str | None:
+    """Hide internal scan error details from API responses."""
     if not error:
         return None
     return "Scan failed. Check logs for details."
@@ -553,12 +567,14 @@ reset_scan_state()
 
 @app.route('/')
 def index():
+    """Serve the SPA entry point or a backend-only fallback message."""
     if FRONTEND_DIR:
         return send_from_directory(FRONTEND_DIR, 'index.html')
     return "Backend Running. Frontend not found.", 404
 
 @app.route('/<path:path>')
 def serve_static(path):
+    """Serve built static frontend assets with SPA fallback routing."""
     if FRONTEND_DIR and os.path.exists(os.path.join(FRONTEND_DIR, path)):
         return send_from_directory(FRONTEND_DIR, path)
     # SPA Fallback
@@ -569,6 +585,7 @@ def serve_static(path):
 # Security headers middleware
 @app.after_request
 def set_security_headers(response):
+    """Attach strict security headers to every HTTP response."""
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
@@ -578,6 +595,7 @@ def set_security_headers(response):
 
 @app.route('/api/scan', methods=['POST'])
 def start_scan():
+    """Validate scan input, claim scan lock, and launch background scan execution."""
     data = request.json
     if not data:
         return jsonify({"status": "error", "message": "Invalid JSON body"}), 400
@@ -606,6 +624,7 @@ def start_scan():
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
+    """Return current scanner state with sanitized error messaging."""
     state = get_scan_state()
     result = {"scanning": state["scanning"]}
     public_error = _public_scan_error(state.get("error"))
@@ -630,6 +649,7 @@ def get_config():
 
 @app.route('/api/network/default', methods=['GET'])
 def get_default_network_subnet():
+    """Return an automatically detected default subnet for the UI."""
     subnet = _detect_default_subnet()
     if subnet:
         return jsonify({"subnet": subnet, "source": "auto"})
@@ -643,6 +663,7 @@ def get_default_network_subnet():
 
 @app.route('/api/logs', methods=['GET'])
 def get_logs():
+    """Return recent runtime log lines for expert-mode diagnostics."""
     try:
         limit = int(request.args.get('limit', 120))
     except ValueError:
@@ -742,6 +763,7 @@ def delete_history_item(scan_id):
         return jsonify({"error": "Failed to delete scan history item"}), 500
 
 def run_scan_background(subnet, options=None):
+    """Run a subnet scan, persist the report, and update global scan state."""
     scan_options = options or {}
     scan_type = scan_options.get('profile') or scan_options.get('scan_type', 'deep')
     logger.info("[SCAN] Background scan starting: subnet=%s, type=%s", subnet, scan_type)

@@ -325,6 +325,7 @@ class CRAScanner:
             return list(_DEFAULT_SECURITY_LOG_PATHS)
 
     def _resolve_device_cpe(self, vendor: str, product: str | None = None, version: str | None = None):
+        """Build and resolve a canonical CPE for a device/vendor tuple."""
         if not vendor or vendor == "Unknown":
             return None
 
@@ -334,6 +335,7 @@ class CRAScanner:
         return match_cpe(cpe_candidate, self.nvd_client)
 
     def _resolve_scan_features(self, options):
+        """Resolve effective profile and feature flags from mixed legacy/new options."""
         options = options or {}
 
         requested_profile = (
@@ -381,9 +383,11 @@ class CRAScanner:
         return profile_name, features
 
     def _skipped_check_result(self, reason):
+        """Build a standard check result payload for intentionally skipped checks."""
         return {"passed": True, "details": f"Skipped: {reason}."}
 
     def _build_vendor_ports(self, selected_vendors):
+        """Return vendor-specific ports to append for targeted service discovery."""
         vendor_ports = []
         if selected_vendors == 'all' or 'tuya' in selected_vendors:
             vendor_ports.append('6668')
@@ -725,6 +729,7 @@ class CRAScanner:
             scanned_devices[ip] = device_data
 
     def _discover_mdns_hostnames(self, timeout=5):
+        """Run mDNS discovery and return IP-to-hostname mappings."""
         if not self.mdns_resolver.enabled:
             return {}
 
@@ -746,6 +751,7 @@ class CRAScanner:
             return {}
 
     def _normalize_hostname(self, hostname):
+        """Normalize hostnames by trimming whitespace and trailing dots."""
         if not isinstance(hostname, str):
             return None
 
@@ -753,6 +759,7 @@ class CRAScanner:
         return cleaned or None
 
     def _is_generic_hostname(self, hostname, ip=None):
+        """Heuristically detect placeholder or low-quality hostnames."""
         normalized = self._normalize_hostname(hostname)
         if not normalized:
             return True
@@ -773,6 +780,7 @@ class CRAScanner:
         return False
 
     def _hostname_score(self, hostname, ip=None):
+        """Score hostname quality to pick the most useful display value."""
         normalized = self._normalize_hostname(hostname)
         if not normalized:
             return -1
@@ -791,6 +799,7 @@ class CRAScanner:
         return score
 
     def _pick_best_hostname(self, candidates, ip=None):
+        """Choose best hostname candidate and optionally append meaningful aliases."""
         normalized_candidates = []
         for candidate in candidates:
             normalized = self._normalize_hostname(candidate)
@@ -815,12 +824,14 @@ class CRAScanner:
         return primary
 
     def _safe_reverse_dns(self, ip):
+        """Perform reverse DNS lookup with exception-safe fallback."""
         try:
             return socket.gethostbyaddr(ip)[0]
         except Exception:
             return None
 
     def _enrich_hostnames(self, scanned_devices, mdns_hostnames=None):
+        """Enrich device hostname fields using reverse DNS and mDNS candidates."""
         mdns_hostnames = mdns_hostnames or {}
 
         for ip, device in scanned_devices.items():
@@ -1026,6 +1037,7 @@ class CRAScanner:
         return result
 
     def _get_open_ports(self, host):
+        """Extract open port/service metadata from current nmap host entry."""
         ports = []
         for proto in self.nm[host].all_protocols():
             lport = self.nm[host][proto].keys()
@@ -1044,6 +1056,7 @@ class CRAScanner:
         return ports
 
     def _get_os_match(self, host):
+        """Return best nmap OS match name or Unknown when unavailable."""
         if 'osmatch' in self.nm[host] and self.nm[host]['osmatch']:
             return self.nm[host]['osmatch'][0]['name']
         return "Unknown"

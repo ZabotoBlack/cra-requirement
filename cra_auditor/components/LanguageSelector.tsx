@@ -11,12 +11,14 @@ const LanguageSelector: React.FC = () => {
       return;
     }
 
+    // Close the language dropdown when users click outside it.
     const handlePointerDown = (event: MouseEvent) => {
       if (!languageMenuRef.current?.contains(event.target as Node)) {
         setIsLanguageMenuOpen(false);
       }
     };
 
+    // Close the language dropdown on Escape for keyboard accessibility.
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsLanguageMenuOpen(false);

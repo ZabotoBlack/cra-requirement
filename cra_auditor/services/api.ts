@@ -1,5 +1,6 @@
 import { ScanReport, ScanOptions, DefaultSubnetResponse, LogsResponse } from '../types';
 
+/** Start a new scan job with subnet and normalized scan options. */
 export const startScan = async (subnet: string, options: ScanOptions): Promise<void> => {
   const response = await fetch('api/scan', {
     method: 'POST',
@@ -17,6 +18,7 @@ export const startScan = async (subnet: string, options: ScanOptions): Promise<v
   }
 };
 
+/** Get current scanner state used by the polling loop. */
 export const getScanStatus = async (): Promise<{ scanning: boolean; error?: string } | null> => {
   try {
     const response = await fetch('api/status');
@@ -28,6 +30,7 @@ export const getScanStatus = async (): Promise<{ scanning: boolean; error?: stri
   }
 };
 
+/** Fetch the latest scan report snapshot. */
 export const getReport = async (): Promise<ScanReport | null> => {
   try {
     const response = await fetch('api/report');
@@ -38,6 +41,7 @@ export const getReport = async (): Promise<ScanReport | null> => {
   }
 };
 
+/** Load frontend feature flags exposed by the backend. */
 export const getConfig = async (): Promise<{ gemini_enabled: boolean; nvd_enabled: boolean; version: string }> => {
   try {
     const response = await fetch('api/config');
@@ -48,6 +52,7 @@ export const getConfig = async (): Promise<{ gemini_enabled: boolean; nvd_enable
   }
 };
 
+/** Request auto-detected local subnet for convenience in basic mode. */
 export const getDefaultSubnet = async (): Promise<DefaultSubnetResponse | null> => {
   try {
     const response = await fetch('api/network/default');
@@ -58,6 +63,7 @@ export const getDefaultSubnet = async (): Promise<DefaultSubnetResponse | null> 
   }
 };
 
+/** Retrieve recent runtime logs for expert diagnostics panels. */
 export const getLogs = async (limit: number = 150): Promise<LogsResponse | null> => {
   try {
     const response = await fetch(`api/logs?limit=${limit}`);
@@ -68,6 +74,7 @@ export const getLogs = async (limit: number = 150): Promise<LogsResponse | null>
   }
 };
 
+/** List historical scan summaries with optional query and sorting parameters. */
 export const getHistory = async (search: string = '', sort_by: string = 'timestamp', order: string = 'desc'): Promise<any[]> => {
   try {
     const params = new URLSearchParams({ search, sort_by, order });
@@ -79,6 +86,7 @@ export const getHistory = async (search: string = '', sort_by: string = 'timesta
   }
 };
 
+/** Fetch full report payload for a specific historical scan ID. */
 export const getHistoryDetail = async (id: number): Promise<ScanReport | null> => {
   try {
     const response = await fetch(`api/history/${id}`);
@@ -89,6 +97,7 @@ export const getHistoryDetail = async (id: number): Promise<ScanReport | null> =
   }
 };
 
+/** Delete a historical scan entry by ID. */
 export const deleteHistory = async (id: number): Promise<boolean> => {
   try {
     const response = await fetch(`api/history/${id}`, { method: 'DELETE' });

@@ -14,14 +14,17 @@ const TOOLTIP_WIDTH = 340;
 const TOOLTIP_MARGIN = 16;
 const SPOTLIGHT_PADDING = 10;
 
+/** Clamp numeric value to a min/max interval. */
 const clamp = (value: number, minValue: number, maxValue: number): number => {
   return Math.min(Math.max(value, minValue), maxValue);
 };
 
+/** Replace {placeholders} in translated strings with runtime values. */
 const interpolate = (template: string, values: Record<string, string | number>): string => {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ''));
 };
 
+/** Fallback spotlight rectangle when the target element cannot be resolved. */
 const fallbackRect = (): Rectangle => {
   const top = window.innerHeight * 0.32;
   const left = window.innerWidth * 0.25;
@@ -31,6 +34,7 @@ const fallbackRect = (): Rectangle => {
   return { top, left, width, height };
 };
 
+/** Compute tooltip position around the highlighted target area. */
 const resolveTooltipPosition = (targetRect: Rectangle, placement: TourPlacement): React.CSSProperties => {
   const tooltipHeightGuess = 220;
   const maxLeft = Math.max(window.innerWidth - TOOLTIP_WIDTH - TOOLTIP_MARGIN, TOOLTIP_MARGIN);
@@ -58,6 +62,7 @@ const resolveTooltipPosition = (targetRect: Rectangle, placement: TourPlacement)
   return { left, top };
 };
 
+/** Resolve first matching target element from a comma-separated selector list. */
 const resolveTargetElement = (selector: string): HTMLElement | null => {
   const selectors = selector
     .split(',')

@@ -6,9 +6,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 class MockLogHandler(BaseHTTPRequestHandler):
+    """Serve minimal HTTP endpoints used by security-logging probe tests."""
     log_paths = {"/logs", "/api/logs"}
 
     def do_GET(self):
+        """Return synthetic log payloads for known paths and 404 otherwise."""
         if self.path in self.log_paths:
             payload = {
                 "status": "ok",
@@ -27,10 +29,12 @@ class MockLogHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def log_message(self, format, *args):
+        """Suppress default HTTP server access logs for cleaner test output."""
         return
 
 
 def run_udp_listener(host: str, port: int):
+    """Run a basic UDP echo listener to emulate a syslog endpoint."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((host, port))
     while True:
@@ -43,6 +47,7 @@ def run_udp_listener(host: str, port: int):
 
 
 def main():
+    """Start mock HTTP/UDP services used to validate logging capability checks."""
     parser = argparse.ArgumentParser(description="Mock security logging target for CRA scanner validation")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--http-port", type=int, default=8080)

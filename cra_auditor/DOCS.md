@@ -155,3 +155,53 @@ Example:
 ```bash
 python scripts/mock_security_logging_device.py --http-port 8080 --udp-port 514
 ```
+
+## Developer Docs Map
+
+Use this quick map to find where behavior lives before making changes.
+
+### Core Runtime
+
+| Module | Responsibility | Key Functions / Boundaries |
+| :--- | :--- | :--- |
+| `server.py` | Flask API, scan lifecycle state, DB persistence, static asset serving | `normalize_scan_options()`, `start_scan()`, `run_scan_background()`, `get_status()`, DB helpers (`init_db()`, lock/state helpers) |
+| `scan_logic.py` | Network scan pipeline and per-device compliance evaluation | `CRAScanner.scan_subnet()`, `_resolve_scan_features()`, `_merge_devices()`, check methods (`check_*`) |
+| `vulnerability_data/nvd.py` | NVD API client with cache + rate limiting | `NVDClient.search_cpes()`, `get_cves_for_cpe()`, `get_vendor_reference_url()` |
+| `vulnerability_data/rules.py` | Vendor policy/rules lookup from YAML | `VendorRules` lookup methods for SBOM, security.txt, firmware URLs |
+| `vulnerability_data/cpe.py` | CPE normalization and matching helpers | `build_cpe()`, `match_cpe()` |
+
+### Frontend Shell and Views
+
+| Module | Responsibility | Key Functions / Boundaries |
+| :--- | :--- | :--- |
+| `App.tsx` | App shell state, polling loop, scan launch flow, mode switching | `handleScan()`, `fetchData()`, subnet validation helpers |
+| `components/dashboard/*` | Mode-specific dashboard rendering | `BasicDashboard`, `IntermediateDashboard`, `ExpertDashboard` |
+| `components/DeviceList.tsx` | Device table, sorting/filtering, per-device dossier and AI advice trigger | `DeviceList`, `DeviceDossier`, sort helpers |
+| `components/HistoryView.tsx` | History list/search/sort/delete/report reopen | `fetchHistory()`, `toggleSort()`, `handleDelete()` |
+| `components/SettingsModal.tsx` | Scan profile/features controls by UI mode | `applyScanType()`, vendor selection logic |
+
+### Frontend Services and Contexts
+
+| Module | Responsibility | Key Functions / Boundaries |
+| :--- | :--- | :--- |
+| `services/api.ts` | Typed API calls to backend `/api/*` endpoints | `startScan()`, `getScanStatus()`, `getReport()`, `getHistory*()` |
+| `services/geminiService.ts` | Gemini remediation advice prompt + response handling | `getRemediationAdvice()` |
+| `LanguageContext.tsx` | UI localization state and translation lookup | `LanguageProvider`, `useLanguage()`, `detectLanguage()` |
+| `TourContext.tsx` + `TourOverlay.tsx` | Guided onboarding step state + spotlight rendering | `TOUR_STEPS`, `useTour()`, overlay placement helpers |
+| `utils/status.ts` | Shared compliance status label localization | `localizeStatus()` |
+
+### Data and Config Files
+
+| File | Purpose |
+| :--- | :--- |
+| `data/vendor_rules.yaml` | Vendor-specific compliance metadata and URLs |
+| `data/security_logging_paths.yaml` | HTTP paths for security logging capability probes |
+| `data/nvd_cache.json` | Runtime NVD response cache |
+| `config.yaml` | Home Assistant add-on options and defaults |
+
+### Where to change what
+
+- Add or adjust scan profile behavior: update `_SCAN_PROFILES` and feature resolution in `scan_logic.py`, keep frontend `ScanFeatureFlags` in `types.ts` aligned.
+- Add a new compliance check: implement in `scan_logic.py`, include it in device `checks` payload, then update TypeScript interfaces and UI rendering.
+- Change scan API contract: update backend endpoints in `server.py` and matching client calls in `services/api.ts`.
+- Modify persisted report shape: update DB write payload in `run_scan_background()` and all frontend consumers (`App.tsx`, dashboards, `DeviceList.tsx`, `HistoryView.tsx`).

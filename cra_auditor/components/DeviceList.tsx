@@ -14,6 +14,7 @@ interface DeviceListProps {
   devices: Device[];
 }
 
+/** Return status dot color classes aligned with compliance severity. */
 const statusDotClass = (status: string) => {
   if (status === ComplianceStatus.COMPLIANT) return 'bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.9)]';
   if (status === ComplianceStatus.WARNING) return 'bg-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.85)]';
@@ -193,6 +194,7 @@ const DeviceList: React.FC<DeviceListProps> = ({ devices }) => {
   const [sortConfig, setSortConfig] = useState<{ key: keyof Device; direction: 'asc' | 'desc' } | null>(null);
 
   const handleSort = (key: keyof Device) => {
+    // Toggle ascending/descending sorting for the selected column.
     let direction: 'asc' | 'desc' = 'asc';
     if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
       direction = 'desc';
@@ -211,6 +213,7 @@ const DeviceList: React.FC<DeviceListProps> = ({ devices }) => {
   }, [devices, filterText]);
 
   const compareIPs = (ipA: string, ipB: string) => {
+    // Numeric IPv4 comparison keeps table ordering stable by network order.
     const numA = ipA.split('.').map(Number);
     const numB = ipB.split('.').map(Number);
     for (let i = 0; i < 4; i++) {
@@ -237,6 +240,7 @@ const DeviceList: React.FC<DeviceListProps> = ({ devices }) => {
   }, [filteredDevices, sortConfig]);
 
   const sortIcon = (column: keyof Device) => {
+    // Render active sorting indicator per selected column.
     if (sortConfig?.key !== column) return <ChevronDown size={14} className="inline-block opacity-20" />;
     return sortConfig.direction === 'asc'
       ? <ChevronUp size={14} className="inline-block text-cyan-300" />

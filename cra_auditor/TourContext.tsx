@@ -19,6 +19,7 @@ export interface TourStep {
   requiredMode?: UserMode;
 }
 
+/** Ordered, translated tour steps used by the onboarding overlay. */
 export const TOUR_STEPS: TourStep[] = [
   {
     targetSelector: '[data-tour-id="brand-icon"]',
@@ -188,6 +189,7 @@ export const TourProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 };
 
+/** Typed hook wrapper around the tour context with provider guard. */
 export const useTour = (): TourContextValue => {
   const context = useContext(TourContext);
 

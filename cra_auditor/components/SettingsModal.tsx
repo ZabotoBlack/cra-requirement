@@ -27,6 +27,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     return null;
   }
 
+  /** Apply selected scan depth while preserving other scan options. */
   const applyScanType = (scan_type: ScanOptions['scan_type']) => {
     onScanOptionsChange({ ...scanOptions, scan_type });
   };
@@ -36,12 +37,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     { label: t('settings.depth.deep'), value: 'deep' }
   ];
 
+  /** Resolve translated label for configured scan depth. */
   const depthLabel = (type: ScanOptions['scan_type']): string => {
     if (type === 'discovery') return t('settings.depth.discovery');
     if (type === 'standard') return t('settings.depth.standard');
     return t('settings.depth.deep');
   };
 
+  /** Resolve translated label for current UI experience mode. */
   const modeLabel = (): string => {
     if (mode === 'basic') return t('mode.basic');
     if (mode === 'intermediate') return t('mode.intermediate');

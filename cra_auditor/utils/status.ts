@@ -6,6 +6,7 @@ type StatusTranslationKey =
   | 'status.nonCompliantLabel'
   | 'status.discovered';
 
+/** Map backend compliance enum values to translated UI labels. */
 export const localizeStatus = (
   status: string,
   t: (key: StatusTranslationKey) => string,

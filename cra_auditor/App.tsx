@@ -17,6 +17,7 @@ import { TOUR_STEPS, TourProvider, useTour } from './TourContext';
 import TourOverlay from './TourOverlay';
 import TourWelcomeModal from './TourWelcomeModal';
 
+/** Validate dotted IPv4 addresses without accepting ambiguous forms. */
 const isValidIPv4Address = (address: string): boolean => {
   const parts = address.split('.');
   if (parts.length !== 4) return false;
@@ -29,6 +30,7 @@ const isValidIPv4Address = (address: string): boolean => {
   });
 };
 
+/** Parse one IPv6 section (left or right side of ::) and count effective hextets. */
 const parseIPv6Section = (section: string, allowEmbeddedIPv4: boolean): { valid: boolean; count: number } => {
   if (!section) return { valid: true, count: 0 };
 
@@ -53,6 +55,7 @@ const parseIPv6Section = (section: string, allowEmbeddedIPv4: boolean): { valid:
   return { valid: true, count };
 };
 
+/** Validate IPv6 addresses with support for compressed and IPv4-embedded forms. */
 const isValidIPv6Address = (address: string): boolean => {
   if (!address || address.includes(':::')) return false;
 
@@ -76,6 +79,7 @@ const isValidIPv6Address = (address: string): boolean => {
   return totalBlocks < 8;
 };
 
+/** Validate CIDR subnet input for both IPv4 and IPv6 ranges. */
 const isValidCidrSubnet = (value: string): boolean => {
   const trimmedValue = value.trim();
   const slashPosition = trimmedValue.lastIndexOf('/');
@@ -372,6 +376,7 @@ const AppShell: React.FC = () => {
     previousStepOpenedSettingsRef.current = stepRequiresSettings;
   }, [isTourActive, currentTourStep, userMode, view]);
 
+  // Persist onboarding completion so the welcome modal is not shown again.
   const setTourSeen = () => {
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(TOUR_SEEN_STORAGE_KEY, 'true');

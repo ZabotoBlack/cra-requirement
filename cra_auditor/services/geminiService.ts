@@ -9,6 +9,10 @@ interface GeminiErrorMessages {
   responseLanguage?: 'en' | 'de';
 }
 
+/**
+ * Generate AI remediation guidance for a scanned device.
+ * Returns a user-facing message for both success and error paths.
+ */
 export const getRemediationAdvice = async (device: Device, messages?: GeminiErrorMessages): Promise<string> => {
   // NOTE: API Key must be obtained exclusively from process.env.API_KEY.
   const apiKey = process.env.API_KEY;

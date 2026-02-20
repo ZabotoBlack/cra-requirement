@@ -11,6 +11,10 @@ A comprehensive Cyber Resilience Act (CRA) compliance scanner for your local net
 - **AI Integration**: Optional integration with Gemini AI for enhanced security advice.
 - **3-Tier Dashboard Modes**: End User, Intermediate, and Expert views for different technical levels.
 
+## Developer Navigation
+
+For codebase orientation (module responsibilities, key entry points, and where-to-change guidance), see the Developer Docs Map in [DOCS.md](DOCS.md#developer-docs-map).
+
 ## Dashboard Modes
 
 The UI supports three switchable experience levels (quick toggle in the command header and in Settings):

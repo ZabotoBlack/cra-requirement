@@ -65,6 +65,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ onViewReport }) => {
   };
 
   const toggleSort = (field: 'timestamp' | 'target') => {
+    // Clicking the same field toggles direction; new fields default to descending.
     if (sortBy === field) {
       setOrder(order === 'asc' ? 'desc' : 'asc');
     } else {
@@ -74,6 +75,7 @@ const HistoryView: React.FC<HistoryViewProps> = ({ onViewReport }) => {
   };
 
   const sortIcon = (field: 'timestamp' | 'target') => {
+    // Display current sort direction only for active field.
     if (sortBy !== field) return null;
     return order === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />;
   };
