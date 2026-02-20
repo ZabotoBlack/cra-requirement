@@ -58,6 +58,22 @@ const resolveTooltipPosition = (targetRect: Rectangle, placement: TourPlacement)
   return { left, top };
 };
 
+const resolveTargetElement = (selector: string): HTMLElement | null => {
+  const selectors = selector
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  for (const selectorEntry of selectors) {
+    const matchedElement = document.querySelector(selectorEntry) as HTMLElement | null;
+    if (matchedElement) {
+      return matchedElement;
+    }
+  }
+
+  return null;
+};
+
 const TourOverlay: React.FC = () => {
   const { t } = useLanguage();
   const { isTourActive, currentStep, nextStep, prevStep, endTour } = useTour();
@@ -72,7 +88,7 @@ const TourOverlay: React.FC = () => {
     }
 
     const updateTargetPosition = (shouldScroll = false) => {
-      const element = document.querySelector(currentTourStep.targetSelector) as HTMLElement | null;
+      const element = resolveTargetElement(currentTourStep.targetSelector);
 
       if (!element) {
         setTargetRect(fallbackRect());
@@ -129,11 +145,16 @@ const TourOverlay: React.FC = () => {
     return null;
   }
 
+  const widthAdjust = currentTourStep.spotlightWidthAdjust ?? 0;
+  const heightAdjust = currentTourStep.spotlightHeightAdjust ?? 0;
+  const adjustedWidth = Math.max(targetRect.width + SPOTLIGHT_PADDING * 2 + widthAdjust, 24);
+  const adjustedHeight = Math.max(targetRect.height + SPOTLIGHT_PADDING * 2 + heightAdjust, 24);
+
   const spotlightStyle: React.CSSProperties = {
-    top: Math.max(targetRect.top - SPOTLIGHT_PADDING, TOOLTIP_MARGIN),
-    left: Math.max(targetRect.left - SPOTLIGHT_PADDING, TOOLTIP_MARGIN),
-    width: Math.min(targetRect.width + SPOTLIGHT_PADDING * 2, window.innerWidth - TOOLTIP_MARGIN * 2),
-    height: Math.min(targetRect.height + SPOTLIGHT_PADDING * 2, window.innerHeight - TOOLTIP_MARGIN * 2)
+    top: Math.max(targetRect.top - SPOTLIGHT_PADDING + (currentTourStep.spotlightOffsetY ?? 0), TOOLTIP_MARGIN),
+    left: Math.max(targetRect.left - SPOTLIGHT_PADDING + (currentTourStep.spotlightOffsetX ?? 0), TOOLTIP_MARGIN),
+    width: Math.min(adjustedWidth, window.innerWidth - TOOLTIP_MARGIN * 2),
+    height: Math.min(adjustedHeight, window.innerHeight - TOOLTIP_MARGIN * 2)
   };
 
   const tooltipStyle = resolveTooltipPosition(targetRect, currentTourStep.placement);

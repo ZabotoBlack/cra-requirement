@@ -173,7 +173,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {mode === 'expert' && (
             <div data-tour-id="settings-active-probing" className={scanOptions.scan_type === 'discovery' ? 'pointer-events-none opacity-50' : ''}>
-              <label className="flex items-start gap-3 rounded-xl border border-slate-700 bg-slate-800/70 p-3">
+              <label data-tour-id="settings-active-probing-label" className="flex items-start gap-3 rounded-xl border border-slate-700 bg-slate-800/70 p-3">
                 <input
                   type="checkbox"
                   checked={Boolean(scanOptions.auth_checks)}

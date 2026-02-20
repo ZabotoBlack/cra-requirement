@@ -489,6 +489,7 @@ const AppShell: React.FC = () => {
             {navItems.map(({ id, icon: Icon, label }) => (
               <button
                 key={id}
+                data-tour-id={`nav-${id}`}
                 onClick={() => setView(id)}
                 title={label}
                 className={`group relative flex h-11 items-center rounded-xl border transition-all ${sidebarExpanded ? 'w-full justify-start gap-3 px-3' : 'w-11 justify-center'} ${view === id

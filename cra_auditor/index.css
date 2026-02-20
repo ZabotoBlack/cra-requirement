@@ -214,14 +214,17 @@ body {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(0, 0, 0, 0.6);
+  background: transparent;
 }
 
 .tour-spotlight {
   position: fixed;
   border-radius: 14px;
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 55%, white 10%);
+  border: 2px solid color-mix(in srgb, var(--color-accent) 68%, white 12%);
+  outline: 1px solid color-mix(in srgb, var(--color-accent) 42%, transparent);
+  outline-offset: 2px;
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--color-accent) 42%, transparent));
   pointer-events: none;
   transition: all 220ms ease;
 }

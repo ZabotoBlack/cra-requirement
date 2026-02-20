@@ -9,6 +9,10 @@ export interface TourStep {
   titleKey: TranslationKey;
   descriptionKey: TranslationKey;
   placement: TourPlacement;
+  spotlightOffsetX?: number;
+  spotlightOffsetY?: number;
+  spotlightWidthAdjust?: number;
+  spotlightHeightAdjust?: number;
   viewRequirement?: ViewState;
   requiresSidebarExpanded?: boolean;
   opensSettings?: boolean;
@@ -21,6 +25,7 @@ export const TOUR_STEPS: TourStep[] = [
     titleKey: 'tour.step.1.title',
     descriptionKey: 'tour.step.1.description',
     placement: 'right',
+    spotlightOffsetX: -12,
     requiresSidebarExpanded: true
   },
   {
@@ -28,6 +33,7 @@ export const TOUR_STEPS: TourStep[] = [
     titleKey: 'tour.step.2.title',
     descriptionKey: 'tour.step.2.description',
     placement: 'right',
+    spotlightOffsetX: -12,
     requiresSidebarExpanded: true,
     requiredMode: 'intermediate'
   },
@@ -36,6 +42,7 @@ export const TOUR_STEPS: TourStep[] = [
     titleKey: 'tour.step.3.title',
     descriptionKey: 'tour.step.3.description',
     placement: 'right',
+    spotlightOffsetX: -12,
     requiresSidebarExpanded: true
   },
   {
@@ -43,6 +50,7 @@ export const TOUR_STEPS: TourStep[] = [
     titleKey: 'tour.step.4.title',
     descriptionKey: 'tour.step.4.description',
     placement: 'right',
+    spotlightOffsetX: -12,
     requiresSidebarExpanded: true
   },
   {
@@ -50,6 +58,7 @@ export const TOUR_STEPS: TourStep[] = [
     titleKey: 'tour.step.5.title',
     descriptionKey: 'tour.step.5.description',
     placement: 'right',
+    spotlightOffsetX: -12,
     requiresSidebarExpanded: true
   },
   {
@@ -65,21 +74,24 @@ export const TOUR_STEPS: TourStep[] = [
     placement: 'bottom'
   },
   {
-    targetSelector: '[data-tour-id="settings-scan-depth"]',
+    targetSelector: '[data-tour-id="settings-scan-depth"], [data-tour-id="settings-button"]',
     titleKey: 'tour.step.8.title',
     descriptionKey: 'tour.step.8.description',
     placement: 'bottom',
+    spotlightOffsetY: 10,
+    spotlightWidthAdjust: -24,
+    spotlightHeightAdjust: 16,
     opensSettings: true
   },
   {
-    targetSelector: '[data-tour-id="settings-vendor-detection"]',
+    targetSelector: '[data-tour-id="settings-vendor-detection"], [data-tour-id="settings-button"]',
     titleKey: 'tour.step.9.title',
     descriptionKey: 'tour.step.9.description',
     placement: 'bottom',
     opensSettings: true
   },
   {
-    targetSelector: '[data-tour-id="settings-active-probing"]',
+    targetSelector: '[data-tour-id="settings-active-probing-label"], [data-tour-id="settings-active-probing"], [data-tour-id="settings-button"]',
     titleKey: 'tour.step.10.title',
     descriptionKey: 'tour.step.10.description',
     placement: 'bottom',
@@ -99,14 +111,14 @@ export const TOUR_STEPS: TourStep[] = [
     placement: 'bottom'
   },
   {
-    targetSelector: '[data-tour-id="dashboard-area"]',
+    targetSelector: '[data-tour-id="dashboard-area"], [data-tour-id="nav-dashboard"]',
     titleKey: 'tour.step.13.title',
     descriptionKey: 'tour.step.13.description',
     placement: 'top',
     viewRequirement: 'dashboard'
   },
   {
-    targetSelector: '[data-tour-id="devices-area"]',
+    targetSelector: '[data-tour-id="devices-list-panel"], [data-tour-id="nav-devices"]',
     titleKey: 'tour.step.14.title',
     descriptionKey: 'tour.step.14.description',
     placement: 'top',
@@ -114,7 +126,7 @@ export const TOUR_STEPS: TourStep[] = [
     requiredMode: 'intermediate'
   },
   {
-    targetSelector: '[data-tour-id="history-area"]',
+    targetSelector: '[data-tour-id="history-area"], [data-tour-id="nav-history"]',
     titleKey: 'tour.step.15.title',
     descriptionKey: 'tour.step.15.description',
     placement: 'top',

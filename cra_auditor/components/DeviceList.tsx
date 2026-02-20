@@ -245,7 +245,7 @@ const DeviceList: React.FC<DeviceListProps> = ({ devices }) => {
 
   return (
     <div className="space-y-4">
-      <GlassCard className="rounded-2xl p-4">
+      <GlassCard data-tour-id="devices-list-panel" className="rounded-2xl p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <input
             type="text"
