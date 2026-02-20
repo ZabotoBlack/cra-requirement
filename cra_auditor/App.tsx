@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, ChevronsLeft, ChevronsRight, HelpCircle, History, LayoutDashboard, List, Moon, Play, RotateCw, Settings, ShieldCheck, Sun, X } from 'lucide-react';
+import { Activity, AlertTriangle, ChevronsLeft, ChevronsRight, HelpCircle, History, LayoutDashboard, List, Moon, Play, RotateCw, Settings, ShieldCheck, Square, Sun, X } from 'lucide-react';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import DeviceList from './components/DeviceList';
 import HistoryView from './components/HistoryView';
@@ -10,9 +10,9 @@ import LanguageSelector from './components/LanguageSelector';
 import GlassCard from './components/ui/GlassCard';
 import StatusBadge from './components/ui/StatusBadge';
 import TechButton from './components/ui/TechButton';
-import { startScan, getScanStatus, getReport, getConfig, getHistoryDetail, getDefaultSubnet, getLogs } from './services/api';
+import { startScan, getScanStatus, abortScan, getReport, getConfig, getHistoryDetail, getDefaultSubnet, getLogs } from './services/api';
 import { LanguageProvider, useLanguage } from './LanguageContext';
-import { ScanReport, ViewState, ScanOptions, FrontendConfig, UserMode } from './types';
+import { ScanReport, ViewState, ScanOptions, FrontendConfig, UserMode, ScanStatus } from './types';
 import { TOUR_STEPS, TourProvider, useTour } from './TourContext';
 import TourOverlay from './TourOverlay';
 import TourWelcomeModal from './TourWelcomeModal';
@@ -124,6 +124,7 @@ const AppShell: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [report, setReport] = useState<ScanReport | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [scanStatus, setScanStatus] = useState<ScanStatus>({ scanning: false });
   const [config, setConfig] = useState<FrontendConfig | null>(null);
   const [subnet, setSubnet] = useState('');
   const [isSubnetFocused, setIsSubnetFocused] = useState(false);
@@ -177,6 +178,19 @@ const AppShell: React.FC = () => {
   const showSubnetHelper = isSubnetFocused || hasSubnetInput;
   const subnetLocked = userMode === 'basic';
   const canStartScan = !scanning && (userMode === 'basic' || isValidSubnet);
+  const completedChecks = scanStatus.progress?.completed ?? 0;
+  const totalChecks = scanStatus.progress?.total ?? 0;
+  const remainingChecks = scanStatus.progress?.remaining ?? Math.max(0, totalChecks - completedChecks);
+  const progressPercent = totalChecks > 0 ? Math.min(100, Math.round((completedChecks / totalChecks) * 100)) : 0;
+  const lastOutcome = scanStatus.lastScan?.outcome;
+  const lastOutcomeTone = lastOutcome === 'completed' ? 'success' : (lastOutcome === 'aborted' ? 'warning' : (lastOutcome === 'timeout' ? 'warning' : (lastOutcome === 'failed' ? 'danger' : 'neutral')));
+  const getLastOutcomeLabel = (): string => {
+    if (lastOutcome === 'completed') return t('status.outcome.completed');
+    if (lastOutcome === 'aborted') return t('status.outcome.aborted');
+    if (lastOutcome === 'timeout') return t('status.outcome.timeout');
+    if (lastOutcome === 'failed') return t('status.outcome.failed');
+    return String(lastOutcome || '');
+  };
   const accentColor = MODE_ACCENT[userMode];
   const getModeLabel = (mode: UserMode): string => {
     if (mode === 'basic') return t('mode.basic');
@@ -195,10 +209,15 @@ const AppShell: React.FC = () => {
       previousScanningRef.current = statusData.scanning;
 
       setScanning(statusData.scanning);
+      setScanStatus(statusData);
       setLoading(false);
 
       if (statusData.error) {
         setScanError(statusData.error);
+      }
+
+      if (statusData.timeoutDetected && statusData.scanning) {
+        setScanError(t('errors.scanTimeoutDetected'));
       }
 
       if (viewRef.current === 'dashboard' && !statusData.scanning) {
@@ -450,6 +469,15 @@ const AppShell: React.FC = () => {
     }
   };
 
+  const handleAbortScan = async () => {
+    try {
+      await abortScan();
+    } catch (e) {
+      console.error(e);
+      setScanError(t('errors.abortScanFailed'));
+    }
+  };
+
   const handleModeChange = (mode: UserMode) => {
     setUserMode(mode);
     setIsModeMenuOpen(false);
@@ -612,6 +640,12 @@ const AppShell: React.FC = () => {
                     <Settings size={15} />
                     {t('actions.settings')}
                   </TechButton>
+                  {scanning && (
+                    <TechButton onClick={handleAbortScan} disabled={Boolean(scanStatus.cancelRequested)} variant="secondary">
+                      <Square size={14} />
+                      {scanStatus.cancelRequested ? t('actions.aborting') : t('actions.abortScan')}
+                    </TechButton>
+                  )}
                   <TechButton data-tour-id="start-scan-button" onClick={handleScan} disabled={!canStartScan} variant="primary" className="neon-text">
                     {scanning ? <RotateCw className="animate-spin" size={15} /> : <Play size={15} />}
                     {scanning ? t('actions.scanning') : t('actions.startScan')}
@@ -640,6 +674,31 @@ const AppShell: React.FC = () => {
                 {report.scanProfile && <StatusBadge label={`${t('status.profile')} ${report.scanProfile}`} tone="info" />}
                 <StatusBadge label={config?.gemini_enabled ? t('status.geminiOnline') : t('status.geminiDisabled')} tone="neutral" />
                 <StatusBadge label={config?.nvd_enabled ? t('status.nvdOnline') : t('status.nvdDisabled')} tone="neutral" />
+              </div>
+            )}
+
+            {!scanning && scanStatus.lastScan?.outcome && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--border-subtle)] pt-3">
+                <StatusBadge label={`${t('status.lastOutcome')} ${getLastOutcomeLabel()}`} tone={lastOutcomeTone as 'neutral' | 'success' | 'warning' | 'danger' | 'info'} />
+                {scanStatus.lastScan?.reason && <StatusBadge label={scanStatus.lastScan.reason} tone="neutral" />}
+              </div>
+            )}
+
+            {scanning && (
+              <div className="mt-3 space-y-2 border-t border-[var(--border-subtle)] pt-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge label={`${t('status.checksDone')} ${completedChecks}/${Math.max(totalChecks, completedChecks)}`} tone="info" />
+                  <StatusBadge label={`${t('status.checksLeft')} ${Math.max(0, remainingChecks)}`} tone="neutral" />
+                  {scanStatus.timeoutDetected && <StatusBadge label={t('status.timeoutDetected')} tone="warning" />}
+                </div>
+                <div className="surface-elevated overflow-hidden rounded-lg border">
+                  <div className="h-2 bg-[var(--panel-muted)]">
+                    <div className="h-full bg-[var(--color-accent)] transition-all duration-300" style={{ width: `${progressPercent}%` }} />
+                  </div>
+                </div>
+                {scanStatus.progress?.message && (
+                  <p className="text-soft text-xs">{scanStatus.progress.message}</p>
+                )}
               </div>
             )}
           </GlassCard>
@@ -705,21 +764,22 @@ const AppShell: React.FC = () => {
                           <>
                             <p>{t('overlay.basic.line1')}</p>
                             <p>{t('overlay.basic.line2')}</p>
-                            <p className="typing-cursor">{t('overlay.basic.line3')}</p>
+                            <p className="typing-cursor">{scanStatus.progress?.message || t('overlay.basic.line3')}</p>
                           </>
                         ) : (
                           <>
                             <p>&gt; initialize_probe --target {subnet || 'pending_target'} --profile {scanOptions.scan_type}</p>
-                            <p>&gt; network_discovery --passive</p>
-                            <p>&gt; service_fingerprint --mode aggressive</p>
-                            <p>&gt; cve_correlation --source nvd</p>
-                            <p className="typing-cursor">&gt; compliance_ruleset --annex-i --streaming</p>
+                            <p>&gt; checks_progress --done {completedChecks} --total {Math.max(totalChecks, completedChecks)}</p>
+                            <p>&gt; checks_remaining --value {Math.max(0, remainingChecks)}</p>
+                            <p>&gt; active_stage --name {scanStatus.progress?.stage || 'initializing'}</p>
+                            <p className="typing-cursor">&gt; status --message {scanStatus.progress?.message || 'processing'}</p>
                           </>
                         )}
                       </div>
                       <div className="text-muted mt-4 flex items-center gap-3 text-xs uppercase tracking-widest">
                         <span className="inline-flex items-center gap-1"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />{t('overlay.scannerActive')}</span>
                         <span className="inline-flex items-center gap-1"><span className="h-2 w-2 animate-pulse rounded-full bg-[var(--color-accent)]" />{t('overlay.streamingLogs')}</span>
+                        <span>{completedChecks}/{Math.max(totalChecks, completedChecks)}</span>
                       </div>
                     </div>
                   </div>

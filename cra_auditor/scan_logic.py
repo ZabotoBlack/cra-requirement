@@ -33,6 +33,10 @@ SCAN_INFO = 15
 logging.addLevelName(SCAN_INFO, "SCAN_INFO")
 
 
+class ScanAbortedError(RuntimeError):
+    """Raised when a scan is canceled by user action or timeout."""
+
+
 def _log_scan_info(message, *args, **kwargs):
     logger.log(SCAN_INFO, message, *args, **kwargs)
 
@@ -396,6 +400,8 @@ class CRAScanner:
 
     def _build_vendor_ports(self, selected_vendors):
         """Return vendor-specific ports to append for targeted service discovery."""
+        if selected_vendors is None:
+            selected_vendors = []
         vendor_ports = []
         if selected_vendors == 'all' or 'tuya' in selected_vendors:
             vendor_ports.append('6668')
@@ -405,7 +411,30 @@ class CRAScanner:
             vendor_ports.append('9999')
         return vendor_ports
 
-    def scan_subnet(self, subnet, options=None):
+    def _normalize_port(self, port_value):
+        """Normalize a port value to int, returning None when invalid."""
+        try:
+            return int(port_value)
+        except (TypeError, ValueError):
+            return None
+
+    def _collect_http_ports(self, open_ports):
+        """Collect unique HTTP/HTTPS management ports from open port metadata."""
+        ports = set()
+        for port_info in open_ports or []:
+            if not isinstance(port_info, dict):
+                continue
+
+            port = self._normalize_port(port_info.get('port'))
+            service = str(port_info.get('service', '')).lower()
+
+            if port in (80, 443, 8080, 8443) or service in ('http', 'https'):
+                if port is not None:
+                    ports.add(port)
+
+        return sorted(ports)
+
+    def scan_subnet(self, subnet, options=None, progress_callback=None, should_abort=None):
         """
         Scans the given subnet using profile-driven modular stages.
 
@@ -429,6 +458,31 @@ class CRAScanner:
         scan_type, features = self._resolve_scan_features(options)
         selected_vendors = options.get('vendors', 'all')  # 'all' or list of strings
 
+        completed_checks = 0
+        total_checks = 1  # initialization
+
+        def _emit_progress(stage: str, message: str, *, set_total: int | None = None, increment: bool = False):
+            nonlocal completed_checks, total_checks
+            if set_total is not None:
+                total_checks = max(0, int(set_total))
+            if increment:
+                completed_checks += 1
+            if not callable(progress_callback):
+                return
+            progress_callback({
+                "completed": completed_checks,
+                "total": total_checks,
+                "stage": stage,
+                "message": message,
+            })
+
+        def _abort_if_requested():
+            if not callable(should_abort):
+                return
+            abort_reason = should_abort()
+            if abort_reason:
+                raise ScanAbortedError(str(abort_reason))
+
         scan_start = time.time()
         total_stages = 1  # discovery
         if features.get('port_scan'):
@@ -436,6 +490,9 @@ class CRAScanner:
         total_stages += 1  # merge
         if features.get('compliance_checks'):
             total_stages += 1
+
+        _emit_progress('initializing', 'Initializing scan context', set_total=total_stages)
+        _abort_if_requested()
 
         logger.info("[SCAN] " + "=" * 56)
         logger.info(
@@ -454,6 +511,8 @@ class CRAScanner:
 
         # Stage 1: Discovery Scan (Ping + ARP)
         current_stage = 1
+        _emit_progress('discovery', f'Starting discovery stage ({current_stage}/{total_stages})')
+        _abort_if_requested()
         if self.nm and features.get('network_discovery'):
             logger.info("[SCAN] Stage %s/%s: Discovery scan (-sn -PR)...", current_stage, total_stages)
             stage_start = time.time()
@@ -479,6 +538,8 @@ class CRAScanner:
             features['compliance_checks'] = False
         else:
             logger.info("[SCAN] Stage %s/%s: Discovery disabled by feature flags (skipped).", current_stage, total_stages)
+        _emit_progress('discovery', f'Discovery stage complete ({len(scanned_devices)} hosts)', increment=True)
+        _abort_if_requested()
 
         hosts_to_scan = list(scanned_devices.keys())
         mdns_hostnames = {}
@@ -490,6 +551,8 @@ class CRAScanner:
 
         # Optional Stage 2: Detailed Scan
         current_stage += 1
+        _emit_progress('detailed_scan', f'Starting detailed scan stage ({current_stage}/{total_stages})')
+        _abort_if_requested()
         if hosts_to_scan and features.get('port_scan') and self.nm:
             logger.info("[SCAN] Stage %s/%s: Detailed port scan on %s hosts...", current_stage, total_stages, len(hosts_to_scan))
             stage_start = time.time()
@@ -527,6 +590,8 @@ class CRAScanner:
             logger.info("[SCAN] Stage %s/%s: Detailed scan skipped (no discovered hosts).", current_stage, total_stages)
         elif not features.get('port_scan'):
             logger.info("[SCAN] Stage %s/%s: Detailed scan disabled by profile/features.", current_stage, total_stages)
+        _emit_progress('detailed_scan', 'Detailed scan stage complete', increment=True)
+        _abort_if_requested()
 
         if scanned_devices:
             self._enrich_hostnames(scanned_devices, mdns_hostnames)
@@ -535,9 +600,13 @@ class CRAScanner:
 
         # Stage: HA Merge
         current_stage += 1
+        _emit_progress('merge', f'Starting Home Assistant merge stage ({current_stage}/{total_stages})')
+        _abort_if_requested()
         logger.info("[SCAN] Stage %s/%s: Merging with Home Assistant devices...", current_stage, total_stages)
         merged_devices = self._merge_devices(nmap_devices, ha_devices)
         scan_timestamp = datetime.now().isoformat()
+        _emit_progress('merge', f'Merge stage complete ({len(merged_devices)} devices)', increment=True)
+        _abort_if_requested()
 
         # Optional Stage: Compliance checks
         current_stage += 1
@@ -546,6 +615,7 @@ class CRAScanner:
 
         if not features.get('compliance_checks'):
             logger.info("[SCAN] Stage %s/%s: Compliance checks disabled by profile/features.", current_stage, total_stages)
+            _emit_progress('compliance', 'Compliance checks skipped by profile', increment=True)
             for dev in merged_devices:
                 dev.update({
                     "status": "Discovered",
@@ -555,10 +625,13 @@ class CRAScanner:
                 })
                 final_results.append(dev)
         else:
+            total_checks = max(total_checks, completed_checks + total_devices)
+            _emit_progress('compliance', f'Starting compliance checks on {total_devices} devices', set_total=total_checks)
             logger.info("[SCAN] Stage %s/%s: Compliance checks on %s devices...", current_stage, total_stages, total_devices)
             stage_start = time.time()
 
             for idx, dev in enumerate(merged_devices, 1):
+                _abort_if_requested()
                 check_vendor = dev.get('model') if dev.get('model') and dev.get('model') != "Unknown" else dev.get('vendor', 'Unknown')
                 if dev.get('manufacturer') and dev.get('manufacturer') != "Unknown":
                     check_vendor = f"{dev['manufacturer']} {check_vendor}"
@@ -648,6 +721,11 @@ class CRAScanner:
                     "lastScanned": scan_timestamp
                 })
                 final_results.append(dev)
+                _emit_progress(
+                    'compliance',
+                    f'Completed checks for {dev.get("ip", "unknown")} ({idx}/{total_devices})',
+                    increment=True,
+                )
 
             stage_elapsed = time.time() - stage_start
             logger.info("[SCAN]   Compliance checks completed in %.1fs", stage_elapsed)
@@ -669,6 +747,7 @@ class CRAScanner:
             discovered,
             total_elapsed,
         )
+        _emit_progress('complete', 'Scan complete', set_total=max(total_checks, completed_checks), increment=False)
         return final_results
 
     def _update_scanned_devices(self, scanned_devices, discovery_phase=False):
@@ -1093,9 +1172,21 @@ class CRAScanner:
         passed = True
         ip = device.get('ip')
         open_ports = device.get('openPorts', [])
+
+        normalized_ports = []
+        for port_info in open_ports:
+            if not isinstance(port_info, dict):
+                continue
+            port = self._normalize_port(port_info.get('port'))
+            if port is None:
+                continue
+            normalized_ports.append({
+                'port': port,
+                'service': str(port_info.get('service', '')).lower(),
+            })
         
         # 1. Telnet Check (Port 23) - Active Credential Test
-        if any(p['port'] == 23 for p in open_ports):
+        if any(p['port'] == 23 for p in normalized_ports):
             details.append("Telnet (port 23) is open.")
             if ip and ip != "N/A":
                 creds_found = self._check_telnet_auth(ip)
@@ -1107,7 +1198,10 @@ class CRAScanner:
                     details.append("Telnet login accessible (Brute-force failed but service is insecure).")
 
         # 2. HTTP Check (Port 80/8080) - Unauth Checks
-        http_ports = [p['port'] for p in open_ports if p['service'] == 'http' or p['port'] in [80, 8080]]
+        http_ports = [
+            p['port'] for p in normalized_ports
+            if p['service'] == 'http' or p['port'] in [80, 8080]
+        ]
         for port in http_ports:
             if ip and ip != "N/A":
                 unauth_info = self._check_http_auth(ip, port)
@@ -1177,7 +1271,16 @@ class CRAScanner:
         """Identify and check specific vendor vulnerabilities."""
         warnings = []
         ip = device.get('ip')
-        ports = [int(p['port']) for p in device.get('openPorts', [])]
+        ports = []
+        for port_info in device.get('openPorts', []):
+            if not isinstance(port_info, dict):
+                continue
+            port = self._normalize_port(port_info.get('port'))
+            if port is not None:
+                ports.append(port)
+
+        if selected_vendors is None:
+            selected_vendors = []
         
         if not ip or ip == "N/A": return []
         
@@ -1321,18 +1424,19 @@ class CRAScanner:
 
         http_ports = set()
         for port_info in open_ports:
-            port = port_info.get('port')
+            if not isinstance(port_info, dict):
+                continue
+
+            port = self._normalize_port(port_info.get('port'))
             service = str(port_info.get('service', '')).lower()
 
             if port in (80, 8080):
-                http_ports.add(int(port))
+                http_ports.add(port)
                 continue
 
             if 'http' in service and 'https' not in service:
-                try:
-                    http_ports.add(int(port))
-                except (TypeError, ValueError):
-                    continue
+                if port is not None:
+                    http_ports.add(port)
 
         if not http_ports:
             return {
@@ -1411,6 +1515,8 @@ class CRAScanner:
         product_hint = None
         version_hint = None
         for port in open_ports or []:
+            if not isinstance(port, dict):
+                continue
             product_hint = product_hint or port.get('product')
             version_hint = version_hint or port.get('version')
 
@@ -1460,10 +1566,15 @@ class CRAScanner:
         logging_endpoints = []
 
         # Signal 1: Syslog UDP/514 advertised by scan results
-        syslog_by_scan = any(
-            int(p.get('port', -1)) == 514 and str(p.get('protocol', '')).lower() == 'udp'
-            for p in open_ports if isinstance(p, dict)
-        )
+        syslog_by_scan = False
+        for p in open_ports:
+            if not isinstance(p, dict):
+                continue
+            port = self._normalize_port(p.get('port'))
+            protocol = str(p.get('protocol', '')).lower()
+            if port == 514 and protocol == 'udp':
+                syslog_by_scan = True
+                break
 
         syslog_reachable = syslog_by_scan
         syslog_probe_state = "not_probed"
@@ -1484,26 +1595,18 @@ class CRAScanner:
                 details.append(f"No Syslog listener confirmed on UDP/514 ({syslog_probe_state}).")
 
         # Signal 2: HTTP log endpoints
-        http_ports = [
-            p for p in open_ports
-            if isinstance(p, dict) and (
-                p.get('service') in ('http', 'https')
-                or p.get('port') in (80, 443, 8080, 8443)
-            )
-        ]
+        http_ports = self._collect_http_ports(open_ports)
 
         log_paths = self.security_log_paths
 
-        for port_info in http_ports:
-            port = port_info.get('port')
-            if not port or not ip or ip == "N/A":
+        for port in http_ports:
+            if not ip or ip == "N/A":
                 continue
 
-            service = str(port_info.get('service', '')).lower()
-            scheme = 'https' if int(port) in (443, 8443) or 'https' in service else 'http'
+            scheme = 'https' if port in (443, 8443) else 'http'
 
             for path in log_paths:
-                url = f"{scheme}://{ip}:{int(port)}{path}"
+                url = f"{scheme}://{ip}:{port}{path}"
                 try:
                     response = self.session.get(url, timeout=2, allow_redirects=False)
                     if response.status_code in (200, 401, 403):
@@ -1582,8 +1685,7 @@ class CRAScanner:
         vendor = device.get('resolved_vendor') or device.get('vendor', 'Unknown')
         
         # Layer 1: Device-level SBOM endpoint probing
-        http_ports = [p['port'] for p in open_ports 
-                      if p.get('service') in ('http', 'https') or p['port'] in (80, 443, 8080, 8443)]
+        http_ports = self._collect_http_ports(open_ports)
         
         if ip and ip != "N/A" and http_ports:
             sbom_found, sbom_format = self._probe_sbom_endpoints(ip, http_ports)
@@ -1726,8 +1828,7 @@ class CRAScanner:
         vendor = device.get('resolved_vendor') or device.get('vendor', 'Unknown')
 
         # Layer 1: Device-level security.txt probing
-        http_ports = [p['port'] for p in open_ports
-                      if p.get('service') in ('http', 'https') or p['port'] in (80, 443, 8080, 8443)]
+        http_ports = self._collect_http_ports(open_ports)
 
         if ip and ip != "N/A" and http_ports:
             security_txt_found, parsed_fields = self._probe_security_txt(ip, http_ports)
@@ -1878,6 +1979,8 @@ class CRAScanner:
 
         # Layer 1: Extract version from Nmap -sV service probe results
         for port_info in open_ports:
+            if not isinstance(port_info, dict):
+                continue
             product = port_info.get('product', '')
             version = port_info.get('version', '')
             if version:
@@ -1888,8 +1991,7 @@ class CRAScanner:
 
         # Layer 2: Vendor-specific firmware endpoint probing
         if not firmware_version and ip and ip != "N/A":
-            http_ports = [p['port'] for p in open_ports
-                          if p.get('service') in ('http', 'https') or p['port'] in (80, 443, 8080, 8443)]
+            http_ports = self._collect_http_ports(open_ports)
             if http_ports:
                 fw_ver, fw_src = self._probe_firmware_endpoints(ip, http_ports, vendor)
                 if fw_ver:

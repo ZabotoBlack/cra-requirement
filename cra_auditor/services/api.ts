@@ -1,4 +1,4 @@
-import { ScanReport, ScanOptions, DefaultSubnetResponse, LogsResponse } from '../types';
+import { ScanReport, ScanOptions, DefaultSubnetResponse, LogsResponse, ScanStatus } from '../types';
 
 /** Start a new scan job with subnet and normalized scan options. */
 export const startScan = async (subnet: string, options: ScanOptions): Promise<void> => {
@@ -19,14 +19,27 @@ export const startScan = async (subnet: string, options: ScanOptions): Promise<v
 };
 
 /** Get current scanner state used by the polling loop. */
-export const getScanStatus = async (): Promise<{ scanning: boolean; error?: string } | null> => {
+export const getScanStatus = async (): Promise<ScanStatus | null> => {
   try {
     const response = await fetch('api/status');
     if (!response.ok) return null;
-    const data = await response.json();
-    return { scanning: data.scanning, error: data.error };
+    return await response.json();
   } catch (e) {
     return null;
+  }
+};
+
+/** Request cancellation of an active scan. */
+export const abortScan = async (): Promise<void> => {
+  const response = await fetch('api/scan/abort', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok && response.status !== 409) {
+    throw new Error('Failed to abort scan');
   }
 };
 

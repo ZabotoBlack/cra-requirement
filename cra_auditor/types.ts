@@ -56,6 +56,28 @@ export interface LogsResponse {
   logs: string[];
 }
 
+export interface ScanProgress {
+  completed: number;
+  total: number;
+  remaining: number;
+  stage?: string | null;
+  message?: string | null;
+}
+
+export interface ScanStatus {
+  scanning: boolean;
+  error?: string;
+  timeoutDetected?: boolean;
+  cancelRequested?: boolean;
+  elapsedSeconds?: number;
+  progress?: ScanProgress;
+  lastScan?: {
+    outcome?: 'completed' | 'aborted' | 'timeout' | 'failed' | string | null;
+    reason?: string | null;
+    finishedAt?: number | null;
+  };
+}
+
 export interface Device {
   mac: string;
   ip: string;

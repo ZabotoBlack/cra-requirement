@@ -38,7 +38,7 @@ def _resolve_log_level(level_name: str | None) -> int:
     return _LOG_LEVEL_MAP.get(str(level_name).strip().lower(), logging.INFO)
 
 
-from scan_logic import CRAScanner
+from scan_logic import CRAScanner, ScanAbortedError
 
 # Configure logging (replaces print() for structured HA output)
 logger = logging.getLogger(__name__)
@@ -406,6 +406,23 @@ FEATURE_FLAG_KEYS = {
 }
 
 
+def _resolve_scan_timeout_seconds(default: int = 900) -> int:
+    """Resolve scan timeout in seconds from environment with a safe default."""
+    raw_value = os.environ.get("CRA_SCAN_TIMEOUT_SECONDS")
+    if raw_value is None:
+        return default
+
+    try:
+        parsed_value = int(str(raw_value).strip())
+    except (TypeError, ValueError):
+        return default
+
+    return max(60, parsed_value)
+
+
+SCAN_TIMEOUT_SECONDS = _resolve_scan_timeout_seconds()
+
+
 def normalize_scan_options(payload):
     """Normalize legacy and new scan option styles into a single options object."""
     payload = payload or {}
@@ -510,25 +527,99 @@ def init_db():
         CREATE TABLE IF NOT EXISTS scan_state (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             is_scanning INTEGER NOT NULL DEFAULT 0,
-            scan_error TEXT
+            scan_error TEXT,
+            progress_total INTEGER NOT NULL DEFAULT 0,
+            progress_done INTEGER NOT NULL DEFAULT 0,
+            progress_stage TEXT,
+            progress_message TEXT,
+            started_at REAL,
+            last_update_at REAL,
+            cancel_requested INTEGER NOT NULL DEFAULT 0,
+            timeout_detected INTEGER NOT NULL DEFAULT 0,
+            last_outcome TEXT,
+            last_end_reason TEXT,
+            last_finished_at REAL
         )
     ''')
     c.execute('INSERT OR IGNORE INTO scan_state (id, is_scanning) VALUES (1, 0)')
     conn.commit()
     conn.close()
 
+
+def ensure_scan_state_schema():
+    """Ensure newer scan_state columns exist for progress/abort compatibility."""
+    required_columns = {
+        "progress_total": "INTEGER NOT NULL DEFAULT 0",
+        "progress_done": "INTEGER NOT NULL DEFAULT 0",
+        "progress_stage": "TEXT",
+        "progress_message": "TEXT",
+        "started_at": "REAL",
+        "last_update_at": "REAL",
+        "cancel_requested": "INTEGER NOT NULL DEFAULT 0",
+        "timeout_detected": "INTEGER NOT NULL DEFAULT 0",
+        "last_outcome": "TEXT",
+        "last_end_reason": "TEXT",
+        "last_finished_at": "REAL",
+    }
+
+    with sqlite3.connect(DB_FILE) as conn:
+        existing = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(scan_state)").fetchall()
+        }
+
+        for column_name, column_def in required_columns.items():
+            if column_name in existing:
+                continue
+            conn.execute(f"ALTER TABLE scan_state ADD COLUMN {column_name} {column_def}")
+
+        conn.commit()
+
 def reset_scan_state():
     """Reset scan state on startup to clear zombie states from crashes."""
     with sqlite3.connect(DB_FILE) as conn:
-        conn.execute('UPDATE scan_state SET is_scanning = 0, scan_error = NULL WHERE id = 1')
+        conn.execute(
+            '''
+            UPDATE scan_state
+            SET is_scanning = 0,
+                scan_error = NULL,
+                progress_total = 0,
+                progress_done = 0,
+                progress_stage = NULL,
+                progress_message = NULL,
+                started_at = NULL,
+                last_update_at = NULL,
+                cancel_requested = 0,
+                timeout_detected = 0,
+                last_outcome = NULL,
+                last_end_reason = NULL,
+                last_finished_at = NULL
+            WHERE id = 1
+            '''
+        )
         conn.commit()
 
 def try_claim_scan() -> bool:
     """Atomically try to claim the scan lock. Returns True if acquired."""
     logger.debug("[SCAN] Attempting to claim scan lock")
+    now = time.time()
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.execute(
-            'UPDATE scan_state SET is_scanning = 1, scan_error = NULL WHERE id = 1 AND is_scanning = 0'
+            '''
+            UPDATE scan_state
+            SET is_scanning = 1,
+                scan_error = NULL,
+                progress_total = 0,
+                progress_done = 0,
+                progress_stage = ?,
+                progress_message = ?,
+                started_at = ?,
+                last_update_at = ?,
+                cancel_requested = 0,
+                timeout_detected = 0
+            WHERE id = 1 AND is_scanning = 0
+            ''',
+            ('initializing', 'Scan starting', now, now),
         )
         conn.commit()
         claimed = c.rowcount > 0
@@ -539,30 +630,232 @@ def get_scan_state() -> dict:
     """Read the current scan state from the database."""
     with sqlite3.connect(DB_FILE) as conn:
         conn.row_factory = sqlite3.Row
-        row = conn.execute('SELECT is_scanning, scan_error FROM scan_state WHERE id = 1').fetchone()
+        row = conn.execute(
+            '''
+            SELECT
+                is_scanning,
+                scan_error,
+                progress_total,
+                progress_done,
+                progress_stage,
+                progress_message,
+                started_at,
+                last_update_at,
+                cancel_requested,
+                timeout_detected,
+                last_outcome,
+                last_end_reason,
+                last_finished_at
+            FROM scan_state
+            WHERE id = 1
+            '''
+        ).fetchone()
     if row:
-        return {"scanning": bool(row['is_scanning']), "error": row['scan_error']}
-    return {"scanning": False, "error": None}
+        return {
+            "scanning": bool(row['is_scanning']),
+            "error": row['scan_error'],
+            "progress_total": int(row['progress_total'] or 0),
+            "progress_done": int(row['progress_done'] or 0),
+            "progress_stage": row['progress_stage'],
+            "progress_message": row['progress_message'],
+            "started_at": row['started_at'],
+            "last_update_at": row['last_update_at'],
+            "cancel_requested": bool(row['cancel_requested']),
+            "timeout_detected": bool(row['timeout_detected']),
+            "last_outcome": row['last_outcome'],
+            "last_end_reason": row['last_end_reason'],
+            "last_finished_at": row['last_finished_at'],
+        }
+    return {
+        "scanning": False,
+        "error": None,
+        "progress_total": 0,
+        "progress_done": 0,
+        "progress_stage": None,
+        "progress_message": None,
+        "started_at": None,
+        "last_update_at": None,
+        "cancel_requested": False,
+        "timeout_detected": False,
+        "last_outcome": None,
+        "last_end_reason": None,
+        "last_finished_at": None,
+    }
 
 
 def _public_scan_error(error: str | None) -> str | None:
     """Hide internal scan error details from API responses."""
     if not error:
         return None
+    safe_error = str(error).strip().lower()
+    if "timed out" in safe_error or "timeout" in safe_error:
+        return "Scan timed out and was aborted."
+    if "abort" in safe_error:
+        return "Scan was aborted."
     return "Scan failed. Check logs for details."
+
+
+def _public_end_reason(reason: str | None) -> str | None:
+    """Return safe, user-facing completion reason text for status polling."""
+    if not reason:
+        return None
+
+    normalized = str(reason).strip().lower()
+    if "timeout" in normalized or "timed out" in normalized:
+        return "Scan timed out and was aborted."
+    if "abort" in normalized:
+        return "Scan was aborted by user request."
+    if "complete" in normalized or "success" in normalized:
+        return "Scan completed successfully."
+    return "Scan finished."
+
+
+def finalize_scan_state(outcome: str, end_reason: str | None = None) -> None:
+    """Finalize scan lock state and retain last outcome metadata for status/history hints."""
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute(
+            '''
+            UPDATE scan_state
+            SET is_scanning = 0,
+                scan_error = ?,
+                progress_total = 0,
+                progress_done = 0,
+                progress_stage = NULL,
+                progress_message = NULL,
+                started_at = NULL,
+                last_update_at = ?,
+                cancel_requested = 0,
+                timeout_detected = 0,
+                last_outcome = ?,
+                last_end_reason = ?,
+                last_finished_at = ?
+            WHERE id = 1
+            ''',
+            (
+                end_reason,
+                time.time(),
+                str(outcome or "failed").lower(),
+                end_reason,
+                time.time(),
+            )
+        )
+        conn.commit()
 
 def set_scan_state(scanning: bool, error: str = None):
     """Update the scan state in the database."""
+    now = time.time()
     with sqlite3.connect(DB_FILE) as conn:
         conn.execute(
-            'UPDATE scan_state SET is_scanning = ?, scan_error = ? WHERE id = 1',
-            (int(scanning), error)
+            '''
+            UPDATE scan_state
+            SET is_scanning = ?,
+                scan_error = ?,
+                progress_total = CASE WHEN ? = 1 THEN progress_total ELSE 0 END,
+                progress_done = CASE WHEN ? = 1 THEN progress_done ELSE 0 END,
+                progress_stage = CASE WHEN ? = 1 THEN progress_stage ELSE NULL END,
+                progress_message = CASE WHEN ? = 1 THEN progress_message ELSE NULL END,
+                started_at = CASE WHEN ? = 1 THEN COALESCE(started_at, ?) ELSE NULL END,
+                last_update_at = ?,
+                cancel_requested = CASE WHEN ? = 1 THEN cancel_requested ELSE 0 END,
+                timeout_detected = CASE WHEN ? = 1 THEN timeout_detected ELSE 0 END
+            WHERE id = 1
+            ''',
+            (
+                int(scanning),
+                error,
+                int(scanning),
+                int(scanning),
+                int(scanning),
+                int(scanning),
+                int(scanning),
+                now,
+                now,
+                int(scanning),
+                int(scanning),
+            )
         )
         conn.commit()
+
+
+def update_scan_progress(
+    *,
+    total: int | None = None,
+    completed: int | None = None,
+    stage: str | None = None,
+    message: str | None = None,
+) -> None:
+    """Persist scan progress counters/message for status polling."""
+    state = get_scan_state()
+    if not state.get("scanning"):
+        return
+
+    effective_total = max(0, int(total if total is not None else state.get("progress_total", 0)))
+    effective_completed = max(0, int(completed if completed is not None else state.get("progress_done", 0)))
+    effective_completed = min(effective_completed, effective_total) if effective_total > 0 else effective_completed
+
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute(
+            '''
+            UPDATE scan_state
+            SET progress_total = ?,
+                progress_done = ?,
+                progress_stage = ?,
+                progress_message = ?,
+                last_update_at = ?
+            WHERE id = 1
+            ''',
+            (
+                effective_total,
+                effective_completed,
+                stage if stage is not None else state.get("progress_stage"),
+                message if message is not None else state.get("progress_message"),
+                time.time(),
+            )
+        )
+        conn.commit()
+
+
+def request_scan_abort(reason: str, timeout_detected: bool = False) -> bool:
+    """Mark a running scan as canceled; scanner checks this cooperatively."""
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.execute(
+            '''
+            UPDATE scan_state
+            SET cancel_requested = 1,
+                timeout_detected = CASE WHEN ? = 1 THEN 1 ELSE timeout_detected END,
+                progress_message = ?,
+                last_update_at = ?
+            WHERE id = 1 AND is_scanning = 1
+            ''',
+            (int(timeout_detected), reason, time.time())
+        )
+        conn.commit()
+        return c.rowcount > 0
+
+
+def _resolve_abort_signal() -> str | None:
+    """Return an abort reason string when cancellation/timeout has been requested."""
+    state = get_scan_state()
+    if not state.get("scanning"):
+        return None
+
+    started_at = state.get("started_at")
+    elapsed = (time.time() - float(started_at)) if started_at else 0.0
+
+    if elapsed >= SCAN_TIMEOUT_SECONDS:
+        reason = f"Scan timed out after {SCAN_TIMEOUT_SECONDS}s"
+        request_scan_abort(reason, timeout_detected=True)
+        return reason
+
+    if state.get("cancel_requested"):
+        return state.get("progress_message") or "Scan aborted by user request"
+
+    return None
 
 # Initialize DB and reset zombie state on startup
 migrate_data()
 init_db()
+ensure_scan_state_schema()
 reset_scan_state()
 
 @app.route('/')
@@ -625,12 +918,43 @@ def start_scan():
 @app.route('/api/status', methods=['GET'])
 def get_status():
     """Return current scanner state with sanitized error messaging."""
+    _resolve_abort_signal()
     state = get_scan_state()
-    result = {"scanning": state["scanning"]}
+    started_at = state.get("started_at")
+    elapsed_seconds = max(0, int(time.time() - float(started_at))) if started_at else 0
+    total_checks = max(0, int(state.get("progress_total", 0)))
+    completed_checks = max(0, int(state.get("progress_done", 0)))
+
+    result = {
+        "scanning": state["scanning"],
+        "timeoutDetected": bool(state.get("timeout_detected")),
+        "cancelRequested": bool(state.get("cancel_requested")),
+        "elapsedSeconds": elapsed_seconds,
+        "progress": {
+            "completed": completed_checks,
+            "total": total_checks,
+            "remaining": max(0, total_checks - completed_checks),
+            "stage": state.get("progress_stage"),
+            "message": state.get("progress_message"),
+        },
+        "lastScan": {
+            "outcome": state.get("last_outcome"),
+            "reason": _public_end_reason(state.get("last_end_reason")),
+            "finishedAt": state.get("last_finished_at"),
+        },
+    }
     public_error = _public_scan_error(state.get("error"))
     if public_error:
         result["error"] = public_error
     return jsonify(result)
+
+
+@app.route('/api/scan/abort', methods=['POST'])
+def abort_scan():
+    """Request cancellation of an active scan."""
+    if request_scan_abort("Scan aborted by user request", timeout_detected=False):
+        return jsonify({"status": "success", "message": "Abort requested"})
+    return jsonify({"status": "error", "message": "No active scan"}), 409
 
 @app.route('/api/config', methods=['GET'])
 def get_config():
@@ -768,8 +1092,26 @@ def run_scan_background(subnet, options=None):
     scan_type = scan_options.get('profile') or scan_options.get('scan_type', 'deep')
     logger.info("[SCAN] Background scan starting: subnet=%s, type=%s", subnet, scan_type)
     bg_start = time.time()
+    update_scan_progress(total=1, completed=0, stage='initializing', message='Preparing scanner')
+
+    def should_abort():
+        return _resolve_abort_signal()
+
+    def on_progress(update: dict):
+        update_scan_progress(
+            total=update.get('total'),
+            completed=update.get('completed'),
+            stage=update.get('stage'),
+            message=update.get('message'),
+        )
+
     try:
-        devices = scanner.scan_subnet(subnet, options)
+        devices = scanner.scan_subnet(
+            subnet,
+            options,
+            progress_callback=on_progress,
+            should_abort=should_abort,
+        )
         
         # Calculate summary
         total = len(devices)
@@ -817,12 +1159,17 @@ def run_scan_background(subnet, options=None):
             logger.error("[SCAN] Failed to save scan to DB: %s", db_err)
             logger.debug("[SCAN] Save-to-DB traceback", exc_info=True)
 
+    except ScanAbortedError as e:
+        logger.info("[SCAN] Scan aborted: %s", e)
+        abort_reason = str(e)
+        outcome = "timeout" if "timeout" in abort_reason.lower() else "aborted"
+        finalize_scan_state(outcome, end_reason=abort_reason)
     except Exception as e:
         logger.error("[SCAN] Scan failed: %s", e)
         logger.debug("[SCAN] Background scan traceback", exc_info=True)
-        set_scan_state(False, error=str(e))
+        finalize_scan_state("failed", end_reason=str(e))
     else:
-        set_scan_state(False)
+        finalize_scan_state("completed", end_reason="Scan completed")
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8099)  # Gunicorn takes over in production via run.sh
