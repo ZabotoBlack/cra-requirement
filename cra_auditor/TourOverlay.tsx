@@ -163,10 +163,13 @@ const TourOverlay: React.FC = () => {
 
     updateTargetPosition(true);
 
-    const animationFrameIds: number[] = [
-      window.requestAnimationFrame(() => updateTargetPosition(false)),
-      window.requestAnimationFrame(() => updateTargetPosition(false))
-    ];
+    const animationFrameIds: number[] = [];
+    const firstAnimationFrameId = window.requestAnimationFrame(() => {
+      updateTargetPosition(false);
+      const secondAnimationFrameId = window.requestAnimationFrame(() => updateTargetPosition(false));
+      animationFrameIds.push(secondAnimationFrameId);
+    });
+    animationFrameIds.push(firstAnimationFrameId);
     const intervalId = window.setInterval(() => updateTargetPosition(false), 140);
     const delayedPassId = window.setTimeout(() => updateTargetPosition(false), 420);
     const handleLayoutChange = () => updateTargetPosition(false);
