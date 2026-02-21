@@ -67,12 +67,11 @@ export interface ScanProgress {
 export interface ScanStatus {
   scanning: boolean;
   error?: string;
-  timeoutDetected?: boolean;
   cancelRequested?: boolean;
   elapsedSeconds?: number;
   progress?: ScanProgress;
   lastScan?: {
-    outcome?: 'completed' | 'aborted' | 'timeout' | 'failed' | string | null;
+    outcome?: 'completed' | 'aborted' | 'failed' | string | null;
     reason?: string | null;
     finishedAt?: number | null;
   };

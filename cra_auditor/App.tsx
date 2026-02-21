@@ -183,11 +183,10 @@ const AppShell: React.FC = () => {
   const remainingChecks = scanStatus.progress?.remaining ?? Math.max(0, totalChecks - completedChecks);
   const progressPercent = totalChecks > 0 ? Math.min(100, Math.round((completedChecks / totalChecks) * 100)) : 0;
   const lastOutcome = scanStatus.lastScan?.outcome;
-  const lastOutcomeTone = lastOutcome === 'completed' ? 'success' : (lastOutcome === 'aborted' ? 'warning' : (lastOutcome === 'timeout' ? 'warning' : (lastOutcome === 'failed' ? 'danger' : 'neutral')));
+  const lastOutcomeTone = lastOutcome === 'completed' ? 'success' : (lastOutcome === 'aborted' ? 'warning' : (lastOutcome === 'failed' ? 'danger' : 'neutral'));
   const getLastOutcomeLabel = (): string => {
     if (lastOutcome === 'completed') return t('status.outcome.completed');
     if (lastOutcome === 'aborted') return t('status.outcome.aborted');
-    if (lastOutcome === 'timeout') return t('status.outcome.timeout');
     if (lastOutcome === 'failed') return t('status.outcome.failed');
     return String(lastOutcome || '');
   };
@@ -214,10 +213,6 @@ const AppShell: React.FC = () => {
 
       if (statusData.error) {
         setScanError(statusData.error);
-      }
-
-      if (statusData.timeoutDetected && statusData.scanning) {
-        setScanError(t('errors.scanTimeoutDetected'));
       }
 
       if (viewRef.current === 'dashboard' && !statusData.scanning) {
@@ -689,7 +684,6 @@ const AppShell: React.FC = () => {
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusBadge label={`${t('status.checksDone')} ${completedChecks}/${Math.max(totalChecks, completedChecks)}`} tone="info" />
                   <StatusBadge label={`${t('status.checksLeft')} ${Math.max(0, remainingChecks)}`} tone="neutral" />
-                  {scanStatus.timeoutDetected && <StatusBadge label={t('status.timeoutDetected')} tone="warning" />}
                 </div>
                 <div className="surface-elevated overflow-hidden rounded-lg border">
                   <div className="h-2 bg-[var(--panel-muted)]">

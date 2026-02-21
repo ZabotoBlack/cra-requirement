@@ -406,23 +406,6 @@ FEATURE_FLAG_KEYS = {
 }
 
 
-def _resolve_scan_timeout_seconds(default: int = 900) -> int:
-    """Resolve scan timeout in seconds from environment with a safe default."""
-    raw_value = os.environ.get("CRA_SCAN_TIMEOUT_SECONDS")
-    if raw_value is None:
-        return default
-
-    try:
-        parsed_value = int(str(raw_value).strip())
-    except (TypeError, ValueError):
-        return default
-
-    return max(60, parsed_value)
-
-
-SCAN_TIMEOUT_SECONDS = _resolve_scan_timeout_seconds()
-
-
 def normalize_scan_options(payload):
     """Normalize legacy and new scan option styles into a single options object."""
     payload = payload or {}
@@ -834,18 +817,10 @@ def request_scan_abort(reason: str, timeout_detected: bool = False) -> bool:
 
 
 def _resolve_abort_signal() -> str | None:
-    """Return an abort reason string when cancellation/timeout has been requested."""
+    """Return an abort reason string when cancellation has been requested."""
     state = get_scan_state()
     if not state.get("scanning"):
         return None
-
-    started_at = state.get("started_at")
-    elapsed = (time.time() - float(started_at)) if started_at else 0.0
-
-    if elapsed >= SCAN_TIMEOUT_SECONDS:
-        reason = f"Scan timed out after {SCAN_TIMEOUT_SECONDS}s"
-        request_scan_abort(reason, timeout_detected=True)
-        return reason
 
     if state.get("cancel_requested"):
         return state.get("progress_message") or "Scan aborted by user request"
@@ -927,7 +902,6 @@ def get_status():
 
     result = {
         "scanning": state["scanning"],
-        "timeoutDetected": bool(state.get("timeout_detected")),
         "cancelRequested": bool(state.get("cancel_requested")),
         "elapsedSeconds": elapsed_seconds,
         "progress": {
