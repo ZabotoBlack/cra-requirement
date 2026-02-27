@@ -48,20 +48,30 @@ const BasicDashboard: React.FC<BasicDashboardProps> = ({ report }) => {
 
   return (
     <div className="space-y-5">
-      <GlassCard className="rounded-2xl border border-[var(--color-accent-border)] p-6">
-        <p className="accent-text mb-4 text-xs font-semibold uppercase tracking-widest">{t('basic.overview')}</p>
-        <div className="flex flex-col items-center gap-3 text-center">
-          <div className={`inline-flex h-16 w-16 items-center justify-center rounded-full border ${hasAttentionRequired ? 'text-[var(--badge-danger-text)] border-[var(--badge-danger-border)] bg-[var(--badge-danger-bg)]' : 'text-[var(--badge-success-text)] border-[var(--badge-success-border)] bg-[var(--badge-success-bg)]'}`}>
-            {hasAttentionRequired ? <AlertTriangle size={30} /> : <ShieldCheck size={30} />}
+      <GlassCard className="group relative overflow-hidden rounded-2xl border border-[var(--color-accent-border)] p-6 md:p-8">
+        <div className="absolute -right-24 -top-24 h-64 w-64 rounded-full bg-[var(--color-accent)] opacity-[0.04] blur-[80px] transition-opacity duration-700 group-hover:opacity-[0.08]" />
+
+        <p className="accent-text relative z-10 mb-6 text-xs font-bold uppercase tracking-widest">{t('basic.overview')}</p>
+
+        <div className="relative z-10 flex flex-col gap-8 md:flex-row md:items-end md:justify-between">
+          <div className="flex max-w-xl flex-1 flex-col items-start gap-4 text-left">
+            <div className={`inline-flex h-14 w-14 items-center justify-center rounded-xl border shadow-lg ${hasAttentionRequired ? 'text-[var(--badge-danger-text)] border-[var(--badge-danger-border)] bg-[var(--badge-danger-bg)] shadow-[var(--badge-danger-border)]' : 'text-[var(--badge-success-text)] border-[var(--badge-success-border)] bg-[var(--badge-success-bg)] shadow-[var(--badge-success-border)]'}`}>
+              {hasAttentionRequired ? <AlertTriangle size={26} /> : <ShieldCheck size={26} />}
+            </div>
+            <div>
+              <h2 className={`text-3xl font-extrabold tracking-tight md:text-4xl ${hasAttentionRequired ? 'text-[var(--badge-danger-text)]' : 'text-[var(--badge-success-text)]'}`}>
+                {hasAttentionRequired ? t('basic.attentionRequired') : t('basic.systemSecure')}
+              </h2>
+              <p className="text-soft mt-2 text-base font-medium">{report.summary.total} {t('basic.devicesScanned')}</p>
+            </div>
           </div>
-          <h2 className={`text-3xl font-bold ${hasAttentionRequired ? 'text-[var(--badge-danger-text)]' : 'text-[var(--badge-success-text)]'}`}>
-            {hasAttentionRequired ? t('basic.attentionRequired') : t('basic.systemSecure')}
-          </h2>
-          <p className="text-muted">{report.summary.total} {t('basic.devicesScanned')}</p>
-          <div className="flex flex-wrap justify-center gap-2">
-            <StatusBadge label={`${report.summary.compliant} ${t('basic.compliant')}`} tone="success" />
-            <StatusBadge label={`${report.summary.warning} ${t('basic.warning')}`} tone="warning" />
-            <StatusBadge label={`${report.summary.nonCompliant} ${t('basic.nonCompliant')}`} tone="danger" />
+
+          <div className="flex flex-col items-start gap-3 md:items-end">
+            <div className="flex flex-wrap gap-2 md:justify-end">
+              <StatusBadge label={`${report.summary.compliant} ${t('basic.compliant')}`} tone="success" />
+              <StatusBadge label={`${report.summary.warning} ${t('basic.warning')}`} tone="warning" />
+              <StatusBadge label={`${report.summary.nonCompliant} ${t('basic.nonCompliant')}`} tone="danger" />
+            </div>
           </div>
         </div>
       </GlassCard>

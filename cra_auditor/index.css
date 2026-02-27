@@ -6,8 +6,8 @@
 
   --color-bg-main: #020617;
   --color-bg-surface: #0b1120;
-  --color-glass: rgba(15, 23, 42, 0.56);
-  --color-glass-border: rgba(148, 163, 184, 0.22);
+  --color-glass: rgba(15, 23, 42, 0.95);
+  --color-glass-border: rgba(148, 163, 184, 0.4);
 
   --color-cyan: #22d3ee;
   --color-emerald: #34d399;
@@ -34,8 +34,9 @@
   --terminal-bg: rgba(248, 250, 252, 0.94);
   --scan-grid-color: rgba(14, 116, 144, 0.14);
 
-  --glass-bg: rgba(255, 255, 255, 0.75);
+  --glass-bg: #ffffff;
   --glass-border: rgba(148, 163, 184, 0.32);
+  --glass-shadow: 0 12px 32px rgba(15, 23, 42, 0.08), 0 4px 12px rgba(15, 23, 42, 0.04);
 
   --badge-success-bg: rgba(5, 150, 105, 0.16);
   --badge-success-text: #047857;
@@ -80,8 +81,9 @@
   --terminal-bg: rgba(2, 6, 23, 0.9);
   --scan-grid-color: rgba(34, 211, 238, 0.13);
 
-  --glass-bg: rgba(15, 23, 42, 0.56);
+  --glass-bg: #0b1120;
   --glass-border: rgba(148, 163, 184, 0.22);
+  --glass-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4);
 
   --badge-success-bg: rgba(16, 185, 129, 0.14);
   --badge-success-text: #6ee7b7;
@@ -118,9 +120,8 @@ body {
 .glass-panel {
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 12px 38px rgba(15, 23, 42, 0.18);
+  box-shadow: var(--glass-shadow);
+  transform: translateZ(0);
 }
 
 .tech-border {
@@ -146,6 +147,7 @@ body {
 .surface-panel {
   background: var(--bg-surface);
   border-color: var(--border-subtle);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
 .surface-card {
@@ -202,9 +204,12 @@ body {
 }
 
 @keyframes blink {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0;
   }
@@ -418,6 +423,7 @@ body {
     opacity: 0;
     transform: translateY(8px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);

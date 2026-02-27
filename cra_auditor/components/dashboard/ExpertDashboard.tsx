@@ -30,19 +30,23 @@ const ExpertDashboard: React.FC<ExpertDashboardProps> = ({ report, config, logs 
 
   return (
     <div className="space-y-5">
-      <GlassCard className="rounded-2xl border border-[var(--color-accent-border)] p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="accent-text text-xs font-semibold uppercase tracking-widest">{t('expert.overview')}</p>
-          <p className="text-muted text-xs">{t('expert.subtitle')}</p>
+      <GlassCard className="group relative overflow-hidden rounded-2xl border border-[var(--color-accent-border)] p-6 md:p-8">
+        <div className="absolute -right-20 -top-24 h-72 w-72 rounded-full bg-[var(--color-accent)] opacity-[0.05] blur-[90px] transition-opacity duration-700 group-hover:opacity-[0.09]" />
+
+        <div className="relative z-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="accent-text mb-2 text-xs font-bold uppercase tracking-widest">{t('expert.overview')}</p>
+            <h2 className="text-3xl font-extrabold tracking-tight text-main md:text-4xl">Security Operations</h2>
+            <p className="text-soft mt-2 text-sm font-medium">{t('expert.subtitle')}</p>
+          </div>
+          <div className="flex flex-col items-start md:items-end">
+            <TechButton variant="secondary" onClick={handleExportJson} className="border-[var(--color-accent-border)] hover:bg-[var(--color-accent-soft)]">
+              <Download size={14} />
+              {t('expert.exportJson')}
+            </TechButton>
+          </div>
         </div>
       </GlassCard>
-
-      <div className="flex justify-end">
-        <TechButton variant="secondary" onClick={handleExportJson}>
-          <Download size={14} />
-          {t('expert.exportJson')}
-        </TechButton>
-      </div>
 
       <Dashboard report={report} geminiEnabled={config?.gemini_enabled} nvdEnabled={config?.nvd_enabled} />
 

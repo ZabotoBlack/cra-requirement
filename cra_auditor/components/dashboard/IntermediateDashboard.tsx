@@ -28,9 +28,14 @@ const IntermediateDashboard: React.FC<IntermediateDashboardProps> = ({ report, c
 
   return (
     <div className="space-y-5">
-      <GlassCard className="rounded-2xl border border-[var(--color-accent-border)] p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="accent-text text-xs font-semibold uppercase tracking-widest">{t('intermediate.overview')}</p>
+      <GlassCard className="group relative overflow-hidden rounded-2xl border border-[var(--color-accent-border)] p-6 md:p-8">
+        <div className="absolute -left-20 -top-24 h-64 w-64 rounded-full bg-[var(--color-accent)] opacity-[0.04] blur-[80px] transition-opacity duration-700 group-hover:opacity-[0.08]" />
+
+        <div className="relative z-10 flex flex-col items-start gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="accent-text mb-2 text-xs font-bold uppercase tracking-widest">{t('intermediate.overview')}</p>
+            <h2 className="text-2xl font-bold tracking-tight text-main md:text-3xl">Network Analysis</h2>
+          </div>
           <StatusBadge label={t('intermediate.standardVisibility')} tone="info" />
         </div>
       </GlassCard>

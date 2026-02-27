@@ -113,7 +113,7 @@ type ThemeMode = 'light' | 'dark';
 const MODE_ACCENT: Record<UserMode, string> = {
   basic: 'var(--color-emerald)',
   intermediate: 'var(--color-cyan)',
-  expert: 'var(--color-violet)'
+  expert: 'var(--color-crimson)'
 };
 
 const AppShell: React.FC = () => {
