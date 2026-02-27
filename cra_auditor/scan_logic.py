@@ -262,6 +262,15 @@ class CRAScanner:
 
         # Reuse a single requests.Session for connection pooling (performance)
         self.session = requests.Session()
+        
+        # Add retry logic for transient network failures
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+        retries = Retry(total=2, backoff_factor=0.5, status_forcelist=[500, 502, 503, 504])
+        adapter = HTTPAdapter(max_retries=retries)
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
+        
         self.session.verify = self.verify_ssl
 
     def _resolve_verify_ssl(self):
@@ -1503,8 +1512,9 @@ class CRAScanner:
         redirected_ports = []
 
         valid_redirect_status_codes = {301, 302, 303, 307, 308}
+        import concurrent.futures
 
-        for port in checked_ports:
+        def _check_redirect(port):
             url = f"http://{ip}:{port}/"
             try:
                 response = self.session.get(url, timeout=2, allow_redirects=False)
@@ -1512,17 +1522,30 @@ class CRAScanner:
                 location = (response.headers.get('Location') or '').strip()
 
                 if status_code in valid_redirect_status_codes and location.lower().startswith('https://'):
-                    redirected_ports.append(port)
+                    return port, 'redirected'
                 elif status_code == 200:
-                    failed_ports.append(port)
+                    return port, 'failed'
                 elif 300 <= status_code < 400:
-                    failed_ports.append(port)
+                    return port, 'failed'
                 else:
-                    inconclusive_ports.append(port)
+                    return port, 'inconclusive'
             except requests.RequestException:
-                inconclusive_ports.append(port)
+                return port, 'inconclusive'
             except Exception:
-                inconclusive_ports.append(port)
+                return port, 'inconclusive'
+                
+        if checked_ports:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, len(checked_ports))) as executor:
+                futures = {executor.submit(_check_redirect, port): port for port in checked_ports}
+                for future in concurrent.futures.as_completed(futures):
+                    port, status = future.result()
+                    if status == 'redirected':
+                        redirected_ports.append(port)
+                    elif status == 'failed':
+                        failed_ports.append(port)
+                    else:
+                        inconclusive_ports.append(port)
+
 
         if failed_ports:
             details = (
@@ -1828,31 +1851,44 @@ class CRAScanner:
             'spdxVersion': 'SPDX',        # SPDX JSON key (alt casing)
         }
         
+        import concurrent.futures
+
+        def _check_sbom(url):
+            try:
+                r = self.session.get(url, timeout=2)
+                if r.status_code == 200 and len(r.text) > 50:
+                    content = r.text[:2000]
+                    for signature, fmt in sbom_signatures.items():
+                        if signature in content:
+                            return url, fmt
+                    
+                    ct = r.headers.get('Content-Type', '').lower()
+                    if 'cyclonedx' in ct:
+                        return url, 'CycloneDX'
+                    elif 'spdx' in ct:
+                        return url, 'SPDX'
+                    
+                    if r.headers.get('Content-Type', '').startswith(('application/json', 'application/xml', 'text/xml')):
+                        return url, 'Unknown Format'
+                return url, None
+            except Exception as e:
+                logger.debug("SBOM probe failed for %s: %s", url, e)
+                return url, None
+        
+        urls_to_check = []
         for port in http_ports:
             scheme = 'https' if port in (443, 8443) else 'http'
             for path in sbom_paths:
                 url = f"{scheme}://{ip}:{port}{path}"
-                try:
-                    r = self.session.get(url, timeout=2)
-                    if r.status_code == 200 and len(r.text) > 50:
-                        # Check content for known SBOM format signatures
-                        content = r.text[:2000]  # Only check first 2KB
-                        for signature, fmt in sbom_signatures.items():
-                            if signature in content:
-                                return True, fmt
-                        
-                        # Check Content-Type header
-                        ct = r.headers.get('Content-Type', '').lower()
-                        if 'cyclonedx' in ct:
-                            return True, 'CycloneDX'
-                        elif 'spdx' in ct:
-                            return True, 'SPDX'
-                        
-                        # Generic: looks like a valid document but unknown format
-                        if r.headers.get('Content-Type', '').startswith(('application/json', 'application/xml', 'text/xml')):
-                            return True, 'Unknown Format'
-                except Exception as e:
-                    logger.debug("SBOM probe failed for %s: %s", url, e)
+                urls_to_check.append(url)
+
+        if urls_to_check:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(20, len(urls_to_check))) as executor:
+                futures = [executor.submit(_check_sbom, url) for url in urls_to_check]
+                for future in concurrent.futures.as_completed(futures):
+                    url, result_fmt = future.result()
+                    if result_fmt:
+                        return True, result_fmt
         
         return False, None
 
@@ -1952,16 +1988,17 @@ class CRAScanner:
         Returns (found: bool, fields: dict|None)
         Parses RFC 9116 fields: Contact, Expires, Encryption, Policy, Preferred-Languages, Canonical, Hiring
         """
-        for port in http_ports:
+        import concurrent.futures
+
+        def _check_security_txt(port):
             scheme = 'https' if port in (443, 8443) else 'http'
             url = f"{scheme}://{ip}:{port}/.well-known/security.txt"
             try:
                 r = self.session.get(url, timeout=2)
                 if r.status_code == 200 and len(r.text) > 10:
                     content = r.text
-                    # Validate it looks like a security.txt (must have Contact field per RFC 9116)
                     if 'contact:' not in content.lower():
-                        continue
+                        return url, None
 
                     fields = {
                         "contact": None,
@@ -1975,27 +2012,34 @@ class CRAScanner:
                         line = line.strip()
                         if line.startswith('#') or not line:
                             continue
-                        # RFC 9116 format: "Field: Value" — use first colon+space as delimiter
                         match = re.match(r'^([A-Za-z-]+):\s*(.*)', line)
                         if match:
                             key_lower = match.group(1).lower()
-                            val = match.group(2).strip()
-                            if key_lower == 'contact':
-                                fields['contact'] = val
-                            elif key_lower == 'expires':
-                                fields['expires'] = val
-                            elif key_lower == 'encryption':
-                                fields['encryption'] = val
-                            elif key_lower == 'policy':
-                                fields['policy'] = val
-                            elif key_lower == 'preferred-languages':
-                                fields['preferred_languages'] = val
+                            value = match.group(2).strip()
+                            if key_lower == "contact" and not fields["contact"]:
+                                fields["contact"] = value
+                            elif key_lower == "expires":
+                                fields["expires"] = value
+                            elif key_lower == "encryption":
+                                fields["encryption"] = value
+                            elif key_lower == "policy" and not fields["policy"]:
+                                fields["policy"] = value
+                            elif key_lower == "preferred-languages":
+                                fields["preferred_languages"] = value
 
-                    # Must have Contact to be valid
-                    if fields['contact']:
-                        return True, fields
+                    if fields["contact"]:
+                        return url, fields
             except Exception as e:
                 logger.debug("security.txt probe failed for %s: %s", url, e)
+            return url, None
+
+        if http_ports:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, len(http_ports))) as executor:
+                futures = [executor.submit(_check_security_txt, port) for port in http_ports]
+                for future in concurrent.futures.as_completed(futures):
+                    url, fields = future.result()
+                    if fields:
+                        return True, fields
 
         return False, None
 
@@ -2119,7 +2163,9 @@ class CRAScanner:
                 root_response_cache[cache_key] = None
                 return None
         
-        for port in http_ports:
+        import concurrent.futures
+
+        def _probe_firmware(port):
             scheme = 'https' if port in (443, 8443) else 'http'
             base_url = f"{scheme}://{ip}:{port}"
             cache_key = (scheme, int(port))
@@ -2272,6 +2318,15 @@ class CRAScanner:
             except Exception as e:
                 logger.debug("Firmware endpoint probe failed for %s: %s", base_url, e)
         
+            return None, None
+            
+        if http_ports:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, len(http_ports))) as executor:
+                futures = [executor.submit(_probe_firmware, port) for port in http_ports]
+                for future in concurrent.futures.as_completed(futures):
+                    fw, src = future.result()
+                    if fw:
+                        return fw, src
         return None, None
 
 # For standalone testing

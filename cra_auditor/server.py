@@ -497,6 +497,8 @@ def init_db():
     """Initialize the SQLite database."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    c.execute('PRAGMA journal_mode=WAL;')
+    c.execute('PRAGMA synchronous=NORMAL;')
     c.execute('''
         CREATE TABLE IF NOT EXISTS scan_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
