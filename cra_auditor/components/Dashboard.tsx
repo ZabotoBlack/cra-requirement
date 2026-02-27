@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Info, ShieldCheck, ShieldQuestion, Sparkles } from 'lucide-react';
 import { ComplianceStatus, ScanReport } from '../types';
 import { useLanguage } from '../LanguageContext';
+import type { TranslationKey } from '../translations';
 import GlassCard from './ui/GlassCard';
 import StatusBadge from './ui/StatusBadge';
 
@@ -15,7 +16,7 @@ type BackendCheckKey =
   | 'securityTxt'
   | 'securityLogging';
 
-const CRA_CHECK_MAPPING: Array<{ id: BackendCheckKey; labelKey: any; requirementKey: any }> = [
+const CRA_CHECK_MAPPING: Array<{ id: BackendCheckKey; labelKey: TranslationKey; requirementKey: TranslationKey }> = [
   {
     id: 'secureByDefault',
     labelKey: 'deviceList.check.secureDefaults',
