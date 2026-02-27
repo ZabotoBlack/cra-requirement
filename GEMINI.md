@@ -46,4 +46,4 @@ The Add-on is built and executed as a Docker container within Home Assistant:
 - **Scan Profiles**: Scanning is controlled by profiles (`discovery`, `standard`, `deep`) and granular feature flags passed via the `/api/scan` endpoint.
 - **Database & State**: Scan state (running status, progress, aborts) and history are stored in `scans.db`. The backend uses an atomic lock pattern in SQLite to prevent concurrent scans.
 - **Logging**: The system uses a centralized log buffer exposed via `/api/logs` for the Expert dashboard. Standard logging outputs are controlled via the `log_level` setting in the Home Assistant add-on configuration.
-- **Testing**: Python tests are available in the `cra_auditor/tests/` directory. (e.g., `pytest tests/`).
+- **Testing**: Python tests are available in the `cra_auditor/tests/` directory. (e.g., `pytest cra_auditor/tests/`).

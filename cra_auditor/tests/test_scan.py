@@ -1,15 +1,18 @@
 import sys
+import os
 import logging
-logging.basicConfig(level=logging.DEBUG)
+
+# Ensure we can import scan_logic from parent directory
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scan_logic import CRAScanner
-import nmap
 
 class MockNmap:
     def scan(self, hosts, arguments):
         return {}
     def all_hosts(self):
         return ['192.168.1.100']
+    
     def __getitem__(self, key):
         if key == '192.168.1.100':
             class Host:
@@ -28,12 +31,12 @@ class MockNmap:
             return Host()
         return {}
 
-scanner = CRAScanner()
-scanner.nm = MockNmap()
+def test_scan_subnet():
+    """Verify that the discovery scan returns the expected mocked results."""
+    scanner = CRAScanner()
+    scanner.nm = MockNmap()
 
-try:
     res = scanner.scan_subnet("192.168.1.0/24", {"profile": "discovery"})
-    print("SUCCESS", len(res))
-except Exception as e:
-    import traceback
-    traceback.print_exc()
+    
+    assert isinstance(res, list), "Result should be a list of devices"
+    assert len(res) > 0, "Expected at least one device in the result"
