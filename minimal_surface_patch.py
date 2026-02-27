@@ -63,19 +63,22 @@ replacement = target + """
             if port is not None:
                 normalized_ports.append(port)
 
+        unique_ports = set(normalized_ports)
+        other_ports = unique_ports - {5353}
+
         risky_ports_found = []
         
         # Check for UPnP (5000, 1900)
-        if 5000 in normalized_ports or 1900 in normalized_ports:
+        if 5000 in unique_ports or 1900 in unique_ports:
             risky_ports_found.append('UPnP (port 5000/1900)')
             
         # Check for SMB (139, 445)
-        if 139 in normalized_ports or 445 in normalized_ports:
+        if 139 in unique_ports or 445 in unique_ports:
             risky_ports_found.append('SMB (port 139/445)')
             
         # Check for mDNS (5353) combined with excessive attack surface
-        if 5353 in normalized_ports and len(normalized_ports) > 5:
-            risky_ports_found.append('mDNS (port 5353) alongside > 5 other ports')
+        if 5353 in unique_ports and len(other_ports) >= 5:
+            risky_ports_found.append('mDNS (port 5353) alongside >= 5 other ports')
             
         if risky_ports_found:
             return {

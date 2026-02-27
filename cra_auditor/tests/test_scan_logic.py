@@ -466,7 +466,7 @@ class TestCRAScanner(unittest.TestCase):
         self.assertTrue(result['passed'])
 
     def test_check_minimal_attack_surface_fails_mdns_with_high_attack_surface(self):
-        """mDNS on port 5353 should flag if > 5 open ports are present."""
+        """mDNS on port 5353 should flag if >= 5 other open ports are present."""
         device = {
             "ip": "192.168.1.10",
             "openPorts": [
