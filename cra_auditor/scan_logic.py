@@ -568,11 +568,11 @@ class CRAScanner:
 
             target_spec = " ".join(hosts_to_scan)
 
-            nmap_args = "-Pn"  # Treat as online
+            nmap_args = "-Pn -T4 --max-retries 1 --host-timeout 10m"
             if features.get('service_version'):
-                nmap_args += " -sV"
+                nmap_args += " -sV --version-light"
             if features.get('os_detection'):
-                nmap_args += " -O"
+                nmap_args += " -O --osscan-limit --max-os-tries 1"
             if features.get('netbios_info'):
                 nmap_args += " --script=nbstat"
 

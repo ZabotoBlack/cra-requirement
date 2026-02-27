@@ -70,7 +70,12 @@ class TestCRAScanner(unittest.TestCase):
         # Inspect the detailed scan call
         args, kwargs = calls[1]
         self.assertEqual(kwargs['hosts'], host_ip)
-        self.assertIn("-sV -O", kwargs['arguments'])
+        self.assertIn("-sV", kwargs['arguments'])
+        self.assertIn("--version-light", kwargs['arguments'])
+        self.assertIn("-O", kwargs['arguments'])
+        self.assertIn("--osscan-limit", kwargs['arguments'])
+        self.assertIn("-T4", kwargs['arguments'])
+        self.assertIn("--host-timeout 10m", kwargs['arguments'])
         self.assertIn("--script=nbstat", kwargs['arguments'])
 
     def test_scan_arguments_vendor_specific(self):
