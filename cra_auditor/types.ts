@@ -148,6 +148,10 @@ export interface Device {
       syslog_probe_state: string;
       logging_endpoints: string[];
     };
+    minimalAttackSurface: {
+      passed: boolean;
+      details: string;
+    };
   }>;
   lastScanned: string;
   osMatch: string;

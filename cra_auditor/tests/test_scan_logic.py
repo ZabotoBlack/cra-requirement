@@ -427,6 +427,57 @@ class TestCRAScanner(unittest.TestCase):
         self.assertEqual(result['score'], 10)
         self.assertEqual(result['openPortsCount'], 10)
 
+    def test_check_minimal_attack_surface_passes_normal(self):
+        """Minimal attack surface shouldn't flag a normal device."""
+        device = {
+            "ip": "192.168.1.10",
+            "openPorts": [{"port": 80, "service": "http"}, {"port": 443, "service": "https"}]
+        }
+        result = self.scanner.check_minimal_attack_surface(device)
+        self.assertTrue(result['passed'])
+
+    def test_check_minimal_attack_surface_fails_smb(self):
+        """Minimal attack surface should flag SMBv1 (port 445)."""
+        device = {
+            "ip": "192.168.1.10",
+            "openPorts": [{"port": 445, "service": "microsoft-ds"}]
+        }
+        result = self.scanner.check_minimal_attack_surface(device)
+        self.assertFalse(result['passed'])
+        self.assertIn("SMB", result['details'])
+
+    def test_check_minimal_attack_surface_fails_upnp(self):
+        """Minimal attack surface should flag UPnP (port 1900)."""
+        device = {
+            "ip": "192.168.1.10",
+            "openPorts": [{"port": 1900, "service": "upnp"}]
+        }
+        result = self.scanner.check_minimal_attack_surface(device)
+        self.assertFalse(result['passed'])
+        self.assertIn("UPnP", result['details'])
+
+    def test_check_minimal_attack_surface_passes_mdns_alone(self):
+        """mDNS on port 5353 alone shouldn't flag unless attack surface is large."""
+        device = {
+            "ip": "192.168.1.10",
+            "openPorts": [{"port": 80, "service": "http"}, {"port": 5353, "service": "mdns"}]
+        }
+        result = self.scanner.check_minimal_attack_surface(device)
+        self.assertTrue(result['passed'])
+
+    def test_check_minimal_attack_surface_fails_mdns_with_high_attack_surface(self):
+        """mDNS on port 5353 should flag if > 5 open ports are present."""
+        device = {
+            "ip": "192.168.1.10",
+            "openPorts": [
+                {"port": 22}, {"port": 80}, {"port": 443}, {"port": 8080}, 
+                {"port": 8443}, {"port": 1883}, {"port": 5353}
+            ]
+        }
+        result = self.scanner.check_minimal_attack_surface(device)
+        self.assertFalse(result['passed'])
+        self.assertIn("mDNS", result['details'])
+
     def test_check_https_redirect_passes_on_real_3xx_redirects(self):
         """HTTP management port should pass for real redirect status codes to HTTPS."""
         device = {

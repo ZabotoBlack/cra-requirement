@@ -127,6 +127,7 @@ const DeviceDossier: React.FC<{ device: Device; userMode?: UserMode }> = ({ devi
     { key: t('deviceList.check.firmware'), passed: device.checks?.firmwareTracking?.passed, details: device.checks?.firmwareTracking?.details, icon: <FileText size={14} />, requirement: t('dashboard.cra.req.firmware') },
     { key: t('deviceList.check.secTxt'), passed: device.checks?.securityTxt?.passed, details: device.checks?.securityTxt?.details, icon: <FileText size={14} />, requirement: t('dashboard.cra.req.securityTxt') },
     { key: t('deviceList.check.securityLogging'), passed: device.checks?.securityLogging?.passed, details: device.checks?.securityLogging?.details, icon: <Network size={14} />, requirement: t('dashboard.cra.req.securityLogging') },
+    { key: t('deviceList.check.minimalAttackSurface'), passed: device.checks?.minimalAttackSurface?.passed, details: device.checks?.minimalAttackSurface?.details, icon: <Router size={14} />, requirement: t('dashboard.cra.req.minimalAttackSurface') },
   ];
 
   const handleAnalyze = async () => {

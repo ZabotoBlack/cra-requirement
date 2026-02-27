@@ -14,7 +14,8 @@ type BackendCheckKey =
   | 'sbomCompliance'
   | 'firmwareTracking'
   | 'securityTxt'
-  | 'securityLogging';
+  | 'securityLogging'
+  | 'minimalAttackSurface';
 
 const CRA_CHECK_MAPPING: Array<{ id: BackendCheckKey; labelKey: TranslationKey; requirementKey: TranslationKey }> = [
   {
@@ -56,6 +57,11 @@ const CRA_CHECK_MAPPING: Array<{ id: BackendCheckKey; labelKey: TranslationKey; 
     id: 'securityLogging',
     labelKey: 'deviceList.check.securityLogging',
     requirementKey: 'dashboard.cra.req.securityLogging'
+  },
+  {
+    id: 'minimalAttackSurface',
+    labelKey: 'deviceList.check.minimalAttackSurface',
+    requirementKey: 'dashboard.cra.req.minimalAttackSurface'
   }
 ];
 

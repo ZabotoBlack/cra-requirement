@@ -3,5 +3,6 @@
 .venv/
 .vscode/
 cra_auditor/__pycache__/
+cra_auditor/venv/
 Claude.md
 GEMINI.md

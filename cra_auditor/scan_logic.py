@@ -688,9 +688,14 @@ class CRAScanner:
                     sep = " " if sbd_result['details'] else ""
                     sbd_result['details'] += sep + "; ".join(vendor_warnings)
                     sbd_result['passed'] = False
+                    
+                mas_result = self.check_minimal_attack_surface(dev)
 
                 status = "Compliant"
                 if not sbd_result['passed'] or not https_result['passed'] or not vuln_result['passed'] or (not fw_result['passed'] and fw_result.get('version_cves')):
+                    status = "Non-Compliant"
+                elif not mas_result['passed']:
+                    # Minimal Attack Surface failures are grounds for strict non-compliance under CRA requirements
                     status = "Non-Compliant"
                 elif not conf_result['passed'] or not sbom_result['passed'] or not fw_result['passed'] or not sec_txt_result['passed'] or not sec_log_result['passed']:
                     status = "Warning"
@@ -701,6 +706,7 @@ class CRAScanner:
                 _log_scan_info(
                     f"[SCAN]     Secure={_p(sbd_result)}  Confid={_p(conf_result)}  "
                     f"AttackSurface={attack_surface['rating']}({attack_surface['openPortsCount']})  "
+                    f"MinSurface={_p(mas_result)}  "
                     f"HTTPS={_p(https_result)}  CVE={_p(vuln_result)}  SBOM={_p(sbom_result)}  "
                     f"FW={_p(fw_result)}  SecTxt={_p(sec_txt_result)}  SecLog={_p(sec_log_result)}  => {status}"
                 )
@@ -716,7 +722,8 @@ class CRAScanner:
                         "sbomCompliance": sbom_result,
                         "firmwareTracking": fw_result,
                         "securityTxt": sec_txt_result,
-                        "securityLogging": sec_log_result
+                        "securityLogging": sec_log_result,
+                        "minimalAttackSurface": mas_result
                     },
                     "lastScanned": scan_timestamp
                 })
@@ -1403,6 +1410,46 @@ class CRAScanner:
             "rating": rating,
             "openPortsCount": open_ports_count,
             "details": details
+        }
+
+    def check_minimal_attack_surface(self, device):
+        """Check if the device exposes a minimal attack surface per CRA Annex I §1(3)(e).
+
+        Fails if the device exposes risky legacy services (UPnP, SMB) or discovery 
+        services (mDNS) alongside an excessive number of other open ports.
+        """
+        open_ports = device.get('openPorts', []) or []
+        normalized_ports = []
+        for p in open_ports:
+            if not isinstance(p, dict):
+                continue
+            port = self._normalize_port(p.get('port'))
+            if port is not None:
+                normalized_ports.append(port)
+
+        risky_ports_found = []
+        
+        # Check for UPnP (5000, 1900)
+        if 5000 in normalized_ports or 1900 in normalized_ports:
+            risky_ports_found.append('UPnP (port 5000/1900)')
+            
+        # Check for SMB (139, 445)
+        if 139 in normalized_ports or 445 in normalized_ports:
+            risky_ports_found.append('SMB (port 139/445)')
+            
+        # Check for mDNS (5353) combined with excessive attack surface
+        if 5353 in normalized_ports and len(normalized_ports) > 5:
+            risky_ports_found.append('mDNS (port 5353) alongside > 5 other ports')
+            
+        if risky_ports_found:
+            return {
+                'passed': False,
+                'details': f"Excessive or risky interfaces exposed: {', '.join(risky_ports_found)}. Minimise attack surface."
+            }
+            
+        return {
+            'passed': True,
+            'details': "No excessively risky interfaces (UPnP, SMB) or unnecessarily exposed metadata services detected."
         }
 
     def check_https_redirect(self, device):
