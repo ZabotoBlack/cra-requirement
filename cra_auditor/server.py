@@ -715,7 +715,7 @@ def finalize_scan_state(outcome: str, end_reason: str | None = None) -> None:
             WHERE id = 1
             ''',
             (
-                end_reason,
+                end_reason if outcome.lower() != "completed" else None,
                 time.time(),
                 str(outcome or "failed").lower(),
                 end_reason,
