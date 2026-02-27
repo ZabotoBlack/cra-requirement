@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Bot, ChevronDown, ChevronUp, Cpu, FileText, Info, Lock, Network, Router, Shield } from 'lucide-react';
-import { ComplianceStatus, Device } from '../types';
+import { ComplianceStatus, Device, UserMode } from '../types';
 import { useLanguage } from '../LanguageContext';
 import { getRemediationAdvice } from '../services/geminiService';
 import { localizeStatus } from '../utils/status';
@@ -13,6 +13,7 @@ type DossierTab = 'checks' | 'raw' | 'ai';
 
 interface DeviceListProps {
   devices: Device[];
+  userMode?: UserMode;
 }
 
 /** Return status dot color classes aligned with compliance severity. */
@@ -99,7 +100,7 @@ const CheckHeader: React.FC<{ label: string; requirement: string }> = ({ label, 
   );
 };
 
-const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
+const DeviceDossier: React.FC<{ device: Device; userMode?: UserMode }> = ({ device, userMode = 'intermediate' }) => {
   const { t, language } = useLanguage();
   const [tab, setTab] = useState<DossierTab>('checks');
   const [loadingAdvice, setLoadingAdvice] = useState(false);
@@ -168,9 +169,9 @@ const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
         </div>
         <div className="flex flex-wrap gap-2">
           {tabButton('checks', t('deviceList.tab.securityChecks'))}
-          {tabButton('raw', t('deviceList.tab.rawData'))}
-          {tabButton('ai', t('deviceList.tab.aiRemediation'))}
-          {device.status !== ComplianceStatus.COMPLIANT && (
+          {userMode === 'expert' && tabButton('raw', t('deviceList.tab.rawData'))}
+          {userMode === 'expert' && tabButton('ai', t('deviceList.tab.aiRemediation'))}
+          {userMode === 'expert' && device.status !== ComplianceStatus.COMPLIANT && (
             <TechButton variant="primary" className="px-3 py-1.5 text-xs" onClick={handleAnalyze} disabled={loadingAdvice}>
               <Bot size={14} />
               {loadingAdvice ? t('deviceList.actions.analyzing') : t('deviceList.actions.analyze')}
@@ -219,9 +220,9 @@ const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
       )}
 
       {tab === 'ai' && (
-        <div className="rounded-xl border border-violet-400/30 bg-violet-500/10 p-3">
+        <div className="rounded-xl border border-cyan-400/30 bg-cyan-500/10 p-3">
           {advice ? (
-            <p className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-violet-100">{advice}</p>
+            <p className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-cyan-100">{advice}</p>
           ) : (
             <p className="text-sm text-slate-300">{t('deviceList.ai.empty')}</p>
           )}
@@ -231,7 +232,7 @@ const DeviceDossier: React.FC<{ device: Device }> = ({ device }) => {
   );
 };
 
-const DeviceRow: React.FC<{ device: Device; rowId: string }> = ({ device, rowId }) => {
+const DeviceRow: React.FC<{ device: Device; rowId: string; userMode?: UserMode }> = ({ device, rowId, userMode }) => {
   const { t } = useLanguage();
   const [expanded, setExpanded] = useState(false);
 
@@ -267,30 +268,6 @@ const DeviceRow: React.FC<{ device: Device; rowId: string }> = ({ device, rowId 
             {localizeStatus(device.status, t)}
           </div>
         </td>
-        <td className="px-2 py-3 border-l border-slate-700/50">
-          <StatusIcon passed={device.checks?.secureByDefault?.passed} details={device.checks?.secureByDefault?.details} />
-        </td>
-        <td className="px-2 py-3 border-l border-slate-700/50">
-          <StatusIcon passed={device.checks?.dataConfidentiality?.passed} details={device.checks?.dataConfidentiality?.details} />
-        </td>
-        <td className="px-2 py-3 border-l border-slate-700/50">
-          <StatusIcon passed={device.checks?.httpsOnlyManagement?.passed} details={device.checks?.httpsOnlyManagement?.details} />
-        </td>
-        <td className="px-2 py-3 border-l border-slate-700/50">
-          <StatusIcon passed={device.checks?.vulnerabilities?.passed} details={device.checks?.vulnerabilities?.details} />
-        </td>
-        <td className="px-2 py-3 border-l border-slate-700/50">
-          <StatusIcon passed={device.checks?.sbomCompliance?.passed} details={device.checks?.sbomCompliance?.details} />
-        </td>
-        <td className="px-2 py-3 border-l border-slate-700/50">
-          <StatusIcon passed={device.checks?.firmwareTracking?.passed} details={device.checks?.firmwareTracking?.details} />
-        </td>
-        <td className="px-2 py-3 border-l border-slate-700/50">
-          <StatusIcon passed={device.checks?.securityTxt?.passed} details={device.checks?.securityTxt?.details} />
-        </td>
-        <td className="px-2 py-3 border-l border-slate-700/50">
-          <StatusIcon passed={device.checks?.securityLogging?.passed} details={device.checks?.securityLogging?.details} />
-        </td>
         <td className="px-4 py-3 text-right text-slate-400 border-l border-slate-700/50">
           {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
         </td>
@@ -298,8 +275,8 @@ const DeviceRow: React.FC<{ device: Device; rowId: string }> = ({ device, rowId 
 
       {expanded && (
         <tr id={rowId}>
-          <td colSpan={13} className="px-4 py-4 bg-slate-900/20">
-            <DeviceDossier device={device} />
+          <td colSpan={5} className="px-4 py-4 bg-slate-900/20">
+            <DeviceDossier device={device} userMode={userMode} />
           </td>
         </tr>
       )}
@@ -307,7 +284,7 @@ const DeviceRow: React.FC<{ device: Device; rowId: string }> = ({ device, rowId 
   );
 };
 
-const DeviceList: React.FC<DeviceListProps> = ({ devices }) => {
+const DeviceList: React.FC<DeviceListProps> = ({ devices, userMode }) => {
   const { t } = useLanguage();
   const [filterText, setFilterText] = useState('');
   const [sortConfig, setSortConfig] = useState<{ key: keyof Device; direction: 'asc' | 'desc' } | null>(null);
@@ -390,40 +367,16 @@ const DeviceList: React.FC<DeviceListProps> = ({ devices }) => {
                 <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('ip')}>{t('deviceList.col.ipMac')} {sortIcon('ip')}</th>
                 <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('vendor')}>{t('deviceList.col.vendor')} {sortIcon('vendor')}</th>
                 <th className="px-4 py-3 cursor-pointer whitespace-nowrap" onClick={() => handleSort('status')}>{t('deviceList.col.status')} {sortIcon('status')}</th>
-                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.secureDefaults')}>
-                  <CheckHeader label={t('deviceList.col.defaults')} requirement={t('dashboard.cra.req.secureDefaults')} />
-                </th>
-                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.encryption')}>
-                  <CheckHeader label={t('deviceList.col.encryption')} requirement={t('dashboard.cra.req.encryption')} />
-                </th>
-                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.httpsOnly')}>
-                  <CheckHeader label={t('deviceList.col.https')} requirement={t('dashboard.cra.req.httpsOnly')} />
-                </th>
-                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.vulnerabilities')}>
-                  <CheckHeader label={t('deviceList.col.vulns')} requirement={t('dashboard.cra.req.vulnerabilities')} />
-                </th>
-                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.sbom')}>
-                  <CheckHeader label={t('deviceList.col.sbom')} requirement={t('dashboard.cra.req.sbom')} />
-                </th>
-                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.firmware')}>
-                  <CheckHeader label={t('deviceList.col.firmware')} requirement={t('dashboard.cra.req.firmware')} />
-                </th>
-                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.secTxt')}>
-                  <CheckHeader label={t('deviceList.col.secTxt')} requirement={t('dashboard.cra.req.securityTxt')} />
-                </th>
-                <th className="px-2 py-3 text-center border-l border-slate-700/50 whitespace-nowrap" title={t('deviceList.check.securityLogging')}>
-                  <CheckHeader label={t('deviceList.col.logging')} requirement={t('dashboard.cra.req.securityLogging')} />
-                </th>
                 <th className="px-4 py-3 border-l border-slate-700/50" />
               </tr>
             </thead>
             <tbody>
               {sortedDevices.map((device, idx) => (
-                <DeviceRow key={`${device.mac}-${idx}`} device={device} rowId={`device-${idx}`} />
+                <DeviceRow key={`${device.mac}-${idx}`} device={device} rowId={`device-${idx}`} userMode={userMode} />
               ))}
               {sortedDevices.length === 0 && (
                 <tr>
-                  <td colSpan={13} className="px-6 py-14 text-center text-sm text-slate-500">
+                  <td colSpan={5} className="px-6 py-14 text-center text-sm text-slate-500">
                     {devices.length === 0 ? t('deviceList.empty.noDevices') : t('deviceList.empty.noMatch')}
                   </td>
                 </tr>

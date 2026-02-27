@@ -53,7 +53,7 @@ const ExpertDashboard: React.FC<ExpertDashboardProps> = ({ report, config, logs 
             {showDevices ? t('expert.collapseDevices') : t('expert.expandDevices')}
           </TechButton>
         </div>
-        {showDevices && <div className="mt-4"><DeviceList devices={report.devices} /></div>}
+        {showDevices && <div className="mt-4"><DeviceList devices={report.devices} userMode="expert" /></div>}
       </GlassCard>
 
       <GlassCard className="rounded-2xl p-5">

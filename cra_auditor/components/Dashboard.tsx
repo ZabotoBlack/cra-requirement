@@ -15,7 +15,7 @@ type BackendCheckKey =
   | 'securityTxt'
   | 'securityLogging';
 
-const CRA_CHECK_MAPPING: Array<{ id: BackendCheckKey; labelKey: string; requirementKey: string }> = [
+const CRA_CHECK_MAPPING: Array<{ id: BackendCheckKey; labelKey: any; requirementKey: any }> = [
   {
     id: 'secureByDefault',
     labelKey: 'deviceList.check.secureDefaults',
