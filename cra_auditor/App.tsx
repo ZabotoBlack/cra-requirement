@@ -728,7 +728,7 @@ const AppShell: React.FC = () => {
                 {view === 'dashboard' && report && userMode === 'basic' && <BasicDashboard report={report} />}
                 {view === 'dashboard' && report && userMode === 'intermediate' && <IntermediateDashboard report={report} config={config} />}
                 {view === 'dashboard' && report && userMode === 'expert' && <ExpertDashboard report={report} config={config} logs={logs} />}
-                {view === 'devices' && report && <DeviceList devices={report.devices} />}
+                {view === 'devices' && report && <DeviceList devices={report.devices} userMode={userMode} />}
                 {view === 'history' && <HistoryView onViewReport={handleViewReport} />}
 
                 {!report && view !== 'history' && !scanning && (
