@@ -263,10 +263,10 @@ class CRAScanner:
         # Reuse a single requests.Session for connection pooling (performance)
         self.session = requests.Session()
         
-        # Add retry logic for transient network failures
+        # Add retry logic for transient network failures (disabled for connect/read to prevent scan hangs on offline IPs)
         from requests.adapters import HTTPAdapter
         from urllib3.util.retry import Retry
-        retries = Retry(total=2, backoff_factor=0.5, status_forcelist=[500, 502, 503, 504])
+        retries = Retry(total=2, connect=False, read=False, backoff_factor=0.5, status_forcelist=[500, 502, 503, 504])
         adapter = HTTPAdapter(max_retries=retries)
         self.session.mount('http://', adapter)
         self.session.mount('https://', adapter)
@@ -1271,16 +1271,24 @@ class CRAScanner:
     def _check_http_auth(self, ip, port):
         """Check for unauthenticated access to standard endpoints."""
         endpoints = ['/', '/status', '/config', '/api', '/settings']
-        for ep in endpoints:
+        import concurrent.futures
+
+        def _check_ep(ep):
             try:
                 url = f"http://{ip}:{port}{ep}"
                 r = self.session.get(url, timeout=2)
                 if r.status_code == 200:
                     # Filter out simple login pages
                     if "login" not in r.text.lower() and "password" not in r.text.lower():
-                        return f"Unauthenticated access to {ep}"
+                        return ep
             except Exception:
                 pass
+            return None
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, len(endpoints))) as executor:
+            for ep in executor.map(_check_ep, endpoints):
+                if ep:
+                    return f"Unauthenticated access to {ep}"
         return None
 
     def _check_vendor_specifics(self, device, selected_vendors='all'):
@@ -1672,20 +1680,29 @@ class CRAScanner:
 
         log_paths = self.security_log_paths
 
-        for port in http_ports:
-            if not ip or ip == "N/A":
-                continue
+        urls_to_check = []
+        if ip and ip != "N/A":
+            for port in http_ports:
+                scheme = 'https' if port in (443, 8443) else 'http'
+                for path in log_paths:
+                    urls_to_check.append(f"{scheme}://{ip}:{port}{path}")
 
-            scheme = 'https' if port in (443, 8443) else 'http'
-
-            for path in log_paths:
-                url = f"{scheme}://{ip}:{port}{path}"
+        if urls_to_check:
+            import concurrent.futures
+            
+            def _check_log_url(url):
                 try:
                     response = self.session.get(url, timeout=2, allow_redirects=False)
                     if response.status_code in (200, 401, 403):
-                        logging_endpoints.append(url)
+                        return url
                 except Exception:
-                    continue
+                    pass
+                return None
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, len(urls_to_check))) as executor:
+                for result_url in executor.map(_check_log_url, urls_to_check):
+                    if result_url:
+                        logging_endpoints.append(result_url)
 
         if logging_endpoints:
             details.append(
