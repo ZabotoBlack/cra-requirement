@@ -4,7 +4,10 @@ profile cra_auditor flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
   #include <abstractions/python>
 
-  file,
+  # Removed blanket 'file,' which grants full r/w/x across the container.
+  # Replaced with read-only fallback to prevent arbitrary file writes/modifications,
+  # while ensuring dependent libraries/tools can still be read without breaking.
+  /** r,
   network,
   capability net_admin,
   capability net_raw,
