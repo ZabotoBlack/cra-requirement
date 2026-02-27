@@ -1,207 +1,102 @@
-# Home Assistant Add-on: CRA Compliance Auditor
+# Home Assistant Add-on: CRA Compliance Auditor - Documentation / Dokumentation
 
-## Description
-The **CRA Compliance Auditor** is a powerful network security tool designed for Home Assistant. It scans your local network (LAN) to identify devices and evaluate their compliance with the EU Cyber Resilience Act (CRA) guidelines.
+This document provides a comprehensive overview of the CRA Compliance Auditor Add-on in both English and German.
+Dieses Dokument bietet eine umfassende Übersicht über das CRA Compliance Auditor Add-on in Englisch und Deutsch.
 
-## Features
-- **Network Scanning**: Discover devices on your subnet.
-- **Port Analysis**: Detect open ports and potential vulnerabilities.
-- **Compliance Status**: Categorize devices as Compliant, Warning, or Non-Compliant.
-- **AI Insights**: (Optional) Integrate with Google Gemini for detailed security analysis.
-- **3-Tier Dashboard UX**: End User, Intermediate, and Expert views with fast mode switching.
+---
 
-## Dashboard Experience Levels
+## 🇬🇧 English Documentation
 
-The web UI includes an experience selector (quick toggle in header + Settings modal):
+### Summary
+The **CRA Compliance Auditor** is a powerful Home Assistant Add-on that scans your local network to evaluate device compliance against the EU Cyber Resilience Act (CRA). It provides tiered dashboards (Basic to Expert), detects open ports and vulnerabilities, verifies built-in security mechanisms, and leverages AI for actionable remediation advice.
 
-- **End User (Basic)**
-	- Attempts automatic subnet detection via `GET /api/network/default`
-	- Locks subnet field and presents simple health-focused summaries
-	- Hides advanced/raw technical data
-- **Intermediate**
-	- Keeps subnet configurable
-	- Shows standard dashboard and a concise device overview section
-- **Expert**
-	- Exposes full dashboard and complete device table
-	- Includes runtime logs console and JSON report export
+### Features
+- **Network Discovery & Scanning**: Automatically detects your subnet or uses a designated CIDR range to find active network devices using ARP and Ping.
+- **Advanced Hostname Resolution**: Improves device identification using Nmap NetBIOS, Reverse DNS (PTR), and mDNS (`zeroconf`).
+- **Port & Service Analysis**: Scans open ports, detects operating systems, and identifies service versions running on local devices.
+- **CRA Compliance Checks**: Evaluates devices against 8 key CRA requirements:
+  - Minimal Attack Surface (Monitoring open ports)
+  - Default Passwords (Checking for common default credentials)
+  - Known Vulnerabilities (CVE lookups using the NVD API)
+  - Security Logging (Probing for local logging endpoints)
+  - HTTPS Only (Verifying secure communications)
+  - Firmware Tracking (Detecting update endpoints)
+  - Security.txt (Checking for proper disclosure channels)
+  - Data Protection (Validating secure data handling, where applicable)
+- **AI Security Insights**: Integrates Google Gemini to provide contextual, device-specific advice to mitigate risks and secure non-compliant endpoints.
+- **Tiered 3-Level Dashboard**:
+  - **End User (Basic)**: Locks advanced fields, uses auto-detected subnets, and focuses on simple health metrics.
+  - **Intermediate**: Allows subnet selection, presenting a clear device list and compliance status.
+  - **Expert**: Provides full technical access, raw data inspection, vulnerability details, JSON export, and a live runtime log console.
+- **Historical Scans**: All reports are stored locally in an SQLite database (`scans.db`) so you can review previous audits.
+- **Developer Tools**: Includes scripts for mocking security logging devices (`mock_security_logging_device.py`).
 
-If basic-mode subnet auto-detection fails, the UI prompts once for a CIDR input before scan start.
-
-## Configuration
-To enable AI insights, you can provide a Gemini API Key in the configuration tab.
-
-### Options
+### Configuration (`config.yaml`)
 | Option | Type | Description |
 | :--- | :--- | :--- |
 | `target_subnet` | string | The CIDR range to scan (e.g., `192.168.1.0/24`). |
-| `gemini_api_key` | string | (Optional) Your Google Gemini API Key for enhanced analysis. |
-| `nvd_api_key` | string | (Optional, recommended) NVD API key for higher-rate CPE/CVE lookups. |
+| `gemini_api_key` | string | (Optional) Google Gemini API Key for enhanced AI analysis. |
+| `nvd_api_key` | string | (Optional) Recommended to increase the rate limits for NVD CVE lookups. |
 | `log_level` | string | Backend logging verbosity (`trace`, `debug`, `scan_info`, `info`, `warning`, `error`, `fatal`). Default: `info`. |
+| `verify_ssl` | boolean | Toggle strict SSL verification. Default: `false`. |
 
-## Logging Levels
+### Scan Profiles
+The Add-on UI and API (`POST /api/scan`) support modular profiles:
+- **Discovery**: Fast network mapping. Finds IPs, MACs, and hostnames. *Skips all compliance checks.*
+- **Standard**: Scans the top 100 ports + common vendor ports. Enables web-based checks (HTTPS, Security.txt) but disables aggressive authentication brute-forcing.
+- **Deep**: Extensive port scanning, OS detection, service versioning, and aggressive compliance validation (including default credential checking).
 
-Use `log_level` in add-on configuration to control runtime log detail.
+### Developer Docs Map
+- **`server.py`**: Flask API, scan state, UI asset serving, database persistence.
+- **`scan_logic.py`**: The core Nmap scanning pipeline and individual compliance check routines.
+- **`vulnerability_data/`**: NVD API client (`nvd.py`), rule lookups (`rules.py`), and CPE management (`cpe.py`).
+- **`App.tsx` & `components/`**: React application shell, routing, 3-tier Dashboards, and Device List tables.
 
-- `info`: scan start/complete and stage summaries
-- `scan_info`: detailed scan progress (discovered devices, per-device checks, detailed Nmap args)
-- `debug`: internal diagnostics (DB lock/thread state and handled error tracebacks)
+---
 
-> [!IMPORTANT]
-> Log output is now intentionally less verbose by default. Set `log_level: scan_info` (or `debug`) if you need detailed per-device progress in logs.
+## 🇩🇪 Deutsche Dokumentation
 
-## API Scan Options (Modular)
+### Zusammenfassung
+Der **CRA Compliance Auditor** ist ein leistungsstarkes Home Assistant Add-on, das Ihr lokales Netzwerk scannt, um die Konformität von Geräten mit dem EU Cyber Resilience Act (CRA) zu bewerten. Es bietet mehrstufige Dashboards (Basic bis Expert), erkennt offene Ports und Schwachstellen, überprüft integrierte Sicherheitsmechanismen und nutzt KI für handlungsorientierte Behebungsvorschläge.
 
-`POST /api/scan` accepts both legacy and modular scan options.
+### Hauptfunktionen
+- **Netzwerkerkennung & Scanning**: Erkennt automatisch Ihr Subnetz oder nutzt einen festgelegten CIDR-Bereich, um aktive Netzwerkgeräte über ARP und Ping zu finden.
+- **Erweiterte Hostnamen-Auflösung**: Verbessert die Geräteidentifikation durch die Kombination von Nmap NetBIOS, Reverse DNS (PTR) und mDNS (`zeroconf`).
+- **Port- & Service-Analyse**: Scannt offene Ports, erkennt Betriebssysteme und identifiziert Versionen laufender Dienste im lokalen Netzwerk.
+- **CRA-Konformitätsprüfungen**: Bewertet Geräte anhand von 8 zentralen CRA-Anforderungen:
+  - Minimale Angriffsfläche (Überwachung offener Ports)
+  - Standardpasswörter (Überprüfung auf weit verbreitete Standard-Anmeldedaten)
+  - Bekannte Schwachstellen (CVE-Abfragen über die NVD-API)
+  - Security Logging (Prüfung auf lokale Endpunkte zur Sicherheitsprotokollierung)
+  - Nur HTTPS (Sicherstellung verschlüsselter Kommunikation)
+  - Firmware-Tracking (Erkennung von Update-Endpunkten)
+  - Security.txt (Prüfung auf standardisierte Kanäle zur Schwachstellenmeldung)
+  - Datenschutz (Überprüfung sicherer Datenhandhabung, sofern zutreffend)
+- **KI-Sicherheitsanalysen**: Integriert Google Gemini, um kontextbezogene, gerätespezifische Ratschläge zur Risikominderung abzurufen.
+- **Dreistufiges Dashboard**:
+  - **End User (Basic)**: Sperrt erweiterte Felder, nutzt automatisch erkannte Subnetze und fokussiert sich auf einfache Gesundheitskennzahlen.
+  - **Intermediate**: Erlaubt die Subnetzauswahl und bietet eine klare Geräte- und Konformitätsübersicht.
+  - **Expert**: Bietet vollen technischen Zugriff, Rohdatenprüfung, Schwachstellendetails, JSON-Exporte und eine Live-Protokollkonsole.
+- **Historische Scans**: Alle Berichte werden lokal in einer SQLite-Datenbank (`scans.db`) gespeichert, sodass frühere Audits jederzeit überprüfbar sind.
+- **Entwickler-Tools**: Enthält Skripte zur Simulation von Geräten mit Sicherheitsprotokollierung (`mock_security_logging_device.py`).
 
-### Request Body
-
-```json
-{
-	"subnet": "192.168.1.0/24",
-	"options": {
-		"profile": "discovery",
-		"vendors": "all",
-		"features": {
-			"port_scan": false,
-			"compliance_checks": false
-		}
-	}
-}
-```
-
-### Profiles
-- `discovery`: discovery-only inventory (`Ping/ARP`), no compliance checks.
-- `standard`: top 100 ports (+ vendor ports), web checks enabled, brute-force auth checks disabled.
-- `deep`: broader port scan, OS detection, service versioning, and full checks enabled.
-
-### Feature Flags
-- `network_discovery`
-- `port_scan`
-- `os_detection`
-- `service_version`
-- `netbios_info`
-- `compliance_checks`
-- `auth_brute_force`
-- `web_crawling`
-- `port_range` (optional string override)
-
-### Legacy Compatibility
-The backend still accepts:
-- `scan_type` (`discovery`, `standard`, `deep`)
-- `auth_checks` (mapped to `auth_brute_force`)
-- older boolean shortcuts such as `options.discovery=true`
-
-### Important Discovery Behavior
-Discovery mode now **skips all compliance checks** by design. It returns discovered device metadata only (IP/MAC/vendor/hostname and merged HA data where available).
-
-## Additional API Endpoints
-
-### `GET /api/network/default`
-
-Returns detected subnet in `/24` form when available:
-
-```json
-{"subnet":"192.168.1.0/24","source":"auto"}
-```
-
-If detection fails:
-
-```json
-{"subnet":null,"source":"fallback-required","message":"Unable to automatically detect local subnet"}
-```
-
-### `GET /api/logs?limit=150`
-
-Returns recent backend logs for the Expert dashboard console:
-
-```json
-{"logs":["..."]}
-```
-
-## Hostname Resolution (Reverse DNS + mDNS)
-
-Device hostnames are now enriched in a post-discovery stage to improve identification of Apple devices, printers, and IoT devices that may not expose NetBIOS names.
-
-Resolution priority is:
-1. Nmap hostname / NetBIOS (`nbstat`) when available.
-2. Reverse DNS (`PTR`) when hostname is missing or generic.
-3. mDNS discovery (`.local`) via `zeroconf` for more descriptive local names.
-
-When multiple non-generic names are found, the most descriptive one is used and additional names may be appended as aliases in the same `hostname` string field (for example: `PrimaryName (AliasName)`).
-
-Notes:
-- Python dependency: `zeroconf` (included in `requirements.txt`).
-- mDNS uses multicast DNS behavior on UDP 5353; ensure container/network policy allows local multicast traffic.
-
-## Security Logging Probe (CRA Annex I §1(3)(j))
-
-HTTP log endpoint paths are configurable from YAML:
-
-- Default file: `data/security_logging_paths.yaml`
-- Optional override: environment variable `CRA_SECURITY_LOG_PATHS_FILE`
-
-YAML shape:
-
-```yaml
-log_paths:
-	- /api/logs
-	- /logs
-```
-
-Manual validation helper is available at `scripts/mock_security_logging_device.py`.
-
-Example:
-
-```bash
-python scripts/mock_security_logging_device.py --http-port 8080 --udp-port 514
-```
-
-## Developer Docs Map
-
-Use this quick map to find where behavior lives before making changes.
-
-### Core Runtime
-
-| Module | Responsibility | Key Functions / Boundaries |
+### Konfiguration (`config.yaml`)
+| Option | Typ | Beschreibung |
 | :--- | :--- | :--- |
-| `server.py` | Flask API, scan lifecycle state, DB persistence, static asset serving | `normalize_scan_options()`, `start_scan()`, `run_scan_background()`, `get_status()`, DB helpers (`init_db()`, lock/state helpers) |
-| `scan_logic.py` | Network scan pipeline and per-device compliance evaluation | `CRAScanner.scan_subnet()`, `_resolve_scan_features()`, `_merge_devices()`, check methods (`check_*`) |
-| `vulnerability_data/nvd.py` | NVD API client with cache + rate limiting | `NVDClient.search_cpes()`, `get_cves_for_cpe()`, `get_vendor_reference_url()` |
-| `vulnerability_data/rules.py` | Vendor policy/rules lookup from YAML | `VendorRules` lookup methods for SBOM, security.txt, firmware URLs |
-| `vulnerability_data/cpe.py` | CPE normalization and matching helpers | `build_cpe()`, `match_cpe()` |
+| `target_subnet` | string | Der zu scannende CIDR-Bereich (z.B. `192.168.1.0/24`). |
+| `gemini_api_key` | string | (Optional) Google Gemini API-Schlüssel für erweiterte KI-Analysen. |
+| `nvd_api_key` | string | (Optional) Empfohlen, um die Ratenlimits für NVD-CVE-Abfragen zu erhöhen. |
+| `log_level` | string | Detailgrad der Backend-Protokolle (`trace`, `debug`, `scan_info`, `info`, `warning`, `error`, `fatal`). Standard: `info`. |
+| `verify_ssl` | boolean | Aktiviert strikte SSL-Überprüfung. Standard: `false`. |
 
-### Frontend Shell and Views
+### Scan-Profile
+Die Add-on-Benutzeroberfläche und die API (`POST /api/scan`) unterstützen modulare Profile:
+- **Discovery (Entdeckung)**: Schnelles Netzwerk-Mapping. Findet IP- und MAC-Adressen sowie Hostnamen. *Überspringt alle Konformitätsprüfungen.*
+- **Standard**: Scannt die Top-100-Ports sowie gängige Hersteller-Ports. Aktiviert webbasierte Prüfungen (HTTPS, Security.txt), verzichtet jedoch auf aggressives Authentication-Brute-Forcing.
+- **Deep (Tiefenscan)**: Ausführlicher Port-Scan, Betriebssystemerkennung, Service-Versionierung und aggressive Konformitätsprüfungen (inkl. Tests auf Standardpasswörter).
 
-| Module | Responsibility | Key Functions / Boundaries |
-| :--- | :--- | :--- |
-| `App.tsx` | App shell state, polling loop, scan launch flow, mode switching | `handleScan()`, `fetchData()`, subnet validation helpers |
-| `components/dashboard/*` | Mode-specific dashboard rendering | `BasicDashboard`, `IntermediateDashboard`, `ExpertDashboard` |
-| `components/DeviceList.tsx` | Device table, sorting/filtering, per-device dossier and AI advice trigger | `DeviceList`, `DeviceDossier`, sort helpers |
-| `components/HistoryView.tsx` | History list/search/sort/delete/report reopen | `fetchHistory()`, `toggleSort()`, `handleDelete()` |
-| `components/SettingsModal.tsx` | Scan profile/features controls by UI mode | `applyScanType()`, vendor selection logic |
-
-### Frontend Services and Contexts
-
-| Module | Responsibility | Key Functions / Boundaries |
-| :--- | :--- | :--- |
-| `services/api.ts` | Typed API calls to backend `/api/*` endpoints | `startScan()`, `getScanStatus()`, `getReport()`, `getHistory*()` |
-| `services/geminiService.ts` | Gemini remediation advice prompt + response handling | `getRemediationAdvice()` |
-| `LanguageContext.tsx` | UI localization state and translation lookup | `LanguageProvider`, `useLanguage()`, `detectLanguage()` |
-| `TourContext.tsx` + `TourOverlay.tsx` | Guided onboarding step state + spotlight rendering | `TOUR_STEPS`, `useTour()`, overlay placement helpers |
-| `utils/status.ts` | Shared compliance status label localization | `localizeStatus()` |
-
-### Data and Config Files
-
-| File | Purpose |
-| :--- | :--- |
-| `data/vendor_rules.yaml` | Vendor-specific compliance metadata and URLs |
-| `data/security_logging_paths.yaml` | HTTP paths for security logging capability probes |
-| `data/nvd_cache.json` | Runtime NVD response cache |
-| `config.yaml` | Home Assistant add-on options and defaults |
-
-### Where to change what
-
-- Add or adjust scan profile behavior: update `_SCAN_PROFILES` and feature resolution in `scan_logic.py`, keep frontend `ScanFeatureFlags` in `types.ts` aligned.
-- Add a new compliance check: implement in `scan_logic.py`, include it in device `checks` payload, then update TypeScript interfaces and UI rendering.
-- Change scan API contract: update backend endpoints in `server.py` and matching client calls in `services/api.ts`.
-- Modify persisted report shape: update DB write payload in `run_scan_background()` and all frontend consumers (`App.tsx`, dashboards, `DeviceList.tsx`, `HistoryView.tsx`).
+### Entwickler-Dokumentation (Karte)
+- **`server.py`**: Flask-API, Scan-Status, Auslieferung von UI-Assets, Datenbank-Persistenz.
+- **`scan_logic.py`**: Die zentrale Nmap-Scanning-Pipeline und individuelle Konformitätsprüfroutinen.
+- **`vulnerability_data/`**: NVD API Client (`nvd.py`), Regel-Lookups (`rules.py`) und CPE-Verwaltung (`cpe.py`).
+- **`App.tsx` & `components/`**: React-Anwendungsstruktur, Routing, 3-stufige Dashboards und die Gerätelisten-Tabellen.
