@@ -36,7 +36,7 @@ const ExpertDashboard: React.FC<ExpertDashboardProps> = ({ report, config, logs 
         <div className="relative z-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="accent-text mb-2 text-xs font-bold uppercase tracking-widest">{t('expert.overview')}</p>
-            <h2 className="text-3xl font-extrabold tracking-tight text-main md:text-4xl">Security Operations</h2>
+            <h2 className="text-3xl font-extrabold tracking-tight text-main md:text-4xl">{t('expert.securityOperations')}</h2>
             <p className="text-soft mt-2 text-sm font-medium">{t('expert.subtitle')}</p>
           </div>
           <div className="flex flex-col items-start md:items-end">

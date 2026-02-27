@@ -34,7 +34,7 @@ const IntermediateDashboard: React.FC<IntermediateDashboardProps> = ({ report, c
         <div className="relative z-10 flex flex-col items-start gap-4 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="accent-text mb-2 text-xs font-bold uppercase tracking-widest">{t('intermediate.overview')}</p>
-            <h2 className="text-2xl font-bold tracking-tight text-main md:text-3xl">Network Analysis</h2>
+            <h2 className="text-2xl font-bold tracking-tight text-main md:text-3xl">{t('intermediate.networkAnalysis')}</h2>
           </div>
           <StatusBadge label={t('intermediate.standardVisibility')} tone="info" />
         </div>
