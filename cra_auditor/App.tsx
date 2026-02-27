@@ -336,7 +336,7 @@ const AppShell: React.FC = () => {
     });
 
     setScanOptions((previous) => {
-      const newScanType: ScanOptions['scan_type'] = previous.scan_type === 'deep' ? 'deep' : 'standard';
+      const newScanType: ScanOptions['scan_type'] = previous.scan_type === 'deep' ? 'deep' : 'discovery';
 
       return {
         ...previous,
@@ -429,7 +429,7 @@ const AppShell: React.FC = () => {
 
     const effectiveOptions: ScanOptions = userMode === 'basic'
       ? (() => {
-        const selectedDepth: ScanOptions['scan_type'] = scanOptions.scan_type === 'deep' ? 'deep' : 'standard';
+        const selectedDepth: ScanOptions['scan_type'] = scanOptions.scan_type === 'deep' ? 'deep' : 'discovery';
         return {
           ...scanOptions,
           profile: selectedDepth,

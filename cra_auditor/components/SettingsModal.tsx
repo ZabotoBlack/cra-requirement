@@ -29,11 +29,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
   /** Apply selected scan depth while preserving other scan options. */
   const applyScanType = (scan_type: ScanOptions['scan_type']) => {
-    onScanOptionsChange({ ...scanOptions, scan_type });
+    // For deep scans, auto-enable auth checks. For discovery/standard, auto-disable them
+    // unless the expert explicitly checks the box.
+    const auto_auth = scan_type === 'deep';
+    onScanOptionsChange({ ...scanOptions, scan_type, auth_checks: auto_auth });
   };
 
   const endUserDepthOptions: Array<{ label: string; value: ScanOptions['scan_type'] }> = [
-    { label: t('settings.depth.basic'), value: 'standard' },
+    { label: t('settings.depth.basic'), value: 'discovery' },
     { label: t('settings.depth.deep'), value: 'deep' }
   ];
 
@@ -161,7 +164,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         onScanOptionsChange({ ...scanOptions, vendors: current });
                       }}
                       className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-semibold capitalize transition ${selected
-                        ? 'border-violet-400/40 bg-violet-500/20 text-violet-200'
+                        ? 'border-teal-400/40 bg-teal-500/20 text-teal-200'
                         : 'border-slate-700 bg-slate-800/70 text-slate-300'
                         }`}
                     >
