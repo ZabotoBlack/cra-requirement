@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request, send_from_directory
 from collections import deque
+from functools import wraps
 import logging
 from logging.handlers import RotatingFileHandler
 import os
@@ -389,6 +390,28 @@ def _tail_shared_log_lines(limit: int) -> list[str]:
         return []
 
 
+_LOG_REDACTION_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r'(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;]+'), r'\1[REDACTED]'),
+    (re.compile(r'(?i)(\b(?:api[_-]?key|token|password|passphrase|secret)\b\s*[:=]\s*)[^\s,;]+'), r'\1[REDACTED]'),
+    (re.compile(r'(?i)([?&](?:api[_-]?key|token|access_token|key)=)[^&\s]+'), r'\1[REDACTED]'),
+    (re.compile(r'(?i)("(?:api[_-]?key|token|password|secret)"\s*:\s*")[^"]+(")'), r'\1[REDACTED]\2'),
+    (re.compile(r'(?i)(\b(?:GEMINI_API_KEY|NVD_API_KEY|SUPERVISOR_TOKEN|CRA_API_TOKEN)\b\s*[:=]\s*)[^\s,;]+'), r'\1[REDACTED]'),
+]
+
+
+def _redact_sensitive_log_line(line: str) -> str:
+    """Mask likely secrets from a single log line before returning to clients."""
+    sanitized = str(line or '')
+    for pattern, replacement in _LOG_REDACTION_PATTERNS:
+        sanitized = pattern.sub(replacement, sanitized)
+    return sanitized
+
+
+def _sanitize_logs_for_api(log_lines: list[str]) -> list[str]:
+    """Return API-safe log lines with sensitive fragments redacted."""
+    return [_redact_sensitive_log_line(entry) for entry in (log_lines or [])]
+
+
 APP_DIR = Path(__file__).resolve().parent
 LEGACY_DB_FILE = APP_DIR / "scans.db"
 DATA_DIR = _resolve_data_dir()
@@ -404,6 +427,119 @@ FEATURE_FLAG_KEYS = {
     "auth_brute_force",
     "web_crawling",
 }
+
+
+def _resolve_max_scan_hosts() -> int:
+    """Resolve max allowed IPv4 hosts per scan request from environment."""
+    raw_value = os.environ.get('CRA_MAX_SCAN_HOSTS', '65536')
+    try:
+        parsed = int(str(raw_value).strip())
+        return max(1, parsed)
+    except (TypeError, ValueError):
+        return 65536
+
+
+def _resolve_min_ipv4_prefix() -> int:
+    """Resolve minimum allowed IPv4 CIDR prefix (smaller prefixes are broader)."""
+    raw_value = os.environ.get('CRA_MIN_IPV4_PREFIX', '16')
+    try:
+        parsed = int(str(raw_value).strip())
+        return min(32, max(0, parsed))
+    except (TypeError, ValueError):
+        return 16
+
+
+def _validate_scan_scope(network: ipaddress._BaseNetwork) -> tuple[bool, str | None]:
+    """Validate scan scope limits for inbound user-requested subnets.
+
+    IPv4 guardrails are enforced to reduce accidental or abusive large-scale scans.
+    IPv6 scope is left unchanged for backward compatibility.
+    """
+    if network.version != 4:
+        return True, None
+
+    max_hosts = _resolve_max_scan_hosts()
+    min_prefix = _resolve_min_ipv4_prefix()
+
+    if network.prefixlen < min_prefix:
+        return False, f"IPv4 subnet too broad. Minimum allowed prefix is /{min_prefix}."
+
+    if int(network.num_addresses) > max_hosts:
+        return False, f"IPv4 subnet too large. Maximum allowed host count is {max_hosts}."
+
+    return True, None
+
+
+def _extract_client_ip() -> str | None:
+    """Return best-effort client IP, honoring proxy forwarding headers."""
+    forwarded_for = request.headers.get('X-Forwarded-For', '')
+    if forwarded_for:
+        first_hop = forwarded_for.split(',')[0].strip()
+        if first_hop:
+            return first_hop
+
+    remote = request.remote_addr
+    if isinstance(remote, str) and remote.strip():
+        return remote.strip()
+
+    return None
+
+
+def _is_local_or_private_ip(client_ip: str | None) -> bool:
+    """Return True for loopback/private/link-local IPv4/IPv6 addresses."""
+    if not client_ip:
+        return False
+
+    try:
+        ip_obj = ipaddress.ip_address(client_ip)
+    except ValueError:
+        return False
+
+    return bool(ip_obj.is_loopback or ip_obj.is_private or ip_obj.is_link_local)
+
+
+def _request_provided_api_token() -> str | None:
+    """Read caller token from Authorization bearer or X-CRA-Token header."""
+    auth_header = request.headers.get('Authorization', '').strip()
+    if auth_header.lower().startswith('bearer '):
+        token = auth_header[7:].strip()
+        if token:
+            return token
+
+    token = request.headers.get('X-CRA-Token', '').strip()
+    return token or None
+
+
+def _has_sensitive_api_access() -> bool:
+    """Authorize sensitive API access.
+
+    - If CRA_API_TOKEN is configured, require it.
+    - Otherwise, allow only local/private callers.
+    """
+    configured_token = os.environ.get('CRA_API_TOKEN')
+    if configured_token and configured_token.strip():
+        provided = _request_provided_api_token()
+        return bool(provided and provided == configured_token.strip())
+
+    return _is_local_or_private_ip(_extract_client_ip())
+
+
+def require_sensitive_api_access(route_handler):
+    """Decorator to protect sensitive routes from unauthenticated public access."""
+    @wraps(route_handler)
+    def _wrapped(*args, **kwargs):
+        if _has_sensitive_api_access():
+            return route_handler(*args, **kwargs)
+
+        logger.warning(
+            "[SECURITY] Denied sensitive API request: path=%s method=%s client_ip=%s",
+            request.path,
+            request.method,
+            _extract_client_ip(),
+        )
+        return jsonify({"error": "Access denied"}), 403
+
+    return _wrapped
 
 
 def normalize_scan_options(payload):
@@ -863,7 +999,97 @@ def set_security_headers(response):
     response.headers['Content-Security-Policy'] = "default-src 'self'"
     return response
 
+
+def _gemini_language_instruction(language: str | None) -> str:
+    """Return a short instruction for the requested response language."""
+    if str(language or '').strip().lower() == 'de':
+        return 'Respond in German.'
+    return 'Respond in English.'
+
+
+def _extract_check_result(device: dict, check_key: str) -> dict:
+    """Safely return a check result object from a device payload."""
+    checks = device.get('checks') if isinstance(device, dict) else {}
+    if not isinstance(checks, dict):
+        return {}
+    result = checks.get(check_key)
+    return result if isinstance(result, dict) else {}
+
+
+def _build_gemini_prompt(device: dict, localized_status: str | None, response_language: str | None) -> str:
+    """Build the Gemini prompt from a sanitized device payload."""
+    vendor = str(device.get('vendor') or 'Unknown')
+    ip = str(device.get('ip') or 'Unknown')
+    compliance_status = str(localized_status or device.get('status') or 'Unknown')
+
+    secure_defaults = _extract_check_result(device, 'secureByDefault')
+    confidentiality = _extract_check_result(device, 'dataConfidentiality')
+    vulnerabilities = _extract_check_result(device, 'vulnerabilities')
+    security_txt = _extract_check_result(device, 'securityTxt')
+    security_logging = _extract_check_result(device, 'securityLogging')
+
+    cve_ids = []
+    raw_cves = vulnerabilities.get('cves', [])
+    if isinstance(raw_cves, list):
+        for cve in raw_cves[:20]:
+            if isinstance(cve, dict):
+                cve_id = cve.get('id')
+                if cve_id:
+                    cve_ids.append(str(cve_id))
+
+    secure_text = 'PASSED' if secure_defaults.get('passed') else f"FAILED - {secure_defaults.get('details', 'No details')}"
+    confidentiality_text = 'PASSED' if confidentiality.get('passed') else f"FAILED - {confidentiality.get('details', 'No details')}"
+    vulnerabilities_text = 'PASSED' if vulnerabilities.get('passed') else f"FAILED - {', '.join(cve_ids) if cve_ids else 'No CVE IDs provided'}"
+    security_txt_text = 'PASSED' if security_txt.get('passed') else f"FAILED - {security_txt.get('details', 'No security.txt found')}"
+    security_logging_text = 'PASSED' if security_logging.get('passed') else f"WARNING - {security_logging.get('details', 'No logging capability verified')}"
+
+    response_language_instruction = _gemini_language_instruction(response_language)
+
+    return (
+        "You are a Cyber Resilience Act (CRA) Compliance Expert.\n"
+        "Analyze the following IoT device audit report and provide specific, technical remediation steps "
+        "to bring the device into compliance with EU CRA Annex I requirements.\n\n"
+        "Device Context:\n"
+        f"- Vendor: {vendor}\n"
+        f"- IP: {ip}\n"
+        f"- Compliance Status: {compliance_status}\n\n"
+        "Audit Findings:\n"
+        f"1. Secure by Default (No Default Passwords): {secure_text}\n"
+        f"2. Data Confidentiality (Encryption): {confidentiality_text}\n"
+        f"3. Known Vulnerabilities: {vulnerabilities_text}\n"
+        f"4. Security.txt Disclosure Policy (CRA §2(5), §2(6)): {security_txt_text}\n"
+        f"5. Security Logging Capability (CRA Annex I §1(3)(j)): {security_logging_text}\n\n"
+        f"Provide the response in Markdown format. {response_language_instruction} "
+        "Focus on actionable CLI commands (like ssh config changes), network segmentation advice, "
+        "or firmware update procedures relevant to this vendor."
+    )
+
+
+def _extract_gemini_text(response_json: dict) -> str | None:
+    """Extract model text from Gemini REST API response."""
+    if not isinstance(response_json, dict):
+        return None
+
+    candidates = response_json.get('candidates', [])
+    if not isinstance(candidates, list) or not candidates:
+        return None
+
+    first_candidate = candidates[0] if isinstance(candidates[0], dict) else {}
+    content = first_candidate.get('content', {})
+    parts = content.get('parts', []) if isinstance(content, dict) else []
+    if not isinstance(parts, list):
+        return None
+
+    text_parts = []
+    for part in parts:
+        if isinstance(part, dict) and isinstance(part.get('text'), str):
+            text_parts.append(part['text'])
+
+    merged = "\n".join(text_parts).strip()
+    return merged or None
+
 @app.route('/api/scan', methods=['POST'])
+@require_sensitive_api_access
 def start_scan():
     """Validate scan input, claim scan lock, and launch background scan execution."""
     data = request.json
@@ -878,9 +1104,13 @@ def start_scan():
     subnet = subnet.strip()
 
     try:
-        ipaddress.ip_network(subnet, strict=False)
+        parsed_network = ipaddress.ip_network(subnet, strict=False)
     except ValueError:
         return jsonify({"status": "error", "message": "Invalid subnet format"}), 400
+
+    scope_ok, scope_error = _validate_scan_scope(parsed_network)
+    if not scope_ok:
+        return jsonify({"status": "error", "message": scope_error}), 400
     
     # Atomic lock: only one scan at a time across all workers
     if not try_claim_scan():
@@ -926,6 +1156,7 @@ def get_status():
 
 
 @app.route('/api/scan/abort', methods=['POST'])
+@require_sensitive_api_access
 def abort_scan():
     """Request cancellation of an active scan."""
     if request_scan_abort("Scan aborted by user request", timeout_detected=False):
@@ -947,6 +1178,66 @@ def get_config():
     })
 
 
+@app.route('/api/gemini/advice', methods=['POST'])
+@require_sensitive_api_access
+def get_gemini_advice():
+    """Generate remediation advice using Gemini from backend-only API key storage."""
+    data = request.json
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON body"}), 400
+
+    device = data.get('device')
+    messages = data.get('messages') if isinstance(data.get('messages'), dict) else {}
+
+    if not isinstance(device, dict):
+        return jsonify({"error": "Device payload is required"}), 400
+
+    api_key = os.environ.get('GEMINI_API_KEY')
+    if not api_key:
+        return jsonify({
+            "error": messages.get('noApiKey') or "Gemini API key is not configured. Add GEMINI_API_KEY to use AI remediation advice."
+        }), 503
+
+    prompt = _build_gemini_prompt(
+        device,
+        localized_status=messages.get('localizedStatus'),
+        response_language=messages.get('responseLanguage'),
+    )
+
+    model_name = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash')
+    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+    request_payload = {
+        "contents": [{"parts": [{"text": prompt}]}]
+    }
+
+    try:
+        response = requests.post(
+            gemini_url,
+            params={"key": api_key},
+            json=request_payload,
+            timeout=30,
+        )
+        if response.status_code != 200:
+            logger.error("Gemini API call failed with status %s", response.status_code)
+            logger.debug("Gemini API response: %s", response.text[:1000])
+            return jsonify({
+                "error": messages.get('requestFailed') or "Failed to retrieve AI advice. Please check your API key and connection."
+            }), 502
+
+        advice = _extract_gemini_text(response.json())
+        if not advice:
+            return jsonify({
+                "error": messages.get('noAdvice') or "No advice generated."
+            }), 502
+
+        return jsonify({"advice": advice})
+    except Exception:
+        logger.error("Gemini API request failed", exc_info=True)
+        return jsonify({
+            "error": messages.get('requestFailed') or "Failed to retrieve AI advice. Please check your API key and connection."
+        }), 502
+
+
 @app.route('/api/network/default', methods=['GET'])
 def get_default_network_subnet():
     """Return an automatically detected default subnet for the UI."""
@@ -962,6 +1253,7 @@ def get_default_network_subnet():
 
 
 @app.route('/api/logs', methods=['GET'])
+@require_sensitive_api_access
 def get_logs():
     """Return recent runtime log lines for expert-mode diagnostics."""
     try:
@@ -973,6 +1265,7 @@ def get_logs():
     logs = _tail_shared_log_lines(limit)
     if not logs:
         logs = list(LOG_BUFFER)[-limit:]
+    logs = _sanitize_logs_for_api(logs)
     return jsonify({"logs": logs})
 
 @app.route('/api/report', methods=['GET'])
@@ -1017,15 +1310,11 @@ def get_history():
         
         history = []
         for row in rows:
-            try:
-                summary_data = json.loads(row['summary'])
-            except Exception:
-                summary_data = {}
             history.append({
                 "id": row['id'],
                 "timestamp": row['timestamp'],
                 "target_range": row['target_range'],
-                "summary": summary_data
+                "summary": json.loads(row['summary'])
             })
         return jsonify(history)
     except Exception as e:
@@ -1050,6 +1339,7 @@ def get_history_detail(scan_id):
         return jsonify({"error": "Failed to fetch scan details"}), 500
 
 @app.route('/api/history/<int:scan_id>', methods=['DELETE'])
+@require_sensitive_api_access
 def delete_history_item(scan_id):
     """Delete a scan from history."""
     try:

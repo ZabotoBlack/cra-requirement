@@ -1,6 +1,6 @@
 name: "CRA Compliance Auditor"
 description: "A comprehensive Cyber Resilience Act (CRA) compliance scanner for your local network. Audits devices, checks for common vulnerabilities, and provides AI-powered insights."
-version: "1.0.57"
+version: "1.0.56"
 slug: "cra_auditor"
 init: false
 arch:
@@ -31,11 +31,17 @@ options:
   target_subnet: "192.168.1.0/24"
   gemini_api_key: ""
   nvd_api_key: ""
+  api_access_token: ""
+  max_scan_hosts: 65536
+  min_ipv4_prefix: 16
   log_level: "info"
   verify_ssl: false # Keep false by default to preserve current probe behavior in local/self-signed environments
 schema:
   target_subnet: str
   gemini_api_key: password
   nvd_api_key: password
+  api_access_token: password
+  max_scan_hosts: int
+  min_ipv4_prefix: int
   log_level: list(trace|debug|scan_info|info|warning|error|fatal)
   verify_ssl: bool

@@ -83,6 +83,28 @@ class TestServer(unittest.TestCase):
         self.assertIsInstance(data['logs'], list)
         self.assertLessEqual(len(data['logs']), 10)
 
+    @patch('server._tail_shared_log_lines')
+    def test_logs_endpoint_redacts_sensitive_values(self, mock_tail):
+        """Test logs endpoint masks tokens, API keys, and passwords."""
+        mock_tail.return_value = [
+            'Authorization: Bearer abc12345',
+            'GEMINI_API_KEY=super-secret-value',
+            'url=https://example.local?api_key=raw-key&x=1',
+            'password: hunter2',
+        ]
+
+        response = self.app.get('/api/logs?limit=10')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn('logs', data)
+        joined = "\n".join(data['logs'])
+
+        self.assertNotIn('abc12345', joined)
+        self.assertNotIn('super-secret-value', joined)
+        self.assertNotIn('raw-key', joined)
+        self.assertNotIn('hunter2', joined)
+        self.assertIn('[REDACTED]', joined)
+
     @patch('server.threading.Thread')
     def test_scan_start(self, mock_thread):
         """Test starting a scan."""
@@ -199,6 +221,31 @@ class TestServer(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         data = json.loads(response.data)
         self.assertIn('Invalid subnet format', data['message'])
+
+    @patch('server.threading.Thread')
+    def test_scan_rejects_too_broad_ipv4_subnet(self, mock_thread):
+        """Test that very broad IPv4 CIDRs are blocked by scope guardrails."""
+        mock_thread_instance = MagicMock()
+        mock_thread.return_value = mock_thread_instance
+
+        response = self.app.post('/api/scan', json={'subnet': '10.0.0.0/8'})
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertIn('IPv4 subnet too broad', data['message'])
+        mock_thread.assert_not_called()
+
+    @patch('server.threading.Thread')
+    def test_scan_accepts_ipv4_subnet_within_scope_limits(self, mock_thread):
+        """Test that bounded IPv4 CIDRs still start scans normally."""
+        mock_thread_instance = MagicMock()
+        mock_thread.return_value = mock_thread_instance
+
+        response = self.app.post('/api/scan', json={'subnet': '10.10.0.0/16'})
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(data['status'], 'success')
+        mock_thread.assert_called_once()
+        mock_thread_instance.start.assert_called_once()
 
     def test_scan_no_json_body(self):
         """Test that non-JSON requests are rejected."""

@@ -54,6 +54,8 @@ _GENERIC_HOSTNAME_RE = re.compile(
     re.IGNORECASE,
 )
 
+_PORT_RANGE_RE = re.compile(r'^\d{1,5}(?:-\d{1,5})?(?:,\d{1,5}(?:-\d{1,5})?)*$')
+
 _MDNS_SERVICE_TYPES = (
     '_workstation._tcp.local.',
     '_http._tcp.local.',
@@ -108,6 +110,46 @@ _SCAN_PROFILES = {
         "port_range": "1-1024",
     },
 }
+
+
+def _sanitize_port_range_spec(value, default_value):
+    """Validate and normalize nmap port-range syntax.
+
+    Allowed format:
+      - single port: "443"
+      - range: "1-1024"
+      - list: "22,80,443,8000-8100"
+    """
+    candidate = str(value if value is not None else default_value).strip()
+    if not candidate:
+        return str(default_value)
+
+    if not _PORT_RANGE_RE.fullmatch(candidate):
+        return str(default_value)
+
+    for segment in candidate.split(','):
+        if '-' in segment:
+            start_raw, end_raw = segment.split('-', 1)
+            try:
+                start_port = int(start_raw)
+                end_port = int(end_raw)
+            except ValueError:
+                return str(default_value)
+
+            if start_port < 1 or end_port < 1 or start_port > 65535 or end_port > 65535:
+                return str(default_value)
+            if start_port > end_port:
+                return str(default_value)
+        else:
+            try:
+                port = int(segment)
+            except ValueError:
+                return str(default_value)
+
+            if port < 1 or port > 65535:
+                return str(default_value)
+
+    return candidate
 
 
 class MDNSResolver:
@@ -387,6 +429,16 @@ class CRAScanner:
         if 'port_range' in options:
             features['port_range'] = options.get('port_range')
 
+        profile_default_port_range = _SCAN_PROFILES[profile_name].get('port_range', '1-100')
+        resolved_port_range = _sanitize_port_range_spec(features.get('port_range'), profile_default_port_range)
+        if resolved_port_range != str(features.get('port_range')):
+            logger.warning(
+                "[SCAN] Invalid port_range '%s' provided; falling back to '%s'.",
+                features.get('port_range'),
+                resolved_port_range,
+            )
+        features['port_range'] = resolved_port_range
+
         # Backward compatibility: old auth_checks maps to auth_brute_force feature
         if 'auth_checks' in options and isinstance(options.get('auth_checks'), bool):
             features['auth_brute_force'] = options.get('auth_checks')
@@ -577,11 +629,6 @@ class CRAScanner:
                 nmap_args += " --script=nbstat"
 
             port_spec = str(features.get('port_range') or "1-100")
-            # Strictly restrict to numbers, commas, hyphens, exclamation mark, and optional protocol prefixes (T:, U:)
-            if not re.match(r'^[0-9,\-!a-zA-Z:]+$', port_spec):
-                logger.warning("[SCAN] Invalid port_range format: %s. Falling back to 1-100.", port_spec)
-                port_spec = "1-100"
-
             vendor_ports = self._build_vendor_ports(selected_vendors)
             if vendor_ports:
                 port_spec += "," + ",".join(vendor_ports)
@@ -773,12 +820,6 @@ class CRAScanner:
 
     def _update_scanned_devices(self, scanned_devices, discovery_phase=False):
         """Helper to parse nmap results and update the devices dict."""
-        
-        def _clip_str(val, max_len):
-            if isinstance(val, str):
-                return val[:max_len]
-            return val
-            
         for host in self.nm.all_hosts():
             # Filter out if no addresses found (rare but possible)
             if 'addresses' not in self.nm[host]:
@@ -816,25 +857,19 @@ class CRAScanner:
             os_name = self._get_os_match(host)
             open_ports = self._get_open_ports(host)
             
-            # Enforce defense-in-depth clipping limits to prevent memory/DB denial of service
-            mac = _clip_str(mac, 17)
-            vendor = _clip_str(vendor, 100)
-            hostname = _clip_str(hostname, 255)
-            os_name = _clip_str(os_name, 100)
-            
             # MERGE LOGIC: preserve existing data if new scan is incomplete
             if existing:
                 if mac == 'Unknown' and existing.get('mac') != 'Unknown':
-                    mac = _clip_str(existing.get('mac'), 17)
+                    mac = existing.get('mac')
                 
                 if vendor == "Unknown" and existing.get('vendor') != "Unknown":
-                    vendor = _clip_str(existing.get('vendor'), 100)
+                    vendor = existing.get('vendor')
                 
                 if not hostname and existing.get('hostname'):
-                    hostname = _clip_str(existing.get('hostname'), 255)
+                    hostname = existing.get('hostname')
                 
                 if os_name == "Unknown" and existing.get('osMatch', "Unknown") != "Unknown":
-                    os_name = _clip_str(existing.get('osMatch'), 100)
+                    os_name = existing.get('osMatch')
                 
                 # Ports: Detailed scan is usually authoritative.
                 # But if detailed scan returned nothing (e.g. failed/filtered) AND we had ports (unlikely for discovery but consistent logic), we could keep.
@@ -880,7 +915,6 @@ class CRAScanner:
             return None
 
         cleaned = hostname.strip().rstrip('.')
-        cleaned = cleaned[:255]
         return cleaned or None
 
     def _is_generic_hostname(self, hostname, ip=None):

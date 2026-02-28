@@ -35,6 +35,30 @@ if [ $nvd_config_status -ne 0 ]; then
 fi
 export NVD_API_KEY
 
+CRA_API_TOKEN=$(bashio::config 'api_access_token')
+api_token_config_status=$?
+if [ $api_token_config_status -ne 0 ]; then
+    bashio::log.error "Failed to read api_access_token from add-on config (exit: $api_token_config_status)."
+    exit $api_token_config_status
+fi
+export CRA_API_TOKEN
+
+MAX_SCAN_HOSTS=$(bashio::config 'max_scan_hosts')
+max_scan_hosts_status=$?
+if [ $max_scan_hosts_status -ne 0 ]; then
+    bashio::log.error "Failed to read max_scan_hosts from add-on config (exit: $max_scan_hosts_status)."
+    exit $max_scan_hosts_status
+fi
+export CRA_MAX_SCAN_HOSTS="$MAX_SCAN_HOSTS"
+
+MIN_IPV4_PREFIX=$(bashio::config 'min_ipv4_prefix')
+min_ipv4_prefix_status=$?
+if [ $min_ipv4_prefix_status -ne 0 ]; then
+    bashio::log.error "Failed to read min_ipv4_prefix from add-on config (exit: $min_ipv4_prefix_status)."
+    exit $min_ipv4_prefix_status
+fi
+export CRA_MIN_IPV4_PREFIX="$MIN_IPV4_PREFIX"
+
 LOG_LEVEL=$(bashio::config 'log_level')
 log_level_config_status=$?
 if [ $log_level_config_status -ne 0 ]; then
@@ -108,6 +132,14 @@ if [ -z "$NVD_API_KEY" ]; then
 else
     bashio::log.info "NVD API Key found. Vulnerability lookups optimized."
 fi
+
+if [ -z "$CRA_API_TOKEN" ]; then
+    bashio::log.info "API access token is not set. Sensitive endpoints allow private-network callers."
+else
+    bashio::log.info "API access token is set. Sensitive endpoints require token authentication."
+fi
+
+bashio::log.info "Scan scope guardrails: max IPv4 hosts=$CRA_MAX_SCAN_HOSTS, minimum IPv4 prefix=/$CRA_MIN_IPV4_PREFIX"
 
 bashio::log.info "Backend log level set to: $LOG_LEVEL"
 bashio::log.info "SSL certificate verification for probes: $VERIFY_SSL"
