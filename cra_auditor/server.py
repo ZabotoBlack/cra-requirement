@@ -1017,11 +1017,15 @@ def get_history():
         
         history = []
         for row in rows:
+            try:
+                summary_data = json.loads(row['summary'])
+            except Exception:
+                summary_data = {}
             history.append({
                 "id": row['id'],
                 "timestamp": row['timestamp'],
                 "target_range": row['target_range'],
-                "summary": json.loads(row['summary'])
+                "summary": summary_data
             })
         return jsonify(history)
     except Exception as e:

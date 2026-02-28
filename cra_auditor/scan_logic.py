@@ -577,6 +577,11 @@ class CRAScanner:
                 nmap_args += " --script=nbstat"
 
             port_spec = str(features.get('port_range') or "1-100")
+            # Strictly restrict to numbers, commas, hyphens, exclamation mark, and optional protocol prefixes (T:, U:)
+            if not re.match(r'^[0-9,\-!a-zA-Z:]+$', port_spec):
+                logger.warning("[SCAN] Invalid port_range format: %s. Falling back to 1-100.", port_spec)
+                port_spec = "1-100"
+
             vendor_ports = self._build_vendor_ports(selected_vendors)
             if vendor_ports:
                 port_spec += "," + ",".join(vendor_ports)
@@ -768,6 +773,12 @@ class CRAScanner:
 
     def _update_scanned_devices(self, scanned_devices, discovery_phase=False):
         """Helper to parse nmap results and update the devices dict."""
+        
+        def _clip_str(val, max_len):
+            if isinstance(val, str):
+                return val[:max_len]
+            return val
+            
         for host in self.nm.all_hosts():
             # Filter out if no addresses found (rare but possible)
             if 'addresses' not in self.nm[host]:
@@ -805,19 +816,25 @@ class CRAScanner:
             os_name = self._get_os_match(host)
             open_ports = self._get_open_ports(host)
             
+            # Enforce defense-in-depth clipping limits to prevent memory/DB denial of service
+            mac = _clip_str(mac, 17)
+            vendor = _clip_str(vendor, 100)
+            hostname = _clip_str(hostname, 255)
+            os_name = _clip_str(os_name, 100)
+            
             # MERGE LOGIC: preserve existing data if new scan is incomplete
             if existing:
                 if mac == 'Unknown' and existing.get('mac') != 'Unknown':
-                    mac = existing.get('mac')
+                    mac = _clip_str(existing.get('mac'), 17)
                 
                 if vendor == "Unknown" and existing.get('vendor') != "Unknown":
-                    vendor = existing.get('vendor')
+                    vendor = _clip_str(existing.get('vendor'), 100)
                 
                 if not hostname and existing.get('hostname'):
-                    hostname = existing.get('hostname')
+                    hostname = _clip_str(existing.get('hostname'), 255)
                 
                 if os_name == "Unknown" and existing.get('osMatch', "Unknown") != "Unknown":
-                    os_name = existing.get('osMatch')
+                    os_name = _clip_str(existing.get('osMatch'), 100)
                 
                 # Ports: Detailed scan is usually authoritative.
                 # But if detailed scan returned nothing (e.g. failed/filtered) AND we had ports (unlikely for discovery but consistent logic), we could keep.
@@ -863,6 +880,7 @@ class CRAScanner:
             return None
 
         cleaned = hostname.strip().rstrip('.')
+        cleaned = cleaned[:255]
         return cleaned or None
 
     def _is_generic_hostname(self, hostname, ip=None):

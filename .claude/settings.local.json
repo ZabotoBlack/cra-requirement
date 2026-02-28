@@ -3,7 +3,12 @@
     "allow": [
       "Bash(npm run build:*)",
       "Bash(python:*)",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(ls:*)",
+      "WebSearch",
+      "WebFetch(domain:xael.org)",
+      "WebFetch(domain:www.programcreek.com)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }
