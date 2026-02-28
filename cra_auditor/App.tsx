@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, ChevronsLeft, ChevronsRight, History, LayoutDashboard, List, Moon, Play, RotateCw, Settings, ShieldCheck, Square, Sun, X } from 'lucide-react';
+import { Activity, AlertTriangle, ChevronsLeft, ChevronsRight, HelpCircle, History, LayoutDashboard, List, Moon, Play, RotateCw, Settings, ShieldCheck, Square, Sun, X } from 'lucide-react';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import DeviceList from './components/DeviceList';
 import HistoryView from './components/HistoryView';
