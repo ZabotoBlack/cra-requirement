@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Info } from 'lucide-react';
 import { useLanguage } from '../../LanguageContext';
 import Dashboard from '../Dashboard';
 import GlassCard from '../ui/GlassCard';
@@ -10,9 +11,10 @@ import { localizeStatus } from '../../utils/status';
 interface IntermediateDashboardProps {
   report: ScanReport;
   config: FrontendConfig | null;
+  subnetInfoText: string;
 }
 
-const IntermediateDashboard: React.FC<IntermediateDashboardProps> = ({ report, config }) => {
+const IntermediateDashboard: React.FC<IntermediateDashboardProps> = ({ report, config, subnetInfoText }) => {
   const { t } = useLanguage();
   const [showDeviceDetails, setShowDeviceDetails] = useState(false);
 
@@ -36,7 +38,25 @@ const IntermediateDashboard: React.FC<IntermediateDashboardProps> = ({ report, c
             <p className="accent-text mb-2 text-xs font-bold uppercase tracking-widest">{t('intermediate.overview')}</p>
             <h2 className="text-2xl font-bold tracking-tight text-main md:text-3xl">{t('intermediate.networkAnalysis')}</h2>
           </div>
-          <StatusBadge label={t('intermediate.standardVisibility')} tone="info" />
+          <div className="flex items-center gap-2">
+            <StatusBadge label={t('intermediate.standardVisibility')} tone="info" />
+            <span className="group relative inline-flex">
+              <button
+                type="button"
+                aria-label={t('subnet.infoToken')}
+                title={t('subnet.infoToken')}
+                className="text-soft hover:text-main inline-flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border-subtle)] transition"
+              >
+                <Info size={13} aria-hidden="true" />
+              </button>
+              <span
+                role="tooltip"
+                className="surface-elevated text-main pointer-events-none absolute right-0 top-full z-10 mt-2 hidden w-80 rounded-lg border px-3 py-2 text-left text-xs leading-relaxed group-hover:block group-focus-within:block"
+              >
+                {subnetInfoText}
+              </span>
+            </span>
+          </div>
         </div>
       </GlassCard>
 

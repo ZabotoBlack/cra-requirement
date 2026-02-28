@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download } from 'lucide-react';
+import { Download, Info } from 'lucide-react';
 import Dashboard from '../Dashboard';
 import DeviceList from '../DeviceList';
 import GlassCard from '../ui/GlassCard';
@@ -11,9 +11,10 @@ interface ExpertDashboardProps {
   report: ScanReport;
   config: FrontendConfig | null;
   logs: string[];
+  subnetInfoText: string;
 }
 
-const ExpertDashboard: React.FC<ExpertDashboardProps> = ({ report, config, logs }) => {
+const ExpertDashboard: React.FC<ExpertDashboardProps> = ({ report, config, logs, subnetInfoText }) => {
   const { t } = useLanguage();
   const [showDevices, setShowDevices] = useState(true);
   const [expandedLogs, setExpandedLogs] = useState(false);
@@ -40,10 +41,28 @@ const ExpertDashboard: React.FC<ExpertDashboardProps> = ({ report, config, logs 
             <p className="text-soft mt-2 text-sm font-medium">{t('expert.subtitle')}</p>
           </div>
           <div className="flex flex-col items-start md:items-end">
-            <TechButton variant="secondary" onClick={handleExportJson} className="border-[var(--color-accent-border)] hover:bg-[var(--color-accent-soft)]">
-              <Download size={14} />
-              {t('expert.exportJson')}
-            </TechButton>
+            <div className="flex items-center gap-2">
+              <span className="group relative inline-flex">
+                <button
+                  type="button"
+                  aria-label={t('subnet.infoToken')}
+                  title={t('subnet.infoToken')}
+                  className="text-soft hover:text-main inline-flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border-subtle)] transition"
+                >
+                  <Info size={13} aria-hidden="true" />
+                </button>
+                <span
+                  role="tooltip"
+                  className="surface-elevated text-main pointer-events-none absolute right-0 top-full z-10 mt-2 hidden w-80 rounded-lg border px-3 py-2 text-left text-xs leading-relaxed group-hover:block group-focus-within:block"
+                >
+                  {subnetInfoText}
+                </span>
+              </span>
+              <TechButton variant="secondary" onClick={handleExportJson} className="border-[var(--color-accent-border)] hover:bg-[var(--color-accent-soft)]">
+                <Download size={14} />
+                {t('expert.exportJson')}
+              </TechButton>
+            </div>
           </div>
         </div>
       </GlassCard>

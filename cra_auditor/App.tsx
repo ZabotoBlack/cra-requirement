@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, ChevronsLeft, ChevronsRight, HelpCircle, History, LayoutDashboard, List, Moon, Play, RotateCw, Settings, ShieldCheck, Square, Sun, X } from 'lucide-react';
+import { Activity, AlertTriangle, ChevronsLeft, ChevronsRight, History, LayoutDashboard, List, Moon, Play, RotateCw, Settings, ShieldCheck, Square, Sun, X } from 'lucide-react';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import DeviceList from './components/DeviceList';
 import HistoryView from './components/HistoryView';
@@ -175,6 +175,9 @@ const AppShell: React.FC = () => {
   const normalizedSubnet = subnet.trim();
   const isValidSubnet = isValidCidrSubnet(normalizedSubnet);
   const hasSubnetInput = normalizedSubnet.length > 0;
+  const subnetHelperText = !hasSubnetInput
+    ? t('subnet.helper.empty')
+    : (isValidSubnet ? t('subnet.helper.valid') : t('subnet.helper.invalid'));
   const showSubnetHelper = isSubnetFocused || hasSubnetInput;
   const subnetLocked = userMode === 'basic';
   const canStartScan = !scanning && (userMode === 'basic' || isValidSubnet);
@@ -649,15 +652,7 @@ const AppShell: React.FC = () => {
 
                 {!subnetLocked && showSubnetHelper && (
                   <div className={`w-full rounded-lg border px-3 py-2 text-xs md:max-w-[540px] ${hasSubnetInput ? (isValidSubnet ? 'text-[var(--badge-success-text)] border-[var(--badge-success-border)] bg-[var(--badge-success-bg)]' : 'text-[var(--badge-danger-text)] border-[var(--badge-danger-border)] bg-[var(--badge-danger-bg)]') : 'surface-card text-muted'}`}>
-                    {!hasSubnetInput && (
-                      <p>{t('subnet.helper.empty')}</p>
-                    )}
-                    {hasSubnetInput && isValidSubnet && (
-                      <p>{t('subnet.helper.valid')}</p>
-                    )}
-                    {hasSubnetInput && !isValidSubnet && (
-                      <p>{t('subnet.helper.invalid')}</p>
-                    )}
+                    <p>{subnetHelperText}</p>
                   </div>
                 )}
               </div>
@@ -726,8 +721,8 @@ const AppShell: React.FC = () => {
                 data-tour-id={view === 'dashboard' ? 'dashboard-area' : view === 'devices' ? 'devices-area' : 'history-area'}
               >
                 {view === 'dashboard' && report && userMode === 'basic' && <BasicDashboard report={report} />}
-                {view === 'dashboard' && report && userMode === 'intermediate' && <IntermediateDashboard report={report} config={config} />}
-                {view === 'dashboard' && report && userMode === 'expert' && <ExpertDashboard report={report} config={config} logs={logs} />}
+                {view === 'dashboard' && report && userMode === 'intermediate' && <IntermediateDashboard report={report} config={config} subnetInfoText={subnetHelperText} />}
+                {view === 'dashboard' && report && userMode === 'expert' && <ExpertDashboard report={report} config={config} logs={logs} subnetInfoText={subnetHelperText} />}
                 {view === 'devices' && report && <DeviceList devices={report.devices} userMode={userMode} />}
                 {view === 'history' && <HistoryView onViewReport={handleViewReport} />}
 
