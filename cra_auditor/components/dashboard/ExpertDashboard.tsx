@@ -67,7 +67,7 @@ const ExpertDashboard: React.FC<ExpertDashboardProps> = ({ report, config, logs,
         </div>
       </GlassCard>
 
-      <Dashboard report={report} geminiEnabled={config?.gemini_enabled} nvdEnabled={config?.nvd_enabled} />
+      <Dashboard report={report} geminiEnabled={config?.gemini_enabled} nvdEnabled={config?.nvd_enabled} detailLevel="expert" />
 
       <GlassCard className="rounded-2xl p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">

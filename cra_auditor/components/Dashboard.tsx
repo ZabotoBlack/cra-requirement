@@ -3,6 +3,7 @@ import { AlertTriangle, Info, ShieldCheck, ShieldQuestion, Sparkles } from 'luci
 import { ComplianceStatus, ScanReport } from '../types';
 import { useLanguage } from '../LanguageContext';
 import type { TranslationKey } from '../translations';
+import { ADVISORY_CHECK_IDS, ComplianceCheckId, STRICT_CHECK_IDS } from '../utils/statusRationale';
 import GlassCard from './ui/GlassCard';
 import StatusBadge from './ui/StatusBadge';
 
@@ -69,6 +70,7 @@ interface DashboardProps {
   report: ScanReport;
   geminiEnabled?: boolean;
   nvdEnabled?: boolean;
+  detailLevel?: 'intermediate' | 'expert';
 }
 
 const toneByStatus: Record<string, 'success' | 'warning' | 'danger' | 'neutral'> = {
@@ -78,8 +80,19 @@ const toneByStatus: Record<string, 'success' | 'warning' | 'danger' | 'neutral'>
   [ComplianceStatus.DISCOVERED]: 'neutral'
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled }) => {
+const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled, detailLevel = 'expert' }) => {
   const { t } = useLanguage();
+  const checkLabelById: Record<ComplianceCheckId, string> = {
+    secureByDefault: t('deviceList.check.secureDefaults'),
+    httpsOnlyManagement: t('deviceList.check.httpsOnly'),
+    vulnerabilities: t('deviceList.check.vulnerabilities'),
+    minimalAttackSurface: t('deviceList.check.minimalAttackSurface'),
+    dataConfidentiality: t('deviceList.check.encryption'),
+    sbomCompliance: t('deviceList.check.sbom'),
+    firmwareTracking: t('deviceList.check.firmware'),
+    securityTxt: t('deviceList.check.secTxt'),
+    securityLogging: t('deviceList.check.securityLogging'),
+  };
   const complianceScore = useMemo(() => {
     if (report.summary.total === 0) return 0;
     return Math.round((report.summary.compliant / report.summary.total) * 100);
@@ -309,6 +322,40 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
           <p className="text-muted text-sm uppercase tracking-wider">{t('dashboard.craMappingTitle')}</p>
           <StatusBadge label={t('dashboard.craMappingHint')} tone="neutral" />
         </div>
+        <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+          <div className="surface-card rounded-xl border px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-main text-sm font-semibold">{t('dashboard.statusLogic.strictTitle')}</p>
+              <StatusBadge label={t('status.nonCompliantLabel')} tone="danger" />
+            </div>
+            <p className="text-soft mt-1 text-xs leading-relaxed">{t('dashboard.statusLogic.strictRule')}</p>
+            <p className="text-main mt-1 text-xs leading-relaxed">{t('dashboard.statusLogic.strictPlain')}</p>
+            {detailLevel === 'expert' ? (
+              <p className="text-main mt-2 text-xs">
+                {STRICT_CHECK_IDS.map((checkId) => checkLabelById[checkId]).join(' • ')}
+              </p>
+            ) : (
+              <p className="text-soft mt-2 text-xs">{t('dashboard.statusLogic.expertHint')}</p>
+            )}
+          </div>
+          <div className="surface-card rounded-xl border px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-main text-sm font-semibold">{t('dashboard.statusLogic.advisoryTitle')}</p>
+              <StatusBadge label={t('status.warningLabel')} tone="warning" />
+            </div>
+            <p className="text-soft mt-1 text-xs leading-relaxed">{t('dashboard.statusLogic.advisoryRule')}</p>
+            <p className="text-main mt-1 text-xs leading-relaxed">{t('dashboard.statusLogic.advisoryPlain')}</p>
+            {detailLevel === 'expert' ? (
+              <p className="text-main mt-2 text-xs">
+                {ADVISORY_CHECK_IDS.map((checkId) => checkLabelById[checkId]).join(' • ')}
+              </p>
+            ) : (
+              <p className="text-soft mt-2 text-xs">{t('dashboard.statusLogic.expertHint')}</p>
+            )}
+          </div>
+        </div>
+        <p className="text-soft mt-2 text-xs leading-relaxed">{t('dashboard.statusLogic.precedence')}</p>
+        {detailLevel === 'expert' && (
         <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
           {craCheckCoverage.map((check) => {
             const tone = check.evaluated === 0
@@ -348,6 +395,7 @@ const Dashboard: React.FC<DashboardProps> = ({ report, geminiEnabled, nvdEnabled
             );
           })}
         </div>
+        )}
       </GlassCard>
     </div>
   );

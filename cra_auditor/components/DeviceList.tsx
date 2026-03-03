@@ -4,6 +4,7 @@ import { ComplianceStatus, Device, UserMode } from '../types';
 import { useLanguage } from '../LanguageContext';
 import { getRemediationAdvice } from '../services/geminiService';
 import { localizeStatus } from '../utils/status';
+import { ComplianceCheckId, deriveDeviceStatusRationale } from '../utils/statusRationale';
 import GlassCard from './ui/GlassCard';
 import StatusBadge from './ui/StatusBadge';
 import TechButton from './ui/TechButton';
@@ -105,6 +106,7 @@ const DeviceDossier: React.FC<{ device: Device; userMode?: UserMode }> = ({ devi
   const [tab, setTab] = useState<DossierTab>('checks');
   const [loadingAdvice, setLoadingAdvice] = useState(false);
   const [advice, setAdvice] = useState<string | null>(null);
+  const statusRationale = useMemo(() => deriveDeviceStatusRationale(device), [device]);
 
   const rawDataPreview = useMemo(() => {
     const parsedTimestamp = new Date(device.lastScanned);
@@ -129,6 +131,41 @@ const DeviceDossier: React.FC<{ device: Device; userMode?: UserMode }> = ({ devi
     { key: t('deviceList.check.securityLogging'), passed: device.checks?.securityLogging?.passed, details: device.checks?.securityLogging?.details, icon: <Network size={14} />, requirement: t('dashboard.cra.req.securityLogging') },
     { key: t('deviceList.check.minimalAttackSurface'), passed: device.checks?.minimalAttackSurface?.passed, details: device.checks?.minimalAttackSurface?.details, icon: <Router size={14} />, requirement: t('dashboard.cra.req.minimalAttackSurface') },
   ];
+
+  const checkLabelById: Record<ComplianceCheckId, string> = {
+    secureByDefault: t('deviceList.check.secureDefaults'),
+    httpsOnlyManagement: t('deviceList.check.httpsOnly'),
+    vulnerabilities: t('deviceList.check.vulnerabilities'),
+    minimalAttackSurface: t('deviceList.check.minimalAttackSurface'),
+    dataConfidentiality: t('deviceList.check.encryption'),
+    sbomCompliance: t('deviceList.check.sbom'),
+    firmwareTracking: t('deviceList.check.firmware'),
+    securityTxt: t('deviceList.check.secTxt'),
+    securityLogging: t('deviceList.check.securityLogging'),
+  };
+
+  const statusTone: 'success' | 'warning' | 'danger' | 'neutral' =
+    device.status === ComplianceStatus.COMPLIANT
+      ? 'success'
+      : device.status === ComplianceStatus.WARNING
+        ? 'warning'
+        : device.status === ComplianceStatus.NON_COMPLIANT
+          ? 'danger'
+          : 'neutral';
+
+  const statusSummary =
+    device.status === ComplianceStatus.NON_COMPLIANT
+      ? t('deviceList.statusReason.summary.nonCompliant')
+      : device.status === ComplianceStatus.WARNING
+        ? t('deviceList.statusReason.summary.warning')
+        : device.status === ComplianceStatus.COMPLIANT
+          ? t('deviceList.statusReason.summary.compliant')
+          : t('deviceList.statusReason.summary.discovered');
+
+  const strictIssueCount = statusRationale.strictFailures.length + (statusRationale.firmwareHasVersionCVEs ? 1 : 0);
+  const advisoryIssueCount = statusRationale.advisoryFailures.length + (statusRationale.highAttackSurface ? 1 : 0);
+  const showIntermediateOrExpertDetails = userMode !== 'basic';
+  const showExpertOnlySignals = userMode === 'expert';
 
   const handleAnalyze = async () => {
     if (advice) {
@@ -182,35 +219,86 @@ const DeviceDossier: React.FC<{ device: Device; userMode?: UserMode }> = ({ devi
       </div>
 
       {tab === 'checks' && (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 xl:grid-cols-5">
-          {checks.map((check) => (
-            <div key={check.key} className="rounded-xl border border-slate-700/70 bg-slate-900/70 p-4">
-              <div className="mb-2 flex items-center justify-between text-slate-300">
-                <span className="inline-flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wider">{check.icon}{check.key}</span>
-                <span className="group relative inline-flex">
-                  <button
-                    type="button"
-                    aria-label={t('dashboard.craRequirementInfo')}
-                    title={t('dashboard.craRequirementInfo')}
-                    className="text-soft hover:text-main inline-flex h-5 w-5 items-center justify-center rounded-full border border-[var(--border-subtle)] transition"
-                  >
-                    <Info size={11} aria-hidden="true" />
-                  </button>
-                  <span
-                    role="tooltip"
-                    className="surface-elevated text-main pointer-events-none absolute right-0 top-full z-10 mt-2 hidden w-80 rounded-lg border px-3 py-2 text-xs normal-case leading-relaxed tracking-normal group-hover:block group-focus-within:block"
-                  >
-                    {check.requirement}
-                  </span>
-                </span>
-              </div>
-              <StatusBadge
-                label={check.passed === undefined ? t('deviceList.check.notEvaluated') : check.passed ? t('deviceList.check.pass') : t('deviceList.check.attention')}
-                tone={check.passed === undefined ? 'neutral' : check.passed ? 'success' : 'warning'}
-              />
-              <p className="mt-2 text-sm leading-relaxed text-slate-300">{check.details || t('deviceList.check.noData')}</p>
+        <div className="space-y-3">
+          <div className="rounded-xl border border-slate-700/70 bg-slate-900/70 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h5 className="text-sm font-semibold uppercase tracking-wider text-slate-200">{t('deviceList.statusReason.title')}</h5>
+              <StatusBadge label={localizeStatus(device.status, t)} tone={statusTone} />
             </div>
-          ))}
+            <p className="mt-2 text-sm text-slate-200">{statusSummary}</p>
+            <p className="mt-2 text-sm text-slate-300">{t('deviceList.statusReason.precedence')}</p>
+            {device.status === ComplianceStatus.DISCOVERED ? (
+              <p className="mt-2 text-sm text-slate-300">{t('deviceList.statusReason.discovery')}</p>
+            ) : !showIntermediateOrExpertDetails ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <StatusBadge label={`${t('deviceList.statusReason.strictFailed')} ${strictIssueCount}`} tone={strictIssueCount > 0 ? 'danger' : 'success'} />
+                <StatusBadge label={`${t('deviceList.statusReason.advisoryFailed')} ${advisoryIssueCount}`} tone={advisoryIssueCount > 0 ? 'warning' : 'success'} />
+                <StatusBadge label={t('deviceList.statusReason.basicHint')} tone="neutral" />
+              </div>
+            ) : (
+              <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                <div className="rounded-lg border border-slate-700/70 bg-slate-950/50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-[var(--badge-danger-text)]">{t('deviceList.statusReason.strictFailed')}</p>
+                  {statusRationale.strictFailures.length > 0 || statusRationale.firmwareHasVersionCVEs ? (
+                    <ul className="mt-2 space-y-1 text-sm text-slate-200">
+                      {statusRationale.strictFailures.map((checkId) => (
+                        <li key={checkId}>• {checkLabelById[checkId]}</li>
+                      ))}
+                      {showExpertOnlySignals && statusRationale.firmwareHasVersionCVEs && <li>• {t('deviceList.statusReason.firmwareCritical')}</li>}
+                      {!showExpertOnlySignals && <li>• {t('deviceList.statusReason.total')}: {strictIssueCount}</li>}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-400">{t('deviceList.statusReason.none')}</p>
+                  )}
+                </div>
+                <div className="rounded-lg border border-slate-700/70 bg-slate-950/50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-[var(--badge-warning-text)]">{t('deviceList.statusReason.advisoryFailed')}</p>
+                  {statusRationale.advisoryFailures.length > 0 || statusRationale.highAttackSurface ? (
+                    <ul className="mt-2 space-y-1 text-sm text-slate-200">
+                      {statusRationale.advisoryFailures.map((checkId) => (
+                        <li key={checkId}>• {checkLabelById[checkId]}</li>
+                      ))}
+                      {showExpertOnlySignals && statusRationale.highAttackSurface && <li>• {t('deviceList.statusReason.highAttackSurface')}</li>}
+                      {!showExpertOnlySignals && <li>• {t('deviceList.statusReason.total')}: {advisoryIssueCount}</li>}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-400">{t('deviceList.statusReason.none')}</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 xl:grid-cols-5">
+            {checks.map((check) => (
+              <div key={check.key} className="rounded-xl border border-slate-700/70 bg-slate-900/70 p-4">
+                <div className="mb-2 flex items-center justify-between text-slate-300">
+                  <span className="inline-flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wider">{check.icon}{check.key}</span>
+                  <span className="group relative inline-flex">
+                    <button
+                      type="button"
+                      aria-label={t('dashboard.craRequirementInfo')}
+                      title={t('dashboard.craRequirementInfo')}
+                      className="text-soft hover:text-main inline-flex h-5 w-5 items-center justify-center rounded-full border border-[var(--border-subtle)] transition"
+                    >
+                      <Info size={11} aria-hidden="true" />
+                    </button>
+                    <span
+                      role="tooltip"
+                      className="surface-elevated text-main pointer-events-none absolute right-0 top-full z-10 mt-2 hidden w-80 rounded-lg border px-3 py-2 text-xs normal-case leading-relaxed tracking-normal group-hover:block group-focus-within:block"
+                    >
+                      {check.requirement}
+                    </span>
+                  </span>
+                </div>
+                <StatusBadge
+                  label={check.passed === undefined ? t('deviceList.check.notEvaluated') : check.passed ? t('deviceList.check.pass') : t('deviceList.check.attention')}
+                  tone={check.passed === undefined ? 'neutral' : check.passed ? 'success' : 'warning'}
+                />
+                <p className="mt-2 text-sm leading-relaxed text-slate-300">{check.details || t('deviceList.check.noData')}</p>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

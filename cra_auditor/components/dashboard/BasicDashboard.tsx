@@ -46,6 +46,18 @@ const BasicDashboard: React.FC<BasicDashboardProps> = ({ report }) => {
     return summary;
   }, [hasAttentionRequired, report.devices, t]);
 
+  const statusExplanation = report.summary.nonCompliant > 0
+    ? t('basic.statusSummary.nonCompliant')
+    : report.summary.warning > 0
+      ? t('basic.statusSummary.warning')
+      : t('basic.statusSummary.compliant');
+
+  const nextAction = report.summary.nonCompliant > 0
+    ? t('basic.nextAction.nonCompliant')
+    : report.summary.warning > 0
+      ? t('basic.nextAction.warning')
+      : t('basic.nextAction.compliant');
+
   return (
     <div className="space-y-5">
       <GlassCard className="group relative overflow-hidden rounded-2xl border border-[var(--color-accent-border)] p-6 md:p-8">
@@ -74,6 +86,12 @@ const BasicDashboard: React.FC<BasicDashboardProps> = ({ report }) => {
             </div>
           </div>
         </div>
+      </GlassCard>
+
+      <GlassCard className="rounded-2xl p-5">
+        <h3 className="text-muted text-sm font-semibold uppercase tracking-wider">{t('basic.statusSummary.title')}</h3>
+        <p className="text-main mt-3 text-sm">{statusExplanation}</p>
+        <p className="text-soft mt-2 text-sm">{nextAction}</p>
       </GlassCard>
 
       <GlassCard className="rounded-2xl p-5">

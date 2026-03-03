@@ -60,7 +60,7 @@ const IntermediateDashboard: React.FC<IntermediateDashboardProps> = ({ report, c
         </div>
       </GlassCard>
 
-      <Dashboard report={report} geminiEnabled={config?.gemini_enabled} nvdEnabled={config?.nvd_enabled} />
+      <Dashboard report={report} geminiEnabled={config?.gemini_enabled} nvdEnabled={config?.nvd_enabled} detailLevel="intermediate" />
 
       <GlassCard className="rounded-2xl p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
