@@ -141,7 +141,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                   {Array.isArray(scanOptions.vendors) && scanOptions.vendors.length === 0 ? <CheckSquare size={12} /> : <Square size={12} />}
                   {t('settings.vendors.none')}
                 </button>
-                {['tuya', 'shelly', 'hue', 'kasa', 'sonoff', 'ikea'].map((vendor) => {
+                {['tuya', 'shelly', 'hue', 'kasa', 'sonoff', 'ikea', 'tapo'].map((vendor) => {
                   const selected = scanOptions.vendors === 'all' || (Array.isArray(scanOptions.vendors) && scanOptions.vendors.includes(vendor));
                   return (
                     <button

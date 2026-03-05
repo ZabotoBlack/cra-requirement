@@ -470,6 +470,9 @@ class CRAScanner:
             vendor_ports.append('8081')
         if selected_vendors == 'all' or 'kasa' in selected_vendors:
             vendor_ports.append('9999')
+        if selected_vendors == 'all' or 'tapo' in selected_vendors:
+            # Tapo ONVIF (2020) and unauthenticated API (20002) ports
+            vendor_ports.extend(['2020', '20002'])
         return vendor_ports
 
     def _normalize_port(self, port_value):
@@ -1397,6 +1400,18 @@ class CRAScanner:
                  if "IKEA" in r.text or "Tradfri" in r.text:
                       warnings.append("IKEA Gateway detected. Ensure latest firmware to avoid known zigbee crash exploits.")
              except Exception: pass
+
+        # TP-Link Tapo
+        vendor_str = str(device.get('vendor', '')).lower() + " " + str(device.get('model', '')).lower()
+        is_tapo = 'tapo' in vendor_str or 'tp-link' in vendor_str
+        
+        if (selected_vendors != 'all' and 'tapo' in selected_vendors) or (selected_vendors == 'all' and is_tapo) or (20002 in ports):
+            if 2020 in ports:
+                warnings.append("TP-Link Tapo Device (Port 2020). ONVIF service may be vulnerable to pre-auth buffer overflows (e.g. CVE-2025-8065).")
+            if 20002 in ports:
+                warnings.append("TP-Link Tapo Device (Port 20002). Older APIs may allow unauthenticated local control.")
+            if 443 in ports or 80 in ports:
+                warnings.append("TP-Link Tapo Device. Ensure firmware is updated to mitigate potential HTTPS integer overflows (CVE-2025-14299) and Wi-Fi reconfiguration flaws (CVE-2025-14300).")
 
         return warnings
 
