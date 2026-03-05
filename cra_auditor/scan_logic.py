@@ -1405,7 +1405,7 @@ class CRAScanner:
         vendor_str = str(device.get('vendor', '')).lower() + " " + str(device.get('model', '')).lower()
         is_tapo = 'tapo' in vendor_str or 'tp-link' in vendor_str
         
-        if (selected_vendors != 'all' and 'tapo' in selected_vendors) or (selected_vendors == 'all' and is_tapo) or (20002 in ports):
+        if (selected_vendors == 'all' or 'tapo' in selected_vendors) and (is_tapo or 20002 in ports):
             if 2020 in ports:
                 warnings.append("TP-Link Tapo Device (Port 2020). ONVIF service may be vulnerable to pre-auth buffer overflows (e.g. CVE-2025-8065).")
             if 20002 in ports:
