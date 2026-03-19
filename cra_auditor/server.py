@@ -470,19 +470,55 @@ def _validate_scan_scope(network: ipaddress._BaseNetwork) -> tuple[bool, str | N
     return True, None
 
 
-def _extract_client_ip() -> str | None:
-    """Return best-effort client IP, honoring proxy forwarding headers."""
-    forwarded_for = request.headers.get('X-Forwarded-For', '')
-    if forwarded_for:
-        first_hop = forwarded_for.split(',')[0].strip()
-        if first_hop:
-            return first_hop
+def _resolve_trusted_proxies() -> set[str]:
+    """Build the set of IP addresses trusted to set X-Forwarded-For.
 
+    In a Home Assistant add-on the Supervisor container acts as the ingress
+    reverse proxy.  We resolve its IP from the ``supervisor`` hostname that
+    Docker DNS provides on the hassio network, and always trust loopback.
+    """
+    trusted: set[str] = {'127.0.0.1', '::1'}
+
+    # Resolve the HA Supervisor address (ingress reverse-proxy).
+    try:
+        for info in socket.getaddrinfo('supervisor', None, socket.AF_UNSPEC, socket.SOCK_STREAM):
+            addr = info[4][0]
+            if addr:
+                trusted.add(addr)
+    except (socket.gaierror, OSError):
+        pass  # Not running inside HA — keep only loopback entries.
+
+    logger.info("[AUTH] Trusted proxy addresses: %s", trusted)
+    return trusted
+
+
+# Resolved once at import / startup time so every request can do a fast
+# set-lookup instead of a DNS call.
+_TRUSTED_PROXIES: set[str] = _resolve_trusted_proxies()
+
+
+def _extract_client_ip() -> str | None:
+    """Return best-effort client IP, honoring proxy forwarding headers.
+
+    ``X-Forwarded-For`` is only trusted when the *direct* peer
+    (``request.remote_addr``) is a known reverse-proxy (Home Assistant
+    Supervisor or loopback).  This prevents LAN clients from spoofing
+    their source IP by setting the header themselves.
+    """
     remote = request.remote_addr
     if isinstance(remote, str) and remote.strip():
-        return remote.strip()
+        remote = remote.strip()
+    else:
+        return None
 
-    return None
+    if remote in _TRUSTED_PROXIES:
+        forwarded_for = request.headers.get('X-Forwarded-For', '')
+        if forwarded_for:
+            first_hop = forwarded_for.split(',')[0].strip()
+            if first_hop:
+                return first_hop
+
+    return remote
 
 
 def _is_local_or_private_ip(client_ip: str | None) -> bool:

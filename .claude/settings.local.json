@@ -8,7 +8,11 @@
       "WebSearch",
       "WebFetch(domain:xael.org)",
       "WebFetch(domain:www.programcreek.com)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(python3 -c \"import nmap; import inspect; print\\(inspect.getsource\\(nmap.PortScanner.scan\\)\\)\")",
+      "Bash(pip3 show:*)",
+      "Bash(python3 -c \":*)",
+      "Bash(pip show:*)"
     ]
   }
 }
